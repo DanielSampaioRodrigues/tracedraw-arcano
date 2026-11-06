@@ -114,7 +114,12 @@ fn service_state(app: &App, ui: &mut Ui) {
         if app.studio_active() {
             // Arcano edition: pictures from a studio service.
             let id = &app.settings.studio.image_provider;
-            let name = app.studio.catalog.provider(id).map(|p| p.name.clone()).unwrap_or_default();
+            let name = app
+                .studio
+                .catalog
+                .provider(id)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
             ui.horizontal(|ui| {
                 state_line(ui, !app.studio_key(id).trim().is_empty());
                 ui.label(RichText::new(name).color(Tokens::text_dim()));

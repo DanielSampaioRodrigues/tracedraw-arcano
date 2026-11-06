@@ -202,71 +202,73 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
     };
     // The model in use, from the service's list, and its notes.
     if !studio {
-    ui.horizontal(|ui| {
-        ui.label(tr("ai.model"));
-        if svg {
-            ui.label(RichText::new(app.settings.ai.model()).strong());
-            return;
-        }
-        let Some(prefs) = app.ai_image_prefs() else {
-            // The service makes drawings only (or has no image model).
-            ui.label(RichText::new(tr("aiui.not_ready")).color(Tokens::text_dim()));
-            return;
-        };
-        let current = prefs.model();
-        let mut list: Vec<String> = if app.ai_image.models.is_empty() {
-            prefs
-                .provider
-                .preset_models()
-                .iter()
-                .map(|m| m.to_string())
-                .collect()
-        } else {
-            app.ai_image.models.clone()
-        };
-        if !list.contains(&current) {
-            list.insert(0, current.clone());
-        }
-        crate::ui::combo::from_id_salt("aigen_model")
-            .width((ui.available_width() - 34.0).max(80.0))
-            .selected_text(current.clone())
-            .show_ui(ui, |ui| {
-                // Each model with a line on what it is good at.
-                ui.set_min_width(260.0);
-                ui.set_max_width(280.0);
-                for m in &list {
-                    let on = *m == current;
-                    let resp = ui
-                        .vertical(|ui| {
-                            let r = ui.radio(on, RichText::new(m.as_str()).strong());
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(model_note(m))
-                                        .color(Tokens::text_dim())
-                                        .size(11.0),
-                                )
-                                .wrap(),
-                            );
-                            let res = crate::ai_image::fit_resolution(
-                                prefs.provider,
-                                m,
-                                prefs.resolution,
-                            );
-                            if let Some(price) = crate::ai_image::price_caption(m, res) {
-                                ui.label(RichText::new(price).color(Tokens::text_dim()).size(11.0));
-                            }
-                            r
-                        })
-                        .inner;
-                    if resp.clicked() {
-                        app.settings.ai.image_model = m.clone();
-                        ui.close();
+        ui.horizontal(|ui| {
+            ui.label(tr("ai.model"));
+            if svg {
+                ui.label(RichText::new(app.settings.ai.model()).strong());
+                return;
+            }
+            let Some(prefs) = app.ai_image_prefs() else {
+                // The service makes drawings only (or has no image model).
+                ui.label(RichText::new(tr("aiui.not_ready")).color(Tokens::text_dim()));
+                return;
+            };
+            let current = prefs.model();
+            let mut list: Vec<String> = if app.ai_image.models.is_empty() {
+                prefs
+                    .provider
+                    .preset_models()
+                    .iter()
+                    .map(|m| m.to_string())
+                    .collect()
+            } else {
+                app.ai_image.models.clone()
+            };
+            if !list.contains(&current) {
+                list.insert(0, current.clone());
+            }
+            crate::ui::combo::from_id_salt("aigen_model")
+                .width((ui.available_width() - 34.0).max(80.0))
+                .selected_text(current.clone())
+                .show_ui(ui, |ui| {
+                    // Each model with a line on what it is good at.
+                    ui.set_min_width(260.0);
+                    ui.set_max_width(280.0);
+                    for m in &list {
+                        let on = *m == current;
+                        let resp = ui
+                            .vertical(|ui| {
+                                let r = ui.radio(on, RichText::new(m.as_str()).strong());
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(model_note(m))
+                                            .color(Tokens::text_dim())
+                                            .size(11.0),
+                                    )
+                                    .wrap(),
+                                );
+                                let res = crate::ai_image::fit_resolution(
+                                    prefs.provider,
+                                    m,
+                                    prefs.resolution,
+                                );
+                                if let Some(price) = crate::ai_image::price_caption(m, res) {
+                                    ui.label(
+                                        RichText::new(price).color(Tokens::text_dim()).size(11.0),
+                                    );
+                                }
+                                r
+                            })
+                            .inner;
+                        if resp.clicked() {
+                            app.settings.ai.image_model = m.clone();
+                            ui.close();
+                        }
+                        ui.add_space(3.0);
                     }
-                    ui.add_space(3.0);
-                }
-            });
-        ui.small_button("?").rich_tip(model_note(&current));
-    });
+                });
+            ui.small_button("?").rich_tip(model_note(&current));
+        });
     }
     // The size of the pictures, and what one costs at that size.
     if !svg && !studio {
@@ -350,25 +352,25 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
         }
         // The studio shows the shapes its model makes, with its rows.
         if !studio {
-        ui.horizontal(|ui| {
-            ui.label(tr("aigen.aspect"));
-            let current = app.ai_image.aspect;
-            crate::ui::combo::from_id_salt("aigen_aspect")
-                .width(ui.available_width() - 8.0)
-                .selected_text(tr(current.key()))
-                .show_ui(ui, |ui| {
-                    if app.ai_image.source.is_some() {
-                        ui.selectable_value(
-                            &mut app.ai_image.aspect,
-                            Aspect::MatchSource,
-                            tr(Aspect::MatchSource.key()),
-                        );
-                    }
-                    for a in Aspect::ALL {
-                        ui.selectable_value(&mut app.ai_image.aspect, a, tr(a.key()));
-                    }
-                });
-        });
+            ui.horizontal(|ui| {
+                ui.label(tr("aigen.aspect"));
+                let current = app.ai_image.aspect;
+                crate::ui::combo::from_id_salt("aigen_aspect")
+                    .width(ui.available_width() - 8.0)
+                    .selected_text(tr(current.key()))
+                    .show_ui(ui, |ui| {
+                        if app.ai_image.source.is_some() {
+                            ui.selectable_value(
+                                &mut app.ai_image.aspect,
+                                Aspect::MatchSource,
+                                tr(Aspect::MatchSource.key()),
+                            );
+                        }
+                        for a in Aspect::ALL {
+                            ui.selectable_value(&mut app.ai_image.aspect, a, tr(a.key()));
+                        }
+                    });
+            });
         }
     }
     // Style and palette fold away to make room for the results.
@@ -566,7 +568,11 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
         });
     });
     let studio_service = (!svg && app.studio_active())
-        .then(|| app.studio.catalog.provider(&app.settings.studio.image_provider))
+        .then(|| {
+            app.studio
+                .catalog
+                .provider(&app.settings.studio.image_provider)
+        })
         .flatten()
         .map(|p| p.name.clone());
     let service = match (studio_service, app.ai_image_prefs()) {

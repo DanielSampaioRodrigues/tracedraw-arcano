@@ -4,8 +4,6 @@
 //! palette under the canvas, status bar at the bottom.
 
 pub mod about;
-pub mod panel_stack;
-pub mod combo;
 pub mod ai_bar;
 pub mod ai_docker;
 pub mod ai_generate_docker;
@@ -25,6 +23,7 @@ pub mod clip_bar;
 pub mod color_docker;
 pub mod color_management;
 pub mod color_picker;
+pub mod combo;
 pub mod comments_docker;
 pub mod connector_bar;
 pub mod context;
@@ -81,6 +80,7 @@ pub mod package_dialog;
 pub mod palette;
 pub mod palette_bars;
 pub mod palette_manager;
+pub mod panel_stack;
 pub mod pdf_import_dialog;
 pub mod pdf_password;
 pub mod picture_mosaic_docker;

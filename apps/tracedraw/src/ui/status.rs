@@ -15,10 +15,10 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use tracedraw_core::document::ShapeKind;
 
-/// Height of the bar: a 1 px line, then 41 px.
-pub const BAR_H: f32 = 42.0;
+/// Height of the bar: a 1 px line, then 31 px.
+pub const BAR_H: f32 = 32.0;
 /// Text size of the bar.
-const TEXT: f32 = 13.0;
+const TEXT: f32 = 12.0;
 
 /// What the status bar's first field shows (the settings button's menu).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -493,7 +493,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     painter.with_clip_rect(clip).galley(
         Pos2::new(text_x, cy - left_galley.size().y / 2.0),
         left_galley,
-        Tokens::text(),
+        Tokens::text_dim(),
     );
     if linked {
         let r = Rect::from_min_max(

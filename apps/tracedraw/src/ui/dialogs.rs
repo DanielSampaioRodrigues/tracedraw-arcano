@@ -2051,9 +2051,11 @@ pub fn show(app: &mut App, ctx: &Context) {
                     // A running AppImage can be replaced in place; a
                     // Windows installer is downloaded and run on closing.
                     let target = crate::updates::appimage_target();
-                    let in_place = r.appimage.clone().zip(target).or_else(|| {
-                        r.setup.clone().zip(crate::updates::setup_target())
-                    });
+                    let in_place = r
+                        .appimage
+                        .clone()
+                        .zip(target)
+                        .or_else(|| r.setup.clone().zip(crate::updates::setup_target()));
                     let install_label = tr("updates.install");
                     let mut labels: Vec<&str> = Vec::new();
                     if in_place.is_some() {

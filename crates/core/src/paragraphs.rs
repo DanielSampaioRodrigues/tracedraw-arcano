@@ -280,7 +280,8 @@ pub fn edit_paragraph_formats(
     if range.is_none() {
         let mut probe = ParagraphFormat::of(*align, para);
         f(&mut probe);
-        if probe.orphans != 1 || probe.widows != 1 || probe.keep_with_next || probe.style.is_some() {
+        if probe.orphans != 1 || probe.widows != 1 || probe.keep_with_next || probe.style.is_some()
+        {
             let total: usize = spans.iter().map(|s| s.text.chars().count()).sum();
             return edit_paragraph_formats(kind, Some((0, total)), f);
         }
@@ -499,19 +500,35 @@ pub fn keep_split(
         return fitted;
     }
     let fmt = |i: usize| paragraph_format(spans, align, para, i);
-    let in_frame = |a: usize, b: usize| lines.iter().filter(|l| l.0 >= a && l.0 < b && l.1 <= fitted).count();
+    let in_frame = |a: usize, b: usize| {
+        lines
+            .iter()
+            .filter(|l| l.0 >= a && l.0 < b && l.1 <= fitted)
+            .count()
+    };
     let mut split = fitted;
     // The paragraph the split falls in.
-    let i = ranges.iter().position(|&(a, e)| split >= a && split <= e).unwrap_or(ranges.len() - 1);
+    let i = ranges
+        .iter()
+        .position(|&(a, e)| split >= a && split <= e)
+        .unwrap_or(ranges.len() - 1);
     let (a, e) = ranges[i];
     if split > a && split <= e {
         let f = fmt(i);
         let here = in_frame(a, split).max(1);
         // The lines carried on, at the width of the lines here.
-        let done: usize = lines.iter().filter(|l| l.0 >= a && l.1 <= split).map(|l| l.1 - l.0).sum();
+        let done: usize = lines
+            .iter()
+            .filter(|l| l.0 >= a && l.1 <= split)
+            .map(|l| l.1 - l.0)
+            .sum();
         let per_line = (done as f64 / here as f64).max(1.0);
         let after = ((e - split) as f64 / per_line).ceil() as usize;
-        let starts: Vec<usize> = lines.iter().filter(|l| l.0 >= a && l.1 <= split).map(|l| l.0).collect();
+        let starts: Vec<usize> = lines
+            .iter()
+            .filter(|l| l.0 >= a && l.1 <= split)
+            .map(|l| l.0)
+            .collect();
         if here < f.orphans as usize && a > 0 {
             split = a;
         } else if after < f.widows as usize {
@@ -524,7 +541,10 @@ pub fn keep_split(
         }
     }
     // Titles go on with what follows them.
-    let mut j = ranges.iter().position(|&(a, _)| a == split).unwrap_or(usize::MAX);
+    let mut j = ranges
+        .iter()
+        .position(|&(a, _)| a == split)
+        .unwrap_or(usize::MAX);
     while j != usize::MAX && j > 0 && fmt(j - 1).keep_with_next {
         let prev = ranges[j - 1].0;
         if prev == 0 {
@@ -571,9 +591,17 @@ mod keep_tests {
         };
         // One line of paragraph 1 fits (11..21): an orphan.
         let lines = [(0, 10), (11, 21)];
-        assert_eq!(keep_split(&sp, TextAlign::Left, &none, &lines, 21), 21, "no rule");
+        assert_eq!(
+            keep_split(&sp, TextAlign::Left, &none, &lines, 21),
+            21,
+            "no rule"
+        );
         set(&mut sp, &|f| f.orphans = 2);
-        assert_eq!(keep_split(&sp, TextAlign::Left, &none, &lines, 21), 11, "the paragraph goes whole");
+        assert_eq!(
+            keep_split(&sp, TextAlign::Left, &none, &lines, 21),
+            11,
+            "the paragraph goes whole"
+        );
         // Two lines fit, one would be carried: a widow; one line goes with it.
         set(&mut sp, &|f| {
             f.orphans = 1;
@@ -586,6 +614,10 @@ mod keep_tests {
             f.widows = 1;
             f.keep_with_next = true;
         });
-        assert_eq!(keep_split(&sp, TextAlign::Left, &none, &[(0, 10)], 11), 11, "a frame never gives up all its text");
+        assert_eq!(
+            keep_split(&sp, TextAlign::Left, &none, &[(0, 10)], 11),
+            11,
+            "a frame never gives up all its text"
+        );
     }
 }

@@ -21,9 +21,21 @@ fn dim(ui: &mut Ui, s: impl Into<String>) {
 
 /// The text services that are not picture services, for the Keys page.
 const TEXT_ONLY: [(&str, &str, &str); 3] = [
-    ("anthropic", "Anthropic (Claude)", "https://platform.claude.com/settings/keys"),
-    ("maritaca", "Maritaca AI (Sabiá)", "https://plataforma.maritaca.ai/"),
-    ("deepseek", "DeepSeek", "https://platform.deepseek.com/api_keys"),
+    (
+        "anthropic",
+        "Anthropic (Claude)",
+        "https://platform.claude.com/settings/keys",
+    ),
+    (
+        "maritaca",
+        "Maritaca AI (Sabiá)",
+        "https://plataforma.maritaca.ai/",
+    ),
+    (
+        "deepseek",
+        "DeepSeek",
+        "https://platform.deepseek.com/api_keys",
+    ),
 ];
 
 /// The service row of the docker's Create, Remix and Create vectors
@@ -113,7 +125,10 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
                         })
                         .inner;
                     if r.clicked() {
-                        app.settings.studio.models.insert(provider.clone(), m.id.clone());
+                        app.settings
+                            .studio
+                            .models
+                            .insert(provider.clone(), m.id.clone());
                         ui.close();
                     }
                     ui.add_space(3.0);
@@ -128,7 +143,10 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
                 .selected_text(resolution_label(&res_now))
                 .show_ui(ui, |ui| {
                     for r in &model.resolutions {
-                        if ui.selectable_label(*r == res_now, resolution_label(r)).clicked() {
+                        if ui
+                            .selectable_label(*r == res_now, resolution_label(r))
+                            .clicked()
+                        {
                             app.settings.studio.resolution = r.clone();
                         }
                     }
@@ -160,7 +178,12 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
         if op == Op::Generate && matches!(prm.name.as_str(), "strength" | "structure") {
             continue;
         }
-        param_ui(app, ui, &model_param_key(&provider, &model.id, &prm.name), prm);
+        param_ui(
+            app,
+            ui,
+            &model_param_key(&provider, &model.id, &prm.name),
+            prm,
+        );
     }
     if let Some(price) = model.price_caption(&res_now) {
         dim(ui, price);
@@ -182,7 +205,12 @@ fn resolution_label(r: &str) -> String {
 
 /// An editor for one choice, kept in `Studio::params` under `key`.
 fn param_ui(app: &mut App, ui: &mut Ui, key: &str, p: &Param) {
-    let current = app.studio.params.get(key).cloned().unwrap_or_else(|| p.default.clone());
+    let current = app
+        .studio
+        .params
+        .get(key)
+        .cloned()
+        .unwrap_or_else(|| p.default.clone());
     ui.horizontal(|ui| {
         ui.label(text(&p.label));
         match p.kind.as_str() {
@@ -206,7 +234,9 @@ fn param_ui(app: &mut App, ui: &mut Ui, key: &str, p: &Param) {
             "number" => {
                 let lo = p.min.unwrap_or(0.0);
                 let hi = p.max.unwrap_or(100.0);
-                let whole = lo.fract() == 0.0 && hi.fract() == 0.0 && hi - lo > 1.0
+                let whole = lo.fract() == 0.0
+                    && hi.fract() == 0.0
+                    && hi - lo > 1.0
                     && p.default.as_f64().is_some_and(|d| d.fract() == 0.0);
                 let mut v = current.as_f64().unwrap_or(lo);
                 let speed = if whole { 1.0 } else { (hi - lo) / 100.0 };
@@ -226,7 +256,9 @@ fn param_ui(app: &mut App, ui: &mut Ui, key: &str, p: &Param) {
             _ => {
                 let mut s = current.as_str().unwrap_or_default().to_string();
                 if ui.text_edit_singleline(&mut s).changed() {
-                    app.studio.params.insert(key.to_string(), serde_json::json!(s));
+                    app.studio
+                        .params
+                        .insert(key.to_string(), serde_json::json!(s));
                 }
             }
         }
@@ -262,7 +294,8 @@ pub fn edit_page(app: &mut App, ui: &mut Ui) {
                     app.studio_cancel();
                 }
             });
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(200));
         }
         crate::ai_image::ImageStatus::Failed(e) => {
             ui.add(egui::Label::new(RichText::new(e.clone()).color(ERROR)).wrap());
@@ -276,7 +309,10 @@ pub fn edit_page(app: &mut App, ui: &mut Ui) {
     ui.add_enabled_ui(can, |ui| {
         let label = format!("\u{2728} {}", tr(app.studio.op.key()));
         if ui
-            .add_sized([ui.available_width(), 28.0], egui::Button::new(RichText::new(label).strong()))
+            .add_sized(
+                [ui.available_width(), 28.0],
+                egui::Button::new(RichText::new(label).strong()),
+            )
             .clicked()
         {
             app.studio_edit();
@@ -289,8 +325,18 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
     match app.ai_source_bitmap() {
         Some((id, _)) => {
             if let Some(shape) = app.doc().find_shape(id).cloned() {
-                if let tracedraw_core::document::ShapeKind::Bitmap { rect, width_px, height_px, .. } = &shape.kind {
-                    let dpi = if rect.width() > 0.0 { *width_px as f64 / (rect.width() / 25.4) } else { 0.0 };
+                if let tracedraw_core::document::ShapeKind::Bitmap {
+                    rect,
+                    width_px,
+                    height_px,
+                    ..
+                } = &shape.kind
+                {
+                    let dpi = if rect.width() > 0.0 {
+                        *width_px as f64 / (rect.width() / 25.4)
+                    } else {
+                        0.0
+                    };
                     ui.label(trf(
                         "studio.selected_bitmap",
                         &[
@@ -313,7 +359,10 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
             if app.studio.catalog.services_for(op).is_empty() {
                 continue;
             }
-            if ui.selectable_label(app.studio.op == op, tr(op.key())).clicked() {
+            if ui
+                .selectable_label(app.studio.op == op, tr(op.key()))
+                .clicked()
+            {
                 app.studio.op = op;
             }
         }
@@ -346,9 +395,16 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
             .show_ui(ui, |ui| {
                 for (id, name) in &services {
                     let has_key = !app.studio_key(id).trim().is_empty();
-                    let label = if has_key { name.clone() } else { trf("studio.no_key_suffix", &[("name", name)]) };
+                    let label = if has_key {
+                        name.clone()
+                    } else {
+                        trf("studio.no_key_suffix", &[("name", name)])
+                    };
                     if ui.selectable_label(*id == provider, label).clicked() {
-                        app.settings.studio.op_providers.insert(op.id().to_string(), id.clone());
+                        app.settings
+                            .studio
+                            .op_providers
+                            .insert(op.id().to_string(), id.clone());
                     }
                 }
             });
@@ -362,7 +418,13 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
         });
     }
     // How: the variants of the operation at this service.
-    let Some(info) = app.studio.catalog.provider(&provider).and_then(|p| p.op(op)).cloned() else {
+    let Some(info) = app
+        .studio
+        .catalog
+        .provider(&provider)
+        .and_then(|p| p.op(op))
+        .cloned()
+    else {
         return;
     };
     let Some(variant) = app.studio_variant(&provider, op) else {
@@ -379,7 +441,10 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
                     for v in &info.variants {
                         let r = ui
                             .vertical(|ui| {
-                                let r = ui.radio(v.id == variant.id, RichText::new(text(&v.label)).strong());
+                                let r = ui.radio(
+                                    v.id == variant.id,
+                                    RichText::new(text(&v.label)).strong(),
+                                );
                                 dim(ui, text(&v.note));
                                 if let Some(p) = v.price_caption() {
                                     dim(ui, p);
@@ -404,11 +469,20 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
         expand_to_shape(app, ui, &provider, &variant.id);
     }
     for p in &variant.params {
-        param_ui(app, ui, &op_param_key(&provider, op, &variant.id, &p.name), p);
+        param_ui(
+            app,
+            ui,
+            &op_param_key(&provider, op, &variant.id, &p.name),
+            p,
+        );
     }
     // Words.
     if op.takes_prompt() || op == Op::Expand {
-        let hint = if op.takes_prompt() { tr("studio.prompt_hint") } else { tr("studio.prompt_optional") };
+        let hint = if op.takes_prompt() {
+            tr("studio.prompt_hint")
+        } else {
+            tr("studio.prompt_optional")
+        };
         ui.add(
             egui::TextEdit::multiline(&mut app.studio.prompt)
                 .hint_text(hint)
@@ -443,7 +517,9 @@ fn expand_to_shape(app: &mut App, ui: &mut Ui, provider: &str, variant: &str) {
         crate::ui::combo::from_id_salt("studio_expand_to")
             .selected_text(tr("studio.expand_pick"))
             .show_ui(ui, |ui| {
-                for a in ["1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9", "21:9"] {
+                for a in [
+                    "1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9", "21:9",
+                ] {
                     if ui.selectable_label(false, a).clicked() {
                         let (l, r, t, b) = pads_to(w, h, a);
                         for (name, v) in [("left", l), ("right", r), ("top", t), ("bottom", b)] {
@@ -510,12 +586,19 @@ pub fn keys_page(app: &mut App, ui: &mut Ui) {
                     app.studio_set_key(&id, key.clone());
                 }
                 ui.horizontal(|ui| {
-                    if ui.small_button(tr("studio.get_key")).on_hover_text(url.clone()).clicked() {
+                    if ui
+                        .small_button(tr("studio.get_key"))
+                        .on_hover_text(url.clone())
+                        .clicked()
+                    {
                         app.open_url(&url);
                     }
                     if testable
                         && ui
-                            .add_enabled(!key.trim().is_empty(), egui::Button::new(tr("studio.test")).small())
+                            .add_enabled(
+                                !key.trim().is_empty(),
+                                egui::Button::new(tr("studio.test")).small(),
+                            )
                             .on_hover_text(tr("studio.test_tip"))
                             .clicked()
                     {
@@ -525,7 +608,8 @@ pub fn keys_page(app: &mut App, ui: &mut Ui) {
                 match app.studio.tests.get(&id) {
                     Some(KeyTest::Testing) => {
                         ui.spinner();
-                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+                        ui.ctx()
+                            .request_repaint_after(std::time::Duration::from_millis(200));
                     }
                     Some(KeyTest::Works(note)) => {
                         ui.label(RichText::new(format!("\u{2714} {note}")).color(OK));
@@ -551,7 +635,13 @@ pub fn keys_page(app: &mut App, ui: &mut Ui) {
         app.studio_remember_keys(remember);
     }
     dim(ui, tr("studio.keys_privacy"));
-    dim(ui, trf("studio.catalog_line", &[("date", &app.studio.catalog.checked)]));
+    dim(
+        ui,
+        trf(
+            "studio.catalog_line",
+            &[("date", &app.studio.catalog.checked)],
+        ),
+    );
 }
 
 #[cfg(test)]
@@ -572,7 +662,10 @@ mod tests {
         let mut app = App::headless();
         let run = |app: &mut App, f: &dyn Fn(&mut App, &mut Ui)| {
             let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(420.0, 900.0))),
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(420.0, 900.0),
+                )),
                 ..Default::default()
             };
             let mut out = ctx.run_ui(input, |ui| f(app, ui));

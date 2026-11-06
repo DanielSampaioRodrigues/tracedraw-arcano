@@ -121,7 +121,12 @@ impl App {
     /// The key for `provider`: the studio's, else the main AI service's
     /// when that service is the same company.
     pub fn studio_key(&self, provider: &str) -> String {
-        if let Some(k) = self.studio.keys.get(provider).filter(|k| !k.trim().is_empty()) {
+        if let Some(k) = self
+            .studio
+            .keys
+            .get(provider)
+            .filter(|k| !k.trim().is_empty())
+        {
             return k.clone();
         }
         let main = crate::ai::preset_of(&self.settings.ai)
@@ -140,7 +145,10 @@ impl App {
             if key.trim().is_empty() {
                 self.settings.studio.keys.remove(provider);
             } else {
-                self.settings.studio.keys.insert(provider.to_string(), key.clone());
+                self.settings
+                    .studio
+                    .keys
+                    .insert(provider.to_string(), key.clone());
             }
         }
         // The main AI service's key, when it is the same company.
@@ -319,13 +327,19 @@ impl App {
         }
         let prompt = crate::ai_image::compose_prompt(
             &words,
-            if vector { self.ai_image.vector_style } else { self.ai_image.style },
+            if vector {
+                self.ai_image.vector_style
+            } else {
+                self.ai_image.style
+            },
             self.ai_image.palette,
             vector,
         );
         let aspect = match (self.ai_image.aspect, &source) {
             (crate::ai_image::Aspect::MatchSource, Some(s)) => {
-                crate::ai_image::Aspect::nearest(s.width, s.height).ratio().to_string()
+                crate::ai_image::Aspect::nearest(s.width, s.height)
+                    .ratio()
+                    .to_string()
             }
             _ => self.settings.studio.aspect.clone(),
         };
@@ -346,7 +360,10 @@ impl App {
             params,
             prompt,
             image: source.as_ref().map(|s| s.png.clone()),
-            image_size: source.as_ref().map(|s| (s.width, s.height)).unwrap_or((0, 0)),
+            image_size: source
+                .as_ref()
+                .map(|s| (s.width, s.height))
+                .unwrap_or((0, 0)),
             aspect: model.fit_aspect(&aspect),
             resolution: model.fit_resolution(&self.settings.studio.resolution),
             count: 1,
@@ -424,7 +441,13 @@ impl App {
                     self.ai_image.status = ImageStatus::Failed(tr("studio.expand_nothing"));
                     return;
                 }
-                Target::Expand { shape, left, right, top, bottom }
+                Target::Expand {
+                    shape,
+                    left,
+                    right,
+                    top,
+                    bottom,
+                }
             }
             Op::RemoveBackground => Target::Cutout(shape),
             Op::Vectorize => Target::Vector(shape),
@@ -495,7 +518,9 @@ impl App {
                 Err(TryRecvError::Empty) => {}
             }
         }
-        self.studio.busy() || !self.studio.key_jobs.is_empty() || self.studio.catalog_fetch.is_some()
+        self.studio.busy()
+            || !self.studio.key_jobs.is_empty()
+            || self.studio.catalog_fetch.is_some()
     }
 
     /// Stop waiting (answers are dropped when they come).
@@ -512,8 +537,12 @@ impl App {
         let key = self.studio_key(provider);
         let t = self.studio.transport.clone();
         let p = provider.to_string();
-        let rx = spawn(self.studio.sync, move || super::test_key(t.as_ref(), &p, &key));
-        self.studio.tests.insert(provider.to_string(), KeyTest::Testing);
+        let rx = spawn(self.studio.sync, move || {
+            super::test_key(t.as_ref(), &p, &key)
+        });
+        self.studio
+            .tests
+            .insert(provider.to_string(), KeyTest::Testing);
         self.studio.key_jobs.push((provider.to_string(), rx));
         self.poll_studio();
     }
@@ -578,7 +607,10 @@ impl App {
             }
         }
         self.ai_image.status = if self.studio.busy() {
-            ImageStatus::Waiting { done, total: self.studio.total }
+            ImageStatus::Waiting {
+                done,
+                total: self.studio.total,
+            }
         } else {
             self.studio.trace_next = false;
             if self.ai_image.made == 0 {
@@ -616,9 +648,13 @@ impl App {
             }
             Target::Cutout(shape) => self.ai_apply_cutout(shape, img, false),
             Target::Replace(shape) => self.studio_replace_pixels(shape, img, None),
-            Target::Expand { shape, left, right, top, bottom } => {
-                self.studio_replace_pixels(shape, img, Some((left, right, top, bottom)))
-            }
+            Target::Expand {
+                shape,
+                left,
+                right,
+                top,
+                bottom,
+            } => self.studio_replace_pixels(shape, img, Some((left, right, top, bottom))),
             Target::Vector(shape) => {
                 // A service that answers vectorize with pixels: trace them.
                 self.studio_replace_pixels(shape, img, None);
@@ -628,12 +664,23 @@ impl App {
 
     /// The picture `shape` with new pixels: the same frame, or one grown
     /// by `grow` (left, right, top, bottom, in the old picture's pixels).
-    fn studio_replace_pixels(&mut self, shape: ShapeId, img: GenImage, grow: Option<(u32, u32, u32, u32)>) {
+    fn studio_replace_pixels(
+        &mut self,
+        shape: ShapeId,
+        img: GenImage,
+        grow: Option<(u32, u32, u32, u32)>,
+    ) {
         let Some(src) = self.doc().find_shape(shape).cloned() else {
             self.ai_image.errors.push(tr("aiimg.source_gone"));
             return;
         };
-        let ShapeKind::Bitmap { rect, width_px, height_px, .. } = &src.kind else {
+        let ShapeKind::Bitmap {
+            rect,
+            width_px,
+            height_px,
+            ..
+        } = &src.kind
+        else {
             self.ai_image.errors.push(tr("aiimg.source_gone"));
             return;
         };
@@ -678,7 +725,9 @@ impl App {
                 return;
             }
             Err(e) => {
-                self.ai_image.errors.push(trf("aiimg.bad_svg", &[("e", &e)]));
+                self.ai_image
+                    .errors
+                    .push(trf("aiimg.bad_svg", &[("e", &e)]));
                 return;
             }
         };
@@ -715,7 +764,10 @@ impl App {
         }
         if let Err(e) = self.engine.run_batch(
             LABEL_STUDIO,
-            &[Command::AddShape { layer, shape: group }],
+            &[Command::AddShape {
+                layer,
+                shape: group,
+            }],
         ) {
             self.ai_image.errors.push(e.to_string());
             return;
@@ -762,11 +814,17 @@ mod tests {
     fn answer(r: &crate::net::HttpRequest) -> crate::net::HttpResult {
         if r.url.ends_with("/vectorize") {
             let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\" fill=\"#f00\"/></svg>";
-            return reply(200, json!({"image": {"image_id": "1", "b64_json": super::super::transport::base64(svg)}}));
+            return reply(
+                200,
+                json!({"image": {"image_id": "1", "b64_json": super::super::transport::base64(svg)}}),
+            );
         }
         let png = super::super::transport::base64(&super::super::test_png(64, 48));
         if r.url.contains("recraft") {
-            if r.url.ends_with("/generations") || r.url.ends_with("/imageToImage") || r.url.ends_with("/outpaint") {
+            if r.url.ends_with("/generations")
+                || r.url.ends_with("/imageToImage")
+                || r.url.ends_with("/outpaint")
+            {
                 return reply(200, json!({"data": [{"image_id": "1", "b64_json": png}]}));
             }
             return reply(200, json!({"image": {"image_id": "1", "b64_json": png}}));
@@ -798,7 +856,10 @@ mod tests {
     }
 
     fn kind(app: &App, id: ShapeId) -> ShapeKind {
-        app.doc().find_shape(id).map(|s| s.kind.clone()).expect("shape")
+        app.doc()
+            .find_shape(id)
+            .map(|s| s.kind.clone())
+            .expect("shape")
     }
 
     #[test]
@@ -808,7 +869,12 @@ mod tests {
         app.ai_image.prompt = "a fox".into();
         app.ai_image.count = 2;
         app.ai_generate();
-        assert_eq!(app.ai_image.status, ImageStatus::Done(2), "{:?}", app.ai_image.status);
+        assert_eq!(
+            app.ai_image.status,
+            ImageStatus::Done(2),
+            "{:?}",
+            app.ai_image.status
+        );
         let n = app
             .doc()
             .all_layers()
@@ -824,11 +890,20 @@ mod tests {
         let id = bitmap(&mut app);
         app.studio.op = Op::Upscale;
         app.studio_edit();
-        assert_eq!(app.ai_image.status, ImageStatus::Done(1), "{:?}", app.ai_image.status);
-        let ShapeKind::Bitmap { rect, width_px, .. } = kind(&app, id) else { panic!("bitmap") };
+        assert_eq!(
+            app.ai_image.status,
+            ImageStatus::Done(1),
+            "{:?}",
+            app.ai_image.status
+        );
+        let ShapeKind::Bitmap { rect, width_px, .. } = kind(&app, id) else {
+            panic!("bitmap")
+        };
         assert_eq!((rect, width_px), (Rect::new(10.0, 10.0, 42.0, 34.0), 64));
         app.undo();
-        let ShapeKind::Bitmap { width_px, .. } = kind(&app, id) else { panic!("bitmap") };
+        let ShapeKind::Bitmap { width_px, .. } = kind(&app, id) else {
+            panic!("bitmap")
+        };
         assert_eq!(width_px, 320, "one undo step");
     }
 
@@ -837,17 +912,39 @@ mod tests {
         let mut app = app();
         let id = bitmap(&mut app);
         app.studio.op = Op::Expand;
-        app.studio.params.insert(op_param_key("recraft", Op::Expand, "outpaint", "right"), json!(160));
-        app.studio.params.insert(op_param_key("recraft", Op::Expand, "outpaint", "top"), json!(120));
+        app.studio.params.insert(
+            op_param_key("recraft", Op::Expand, "outpaint", "right"),
+            json!(160),
+        );
+        app.studio.params.insert(
+            op_param_key("recraft", Op::Expand, "outpaint", "top"),
+            json!(120),
+        );
         app.studio_edit();
-        assert_eq!(app.ai_image.status, ImageStatus::Done(1), "{:?}", app.ai_image.status);
-        let ShapeKind::Bitmap { rect, .. } = kind(&app, id) else { panic!("bitmap") };
+        assert_eq!(
+            app.ai_image.status,
+            ImageStatus::Done(1),
+            "{:?}",
+            app.ai_image.status
+        );
+        let ShapeKind::Bitmap { rect, .. } = kind(&app, id) else {
+            panic!("bitmap")
+        };
         // 320 px over 32 mm: 0.1 mm a pixel.
-        assert!((rect.x1 - 58.0).abs() < 1e-6 && (rect.y1 - 46.0).abs() < 1e-6 && rect.x0 == 10.0 && rect.y0 == 10.0, "{rect:?}");
+        assert!(
+            (rect.x1 - 58.0).abs() < 1e-6
+                && (rect.y1 - 46.0).abs() < 1e-6
+                && rect.x0 == 10.0
+                && rect.y0 == 10.0,
+            "{rect:?}"
+        );
         // Nothing to add: refused before anything is sent.
         app.studio.params.clear();
         app.studio_edit();
-        assert_eq!(app.ai_image.status, ImageStatus::Failed(tr("studio.expand_nothing")));
+        assert_eq!(
+            app.ai_image.status,
+            ImageStatus::Failed(tr("studio.expand_nothing"))
+        );
     }
 
     #[test]
@@ -856,11 +953,22 @@ mod tests {
         bitmap(&mut app);
         app.studio.op = Op::Vectorize;
         app.studio_edit();
-        assert_eq!(app.ai_image.status, ImageStatus::Done(1), "{:?}", app.ai_image.status);
+        assert_eq!(
+            app.ai_image.status,
+            ImageStatus::Done(1),
+            "{:?}",
+            app.ai_image.status
+        );
         let sel = app.selected_shapes();
-        assert!(matches!(sel.first().map(|s| &s.kind), Some(ShapeKind::Group { .. })));
+        assert!(matches!(
+            sel.first().map(|s| &s.kind),
+            Some(ShapeKind::Group { .. })
+        ));
         // Another service without a key.
-        app.settings.studio.op_providers.insert("upscale".into(), "stability".into());
+        app.settings
+            .studio
+            .op_providers
+            .insert("upscale".into(), "stability".into());
         app.studio.op = Op::Upscale;
         bitmap(&mut app);
         app.studio_edit();
@@ -875,7 +983,10 @@ mod tests {
         assert_eq!(app.ai.key, "ak");
         assert_eq!(app.studio_key("anthropic"), "ak");
         assert_eq!(app.studio_key("recraft"), "rk");
-        assert_eq!(app.settings.studio.keys.get("recraft").map(String::as_str), Some("rk"));
+        assert_eq!(
+            app.settings.studio.keys.get("recraft").map(String::as_str),
+            Some("rk")
+        );
         app.studio_remember_keys(false);
         assert!(app.settings.studio.keys.is_empty());
         assert_eq!(app.studio_key("recraft"), "rk", "still in use this session");

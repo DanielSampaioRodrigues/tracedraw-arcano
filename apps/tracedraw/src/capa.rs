@@ -228,15 +228,25 @@ pub fn calcular(spec: &CapaSpec, prefs: &CapaPrefs) -> Calculo {
     let (l, a) = (pos(spec.largura), pos(spec.altura));
     match spec.acabamento {
         Acabamento::Brochura => {
-            let cartao = find(&prefs.cartoes, &spec.cartao, |m| &m.id).map(|m| m.esp).unwrap_or(0.0);
-            let ajuste = if spec.ajuste.is_finite() { spec.ajuste } else { 0.0 };
+            let cartao = find(&prefs.cartoes, &spec.cartao, |m| &m.id)
+                .map(|m| m.esp)
+                .unwrap_or(0.0);
+            let ajuste = if spec.ajuste.is_finite() {
+                spec.ajuste
+            } else {
+                0.0
+            };
             let lombada = (miolo + 2.0 * cartao + ajuste).max(0.0);
             let o = pos(spec.orelha);
             let mut paineis = Vec::new();
             if o > 0.0 {
                 paineis.push((Painel::Orelha, o));
             }
-            paineis.extend([(Painel::Contracapa, l), (Painel::Lombada, lombada), (Painel::Capa, l)]);
+            paineis.extend([
+                (Painel::Contracapa, l),
+                (Painel::Lombada, lombada),
+                (Painel::Capa, l),
+            ]);
             if o > 0.0 {
                 paineis.push((Painel::Orelha, o));
             }
@@ -254,7 +264,9 @@ pub fn calcular(spec: &CapaSpec, prefs: &CapaPrefs) -> Calculo {
             }
         }
         Acabamento::Dura => {
-            let board = find(&prefs.papeloes, &spec.papelao, |m| &m.id).map(|m| m.esp).unwrap_or(0.0);
+            let board = find(&prefs.papeloes, &spec.papelao, |m| &m.id)
+                .map(|m| m.esp)
+                .unwrap_or(0.0);
             let lombada = miolo + 2.0 * board + pos(spec.folga);
             let (bw, bh) = (l + pos(spec.sobra), a + 2.0 * pos(spec.sobra));
             let (v, cn) = (pos(spec.virada), pos(spec.canaleta));
@@ -319,7 +331,11 @@ pub fn documento(spec: &CapaSpec, c: &Calculo, title: String) -> Document {
     let seg = spec.seg.max(0.0);
     // The vertical stretch the artwork has: inside the boards' turn-in on
     // a hard cover, the whole height on a paperback.
-    let virada = if spec.acabamento == Acabamento::Dura { spec.virada.max(0.0) } else { 0.0 };
+    let virada = if spec.acabamento == Acabamento::Dura {
+        spec.virada.max(0.0)
+    } else {
+        0.0
+    };
     let (bottom, top) = (virada, c.altura - virada);
     if virada > 0.0 {
         guides.push(h(bottom));
@@ -339,7 +355,13 @@ pub fn documento(spec: &CapaSpec, c: &Calculo, title: String) -> Document {
     doc.pages[0].guides = guides;
     // The panels' names, on a layer that neither prints nor moves.
     let name = crate::i18n::tr("capa.layer_guides");
-    if (Command::AddLayer { page, name: name.clone() }).apply(&mut doc).is_ok() {
+    if (Command::AddLayer {
+        page,
+        name: name.clone(),
+    })
+    .apply(&mut doc)
+    .is_ok()
+    {
         let layer_id = doc.pages[0].layers.last().map(|l| l.id);
         if let Some(layer_id) = layer_id {
             let gray = Color::rgb8(120, 120, 120);
@@ -361,7 +383,11 @@ pub fn documento(spec: &CapaSpec, c: &Calculo, title: String) -> Document {
                     s.name = Some(p.nome());
                     s.fill = Fill::Solid(gray);
                     s.stroke = None;
-                    let _ = (Command::AddShape { layer: layer_id, shape: s }).apply(&mut doc);
+                    let _ = (Command::AddShape {
+                        layer: layer_id,
+                        shape: s,
+                    })
+                    .apply(&mut doc);
                 }
             }
             if let Ok(l) = doc.layer_mut(layer_id) {
@@ -377,7 +403,10 @@ pub fn documento(spec: &CapaSpec, c: &Calculo, title: String) -> Document {
 pub fn avisos(spec: &CapaSpec, c: &Calculo) -> Vec<String> {
     let mut out = Vec::new();
     if spec.paginas % 2 == 1 {
-        out.push(crate::i18n::trf("capa.warn_odd", &[("n", &spec.paginas.to_string())]));
+        out.push(crate::i18n::trf(
+            "capa.warn_odd",
+            &[("n", &spec.paginas.to_string())],
+        ));
     }
     if c.lombada < 3.0 && spec.paginas > 0 {
         out.push(crate::i18n::tr("capa.warn_thin_spine"));
@@ -407,12 +436,28 @@ mod tests {
         // Back, spine, front: 140 + 11,14 + 140.
         assert!(close(c.largura, 291.14));
         assert!(close(c.altura, 210.0));
-        assert_eq!(c.paineis.iter().map(|p| p.0).collect::<Vec<_>>(), vec![Painel::Contracapa, Painel::Lombada, Painel::Capa]);
+        assert_eq!(
+            c.paineis.iter().map(|p| p.0).collect::<Vec<_>>(),
+            vec![Painel::Contracapa, Painel::Lombada, Painel::Capa]
+        );
         // An odd page count takes a whole sheet.
-        let c = calcular(&CapaSpec { paginas: 201, ..spec.clone() }, &prefs);
+        let c = calcular(
+            &CapaSpec {
+                paginas: 201,
+                ..spec.clone()
+            },
+            &prefs,
+        );
         assert_eq!(c.folhas, 101);
         // Flaps on both sides, and the house correction.
-        let c = calcular(&CapaSpec { orelha: 80.0, ajuste: 0.5, ..spec.clone() }, &prefs);
+        let c = calcular(
+            &CapaSpec {
+                orelha: 80.0,
+                ajuste: 0.5,
+                ..spec.clone()
+            },
+            &prefs,
+        );
         assert!(close(c.lombada, 11.64));
         assert!(close(c.largura, 80.0 + 140.0 + 11.64 + 140.0 + 80.0));
         assert_eq!(c.paineis.first().map(|p| p.0), Some(Painel::Orelha));
@@ -441,7 +486,10 @@ mod tests {
     #[test]
     fn the_drawing_has_the_folds_the_bleed_and_the_names() {
         let prefs = CapaPrefs::default();
-        let spec = CapaSpec { orelha: 80.0, ..CapaSpec::default() };
+        let spec = CapaSpec {
+            orelha: 80.0,
+            ..CapaSpec::default()
+        };
         let c = calcular(&spec, &prefs);
         let doc = documento(&spec, &c, "Livro".into());
         let page = &doc.pages[0];
@@ -470,7 +518,11 @@ mod tests {
 
     #[test]
     fn nothing_breaks_on_odd_values() {
-        let prefs = CapaPrefs { papeis: Vec::new(), cartoes: Vec::new(), ..CapaPrefs::default() };
+        let prefs = CapaPrefs {
+            papeis: Vec::new(),
+            cartoes: Vec::new(),
+            ..CapaPrefs::default()
+        };
         let spec = CapaSpec {
             paginas: 0,
             largura: f64::NAN,
@@ -520,7 +572,11 @@ impl crate::app::App {
         self.settings.capa.ultima = spec.clone();
         self.status = crate::i18n::trf(
             "capa.created",
-            &[("spine", &mm(c.lombada)), ("w", &mm(c.largura)), ("h", &mm(c.altura))],
+            &[
+                ("spine", &mm(c.lombada)),
+                ("w", &mm(c.largura)),
+                ("h", &mm(c.altura)),
+            ],
         );
     }
 }
@@ -563,91 +619,113 @@ fn combo(ui: &mut egui::Ui, id: &str, value: &mut String, items: &[(String, Stri
 
 /// The dialog: the cover's values on the left, what they make on the
 /// right; Papers opens the table of papers, cards and boards.
-pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut CapaDialog, close: &mut bool) {
+pub fn dialog(
+    app: &mut crate::app::App,
+    ctx: &egui::Context,
+    st: &mut CapaDialog,
+    close: &mut bool,
+) {
     use crate::i18n::{tr, trf};
     use crate::ui::tips::RichTip as _;
     let mut create = false;
     crate::ui::dialogs::window(ctx, tr("capa.title")).show(ctx, |ui| {
         let prefs = &mut app.settings.capa;
         let s = &mut st.spec;
-        egui::Grid::new("capa_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label(tr("capa.name"));
-            ui.add(egui::TextEdit::singleline(&mut s.nome).desired_width(220.0))
-                .rich_tip(tip("capa.name"));
-            ui.end_row();
-            ui.label(tr("capa.trim"));
-            ui.horizontal(|ui| {
-                mm_field(ui, &mut s.largura, "capa.width", 2000.0);
-                ui.label("×");
-                mm_field(ui, &mut s.altura, "capa.height", 2000.0);
-            });
-            ui.end_row();
-            ui.label(tr("capa.pages"));
-            ui.add(crate::ui::field::NumField::new(&mut s.paginas).range(0..=5000).width(90.0))
+        egui::Grid::new("capa_grid")
+            .num_columns(2)
+            .spacing([10.0, 6.0])
+            .show(ui, |ui| {
+                ui.label(tr("capa.name"));
+                ui.add(egui::TextEdit::singleline(&mut s.nome).desired_width(220.0))
+                    .rich_tip(tip("capa.name"));
+                ui.end_row();
+                ui.label(tr("capa.trim"));
+                ui.horizontal(|ui| {
+                    mm_field(ui, &mut s.largura, "capa.width", 2000.0);
+                    ui.label("×");
+                    mm_field(ui, &mut s.altura, "capa.height", 2000.0);
+                });
+                ui.end_row();
+                ui.label(tr("capa.pages"));
+                ui.add(
+                    crate::ui::field::NumField::new(&mut s.paginas)
+                        .range(0..=5000)
+                        .width(90.0),
+                )
                 .rich_tip(tip("capa.pages"));
-            ui.end_row();
-            ui.label(tr("capa.paper"));
-            let papers: Vec<(String, String)> =
-                prefs.papeis.iter().map(|p| (p.id.clone(), p.nome.clone())).collect();
-            combo(ui, "capa_paper", &mut s.papel, &papers, "capa.paper");
-            ui.end_row();
-            ui.label(tr("capa.binding"));
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut s.acabamento, Acabamento::Brochura, tr("capa.paperback"))
-                    .rich_tip(tip("capa.paperback"));
-                ui.radio_value(&mut s.acabamento, Acabamento::Dura, tr("capa.hardcover"))
-                    .rich_tip(tip("capa.hardcover"));
-            });
-            ui.end_row();
-            match s.acabamento {
-                Acabamento::Brochura => {
-                    ui.label(tr("capa.card"));
-                    let cards: Vec<(String, String)> = prefs
-                        .cartoes
-                        .iter()
-                        .map(|m| (m.id.clone(), format!("{} ({} mm)", m.nome, mm(m.esp))))
-                        .collect();
-                    combo(ui, "capa_card", &mut s.cartao, &cards, "capa.card");
-                    ui.end_row();
-                    ui.label(tr("capa.flap"));
-                    mm_field(ui, &mut s.orelha, "capa.flap", 500.0);
-                    ui.end_row();
-                    ui.label(tr("capa.adjust"));
-                    ui.add(
-                        crate::ui::field::NumField::new(&mut s.ajuste)
-                            .range(-20.0..=20.0)
-                            .max_decimals(2)
-                            .suffix(" mm")
-                            .width(90.0),
+                ui.end_row();
+                ui.label(tr("capa.paper"));
+                let papers: Vec<(String, String)> = prefs
+                    .papeis
+                    .iter()
+                    .map(|p| (p.id.clone(), p.nome.clone()))
+                    .collect();
+                combo(ui, "capa_paper", &mut s.papel, &papers, "capa.paper");
+                ui.end_row();
+                ui.label(tr("capa.binding"));
+                ui.horizontal(|ui| {
+                    ui.radio_value(
+                        &mut s.acabamento,
+                        Acabamento::Brochura,
+                        tr("capa.paperback"),
                     )
-                    .rich_tip(tip("capa.adjust"));
-                    ui.end_row();
-                }
-                Acabamento::Dura => {
-                    ui.label(tr("capa.board"));
-                    let boards: Vec<(String, String)> =
-                        prefs.papeloes.iter().map(|m| (m.id.clone(), m.nome.clone())).collect();
-                    combo(ui, "capa_board", &mut s.papelao, &boards, "capa.board");
-                    ui.end_row();
-                    for (v, key) in [
-                        (&mut s.folga, "capa.play"),
-                        (&mut s.sobra, "capa.overhang"),
-                        (&mut s.canaleta, "capa.hinge"),
-                        (&mut s.virada, "capa.turn_in"),
-                    ] {
-                        ui.label(tr(key));
-                        mm_field(ui, v, key, 100.0);
+                    .rich_tip(tip("capa.paperback"));
+                    ui.radio_value(&mut s.acabamento, Acabamento::Dura, tr("capa.hardcover"))
+                        .rich_tip(tip("capa.hardcover"));
+                });
+                ui.end_row();
+                match s.acabamento {
+                    Acabamento::Brochura => {
+                        ui.label(tr("capa.card"));
+                        let cards: Vec<(String, String)> = prefs
+                            .cartoes
+                            .iter()
+                            .map(|m| (m.id.clone(), format!("{} ({} mm)", m.nome, mm(m.esp))))
+                            .collect();
+                        combo(ui, "capa_card", &mut s.cartao, &cards, "capa.card");
+                        ui.end_row();
+                        ui.label(tr("capa.flap"));
+                        mm_field(ui, &mut s.orelha, "capa.flap", 500.0);
+                        ui.end_row();
+                        ui.label(tr("capa.adjust"));
+                        ui.add(
+                            crate::ui::field::NumField::new(&mut s.ajuste)
+                                .range(-20.0..=20.0)
+                                .max_decimals(2)
+                                .suffix(" mm")
+                                .width(90.0),
+                        )
+                        .rich_tip(tip("capa.adjust"));
                         ui.end_row();
                     }
+                    Acabamento::Dura => {
+                        ui.label(tr("capa.board"));
+                        let boards: Vec<(String, String)> = prefs
+                            .papeloes
+                            .iter()
+                            .map(|m| (m.id.clone(), m.nome.clone()))
+                            .collect();
+                        combo(ui, "capa_board", &mut s.papelao, &boards, "capa.board");
+                        ui.end_row();
+                        for (v, key) in [
+                            (&mut s.folga, "capa.play"),
+                            (&mut s.sobra, "capa.overhang"),
+                            (&mut s.canaleta, "capa.hinge"),
+                            (&mut s.virada, "capa.turn_in"),
+                        ] {
+                            ui.label(tr(key));
+                            mm_field(ui, v, key, 100.0);
+                            ui.end_row();
+                        }
+                    }
                 }
-            }
-            ui.label(tr("capa.bleed"));
-            mm_field(ui, &mut s.sangria, "capa.bleed", 50.0);
-            ui.end_row();
-            ui.label(tr("capa.safety"));
-            mm_field(ui, &mut s.seg, "capa.safety", 50.0);
-            ui.end_row();
-        });
+                ui.label(tr("capa.bleed"));
+                mm_field(ui, &mut s.sangria, "capa.bleed", 50.0);
+                ui.end_row();
+                ui.label(tr("capa.safety"));
+                mm_field(ui, &mut s.seg, "capa.safety", 50.0);
+                ui.end_row();
+            });
         ui.separator();
         let c = calcular(s, prefs);
         ui.label(
@@ -697,7 +775,11 @@ pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut CapaDialo
         ui.separator();
         ui.horizontal(|ui| {
             if ui
-                .button(tr(if st.tabela { "capa.papers_hide" } else { "capa.papers" }))
+                .button(tr(if st.tabela {
+                    "capa.papers_hide"
+                } else {
+                    "capa.papers"
+                }))
                 .rich_tip(tip("capa.papers"))
                 .clicked()
             {
@@ -726,50 +808,88 @@ fn tabela(ui: &mut egui::Ui, prefs: &mut CapaPrefs) {
     use crate::i18n::tr;
     use crate::ui::tips::RichTip as _;
     let mut remove = None;
-    egui::Grid::new("capa_papers").num_columns(5).striped(true).show(ui, |ui| {
-        for k in ["capa.col_name", "capa.col_gram", "capa.col_bulk", "capa.col_sheet"] {
-            ui.label(egui::RichText::new(tr(k)).strong());
-        }
-        ui.label("");
-        ui.end_row();
-        for (i, p) in prefs.papeis.iter_mut().enumerate() {
-            ui.add(egui::TextEdit::singleline(&mut p.nome).desired_width(170.0))
-                .rich_tip(tip("capa.col_name"));
-            ui.add(crate::ui::field::NumField::new(&mut p.gram).range(1.0..=1000.0).max_decimals(1).suffix(" g").width(70.0))
-                .rich_tip(tip("capa.col_gram"));
-            ui.add(crate::ui::field::NumField::new(&mut p.volume).range(0.1..=5.0).max_decimals(3).width(60.0))
-                .rich_tip(tip("capa.col_bulk"));
-            ui.label(format!("{:.4} mm", p.folha()).replace('.', ","));
-            if ui.small_button("✕").rich_tip(tip("capa.remove")).clicked() {
-                remove = Some(i);
+    egui::Grid::new("capa_papers")
+        .num_columns(5)
+        .striped(true)
+        .show(ui, |ui| {
+            for k in [
+                "capa.col_name",
+                "capa.col_gram",
+                "capa.col_bulk",
+                "capa.col_sheet",
+            ] {
+                ui.label(egui::RichText::new(tr(k)).strong());
             }
+            ui.label("");
             ui.end_row();
-        }
-    });
+            for (i, p) in prefs.papeis.iter_mut().enumerate() {
+                ui.add(egui::TextEdit::singleline(&mut p.nome).desired_width(170.0))
+                    .rich_tip(tip("capa.col_name"));
+                ui.add(
+                    crate::ui::field::NumField::new(&mut p.gram)
+                        .range(1.0..=1000.0)
+                        .max_decimals(1)
+                        .suffix(" g")
+                        .width(70.0),
+                )
+                .rich_tip(tip("capa.col_gram"));
+                ui.add(
+                    crate::ui::field::NumField::new(&mut p.volume)
+                        .range(0.1..=5.0)
+                        .max_decimals(3)
+                        .width(60.0),
+                )
+                .rich_tip(tip("capa.col_bulk"));
+                ui.label(format!("{:.4} mm", p.folha()).replace('.', ","));
+                if ui.small_button("✕").rich_tip(tip("capa.remove")).clicked() {
+                    remove = Some(i);
+                }
+                ui.end_row();
+            }
+        });
     if let Some(i) = remove {
         if prefs.papeis.len() > 1 {
             prefs.papeis.remove(i);
         }
     }
-    if ui.button(tr("capa.add_paper")).rich_tip(tip("capa.add_paper")).clicked() {
+    if ui
+        .button(tr("capa.add_paper"))
+        .rich_tip(tip("capa.add_paper"))
+        .clicked()
+    {
         let n = prefs.papeis.len() + 1;
         prefs.papeis.push(Papel {
-            id: format!("u{n}-{}", prefs.papeis.iter().map(|p| p.id.len()).sum::<usize>()),
+            id: format!(
+                "u{n}-{}",
+                prefs.papeis.iter().map(|p| p.id.len()).sum::<usize>()
+            ),
             nome: tr("capa.new_paper"),
             gram: 80.0,
             volume: 1.2,
         });
     }
     ui.add_space(4.0);
-    egui::Grid::new("capa_materials").num_columns(2).show(ui, |ui| {
-        for m in prefs.cartoes.iter_mut().chain(prefs.papeloes.iter_mut()) {
-            ui.label(&m.nome);
-            ui.add(crate::ui::field::NumField::new(&mut m.esp).range(0.01..=20.0).max_decimals(3).suffix(" mm").width(80.0))
+    egui::Grid::new("capa_materials")
+        .num_columns(2)
+        .show(ui, |ui| {
+            for m in prefs.cartoes.iter_mut().chain(prefs.papeloes.iter_mut()) {
+                ui.label(&m.nome);
+                ui.add(
+                    crate::ui::field::NumField::new(&mut m.esp)
+                        .range(0.01..=20.0)
+                        .max_decimals(3)
+                        .suffix(" mm")
+                        .width(80.0),
+                )
                 .rich_tip(tip("capa.material_thickness"));
-            ui.end_row();
-        }
-    });
-    if ui.button(tr("capa.reset_papers")).rich_tip(tip("capa.reset_papers")).clicked() {
+                ui.end_row();
+            }
+        });
+    if ui
+        .button(tr("capa.reset_papers"))
+        .rich_tip(tip("capa.reset_papers"))
+        .clicked()
+    {
         let d = CapaPrefs::default();
         prefs.papeis = d.papeis;
         prefs.cartoes = d.cartoes;

@@ -91,14 +91,33 @@ pub fn document_tabs(app: &mut App, ui: &mut Ui) {
 /// A tab: rounded at the top, the one in front in the colour of the
 /// rulers under it with a short accent line along its foot.
 fn paint_tab(painter: &egui::Painter, rect: Rect, active: bool, hovered: bool) {
-    let r = Rect::from_min_max(Pos2::new(rect.left() + 1.0, rect.top() + 3.0), Pos2::new(rect.right() - 1.0, rect.bottom()));
+    let r = Rect::from_min_max(
+        Pos2::new(rect.left() + 1.0, rect.top() + 3.0),
+        Pos2::new(rect.right() - 1.0, rect.bottom()),
+    );
     if active || hovered {
-        let fill = if active { crate::theme::Tokens::ruler_bg() } else { tab_fill(false, true) };
-        painter.rect_filled(r, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, fill);
+        let fill = if active {
+            crate::theme::Tokens::ruler_bg()
+        } else {
+            tab_fill(false, true)
+        };
+        painter.rect_filled(
+            r,
+            egui::CornerRadius {
+                nw: 6,
+                ne: 6,
+                sw: 0,
+                se: 0,
+            },
+            fill,
+        );
     }
     if active {
         painter.rect_filled(
-            Rect::from_min_max(Pos2::new(r.left() + 8.0, r.bottom() - 2.0), Pos2::new(r.right() - 8.0, r.bottom())),
+            Rect::from_min_max(
+                Pos2::new(r.left() + 8.0, r.bottom() - 2.0),
+                Pos2::new(r.right() - 8.0, r.bottom()),
+            ),
             1.0,
             crate::theme::Tokens::ACCENT,
         );

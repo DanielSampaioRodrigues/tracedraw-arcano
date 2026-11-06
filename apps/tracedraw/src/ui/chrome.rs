@@ -458,7 +458,12 @@ impl Window {
             );
             ui.painter().rect_filled(
                 panel,
-                CornerRadius { nw: 0, ne: 0, sw: WINDOW_RADIUS, se: WINDOW_RADIUS },
+                CornerRadius {
+                    nw: 0,
+                    ne: 0,
+                    sw: WINDOW_RADIUS,
+                    se: WINDOW_RADIUS,
+                },
                 Tokens::panel(),
             );
             let body = Rect::from_min_max(
@@ -934,7 +939,12 @@ fn title_bar_with(
     // The bar is the window's top, rounded with it, in the body's colour.
     painter.rect_filled(
         bar,
-        CornerRadius { nw: WINDOW_RADIUS, ne: WINDOW_RADIUS, sw: 0, se: 0 },
+        CornerRadius {
+            nw: WINDOW_RADIUS,
+            ne: WINDOW_RADIUS,
+            sw: 0,
+            se: 0,
+        },
         crate::theme::Tokens::panel(),
     );
     painter.text(
@@ -952,7 +962,8 @@ fn title_bar_with(
     let resp =
         crate::ui::tips::RichTip::rich_tip(resp, crate::ui::tips::keyed("dialog.close_window"));
     let color = if resp.hovered() {
-        ui.painter().rect_filled(close.shrink(4.0), 5.0, CLOSE_HOVER);
+        ui.painter()
+            .rect_filled(close.shrink(4.0), 5.0, CLOSE_HOVER);
         Color32::WHITE
     } else {
         crate::theme::Tokens::text()

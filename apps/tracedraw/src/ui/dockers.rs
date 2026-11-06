@@ -213,41 +213,41 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
 /// blank where it has none), its name; ticking opens it in front of this
 /// column, unticking closes it.
 pub(crate) fn panels_menu(app: &mut App, resp: &egui::Response, place: DockerPlace) {
-        egui::Popup::menu(resp)
-            .id(more_menu_id(place))
-            .style(crate::ui::menus::menu_popup_style)
-            .show(|ui| {
-                crate::ui::menus::body(ui, |ui| {
-                    let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
-                        let open = app.docker_open(tab);
-                        let pic = tab_icon(tab);
-                        let pic = pic
-                            .as_ref()
-                            .map(|f| f as &dyn Fn(&egui::Painter, egui::Rect));
-                        if crate::ui::menus::check_pic(ui, tab.key(), open, pic) {
-                            if open {
-                                app.close_docker(tab);
-                            } else {
-                                app.move_docker(tab, place, None);
-                            }
-                        }
-                    };
-                    for (i, group) in DockerTab::MENU_GROUPS.iter().enumerate() {
-                        if i > 0 {
-                            crate::ui::menus::sep(ui);
-                        }
-                        for tab in group.iter() {
-                            row(ui, app, *tab);
-                        }
-                        if i == 5 {
-                            crate::ui::menus::sep(ui);
-                            for tab in DockerTab::EFFECTS_MENU {
-                                row(ui, app, tab);
-                            }
+    egui::Popup::menu(resp)
+        .id(more_menu_id(place))
+        .style(crate::ui::menus::menu_popup_style)
+        .show(|ui| {
+            crate::ui::menus::body(ui, |ui| {
+                let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
+                    let open = app.docker_open(tab);
+                    let pic = tab_icon(tab);
+                    let pic = pic
+                        .as_ref()
+                        .map(|f| f as &dyn Fn(&egui::Painter, egui::Rect));
+                    if crate::ui::menus::check_pic(ui, tab.key(), open, pic) {
+                        if open {
+                            app.close_docker(tab);
+                        } else {
+                            app.move_docker(tab, place, None);
                         }
                     }
-                })
-            });
+                };
+                for (i, group) in DockerTab::MENU_GROUPS.iter().enumerate() {
+                    if i > 0 {
+                        crate::ui::menus::sep(ui);
+                    }
+                    for tab in group.iter() {
+                        row(ui, app, *tab);
+                    }
+                    if i == 5 {
+                        crate::ui::menus::sep(ui);
+                        for tab in DockerTab::EFFECTS_MENU {
+                            row(ui, app, tab);
+                        }
+                    }
+                }
+            })
+        });
 }
 
 /// The three-dot button at the end of the tab column at `place`.
@@ -1030,17 +1030,18 @@ fn properties(app: &mut App, ui: &mut Ui) {
     ));
     let b = app.selection_bounds().unwrap_or_default();
     let o = app.to_ruler(tracedraw_core::geometry::Point::new(b.x0, b.y0));
+    let n = |v: f64| crate::ui::field::format_number(v, false, 0, Some(2));
     ui.label(
         egui::RichText::new(format!(
-            "x {:.2}  y {:.2}  w {:.2}  h {:.2} {}",
-            app.units.world_from_mm(o.x),
-            app.units.world_from_mm(o.y),
-            app.units.world_from_mm(b.width()),
-            app.units.world_from_mm(b.height()),
+            "x {}   y {}   w {}   h {} {}",
+            n(app.units.world_from_mm(o.x)),
+            n(app.units.world_from_mm(o.y)),
+            n(app.units.world_from_mm(b.width())),
+            n(app.units.world_from_mm(b.height())),
             app.units.short()
         ))
-        .monospace()
-        .size(11.0),
+        .size(11.5)
+        .color(crate::theme::Tokens::text_dim()),
     );
 
     ui.separator();
@@ -1474,36 +1475,44 @@ fn section_header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
     let open = !app.settings.properties_closed.iter().any(|c| c == id);
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::click());
-    let fill = if resp.hovered() {
-        Tokens::tool_hover()
-    } else {
-        crate::theme::Tokens::control_fill()
-    };
-    ui.painter().rect_filled(rect, 2.0, fill);
-    let c = egui::pos2(rect.left() + 10.0, rect.center().y);
+    // A light header: a hairline above, no fill until the pointer is on it,
+    // a thin chevron and the title.
+    let p = ui.painter();
+    p.hline(
+        rect.x_range(),
+        rect.top() + 0.5,
+        egui::Stroke::new(1.0, Tokens::border()),
+    );
+    if resp.hovered() {
+        p.rect_filled(
+            rect.shrink2(egui::vec2(0.0, 1.0)),
+            5.0,
+            Tokens::tool_hover(),
+        );
+    }
+    let c = egui::pos2(rect.right() - 12.0, rect.center().y);
     let points = if open {
         vec![
-            c + egui::vec2(-4.0, -2.0),
-            c + egui::vec2(4.0, -2.0),
-            c + egui::vec2(0.0, 3.0),
+            c + egui::vec2(-3.5, -1.5),
+            c + egui::vec2(0.0, 2.0),
+            c + egui::vec2(3.5, -1.5),
         ]
     } else {
         vec![
-            c + egui::vec2(-2.0, -4.0),
-            c + egui::vec2(3.0, 0.0),
-            c + egui::vec2(-2.0, 4.0),
+            c + egui::vec2(-1.5, -3.5),
+            c + egui::vec2(2.0, 0.0),
+            c + egui::vec2(-1.5, 3.5),
         ]
     };
-    ui.painter().add(egui::epaint::PathShape::convex_polygon(
+    p.add(egui::Shape::line(
         points,
-        Tokens::icon(),
-        egui::Stroke::NONE,
+        egui::Stroke::new(1.3, Tokens::text_dim()),
     ));
-    ui.painter().text(
-        egui::pos2(rect.left() + 20.0, rect.center().y),
+    p.text(
+        egui::pos2(rect.left() + 2.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         title,
-        crate::theme::bold(12.5),
+        crate::theme::bold(12.0),
         Tokens::text(),
     );
     let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.section_desc")));

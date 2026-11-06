@@ -30,7 +30,11 @@ fn headers(key: &str) -> Vec<(String, String)> {
 /// Our shape (`"16:9"`) as the service's shape names, for the models
 /// that name them.
 pub fn named_aspect(aspect: &str, model: &str) -> &'static str {
-    let wide = if model.starts_with("seedream") { "cinematic_21_9" } else { "film_horizontal_21_9" };
+    let wide = if model.starts_with("seedream") {
+        "cinematic_21_9"
+    } else {
+        "film_horizontal_21_9"
+    };
     match aspect {
         "4:3" => "classic_4_3",
         "3:4" => "traditional_3_4",
@@ -65,7 +69,10 @@ fn model_path(model: &str, remix: bool) -> Result<&'static str, String> {
 }
 
 fn b64_png(req: &OpRequest, max_pixels: u64) -> Result<(String, u32, u32), String> {
-    let png = req.image.as_deref().ok_or_else(|| tr("aiimg.need_bitmap"))?;
+    let png = req
+        .image
+        .as_deref()
+        .ok_or_else(|| tr("aiimg.need_bitmap"))?;
     let (b, w, h) = fit_image(png, max_pixels, 0, 256)?;
     Ok((transport::base64(&b), w, h))
 }
@@ -78,7 +85,11 @@ pub fn build_body(req: &OpRequest) -> Result<(&'static str, Value), String> {
             let remix = req.op() == Op::Remix;
             let path = model_path(&req.model, remix)?;
             let mut body = json!({"prompt": req.prompt});
-            let image = if remix { Some(b64_png(req, 16_000_000)?.0) } else { None };
+            let image = if remix {
+                Some(b64_png(req, 16_000_000)?.0)
+            } else {
+                None
+            };
             match req.model.as_str() {
                 "mystic" => {
                     body["resolution"] = json!(lower);
@@ -93,7 +104,8 @@ pub fn build_body(req: &OpRequest) -> Result<(&'static str, Value), String> {
                     body["resolution"] = json!(req.resolution);
                     body["aspect_ratio"] = json!(req.aspect);
                     if let Some(img) = image {
-                        body["reference_images"] = json!([{"image": img, "mime_type": "image/png"}]);
+                        body["reference_images"] =
+                            json!([{"image": img, "mime_type": "image/png"}]);
                     }
                 }
                 "gpt-image-2-5" => {
@@ -107,7 +119,11 @@ pub fn build_body(req: &OpRequest) -> Result<(&'static str, Value), String> {
                     }
                 }
                 "seedream-v5-pro" => {
-                    body["resolution"] = json!(if lower == "1k" { "1.5k".to_string() } else { "2k".to_string() });
+                    body["resolution"] = json!(if lower == "1k" {
+                        "1.5k".to_string()
+                    } else {
+                        "2k".to_string()
+                    });
                     body["aspect_ratio"] = json!(named_aspect(&req.aspect, "seedream"));
                     if let Some(img) = image {
                         body["reference_images"] = json!([img]);
@@ -141,7 +157,10 @@ pub fn build_body(req: &OpRequest) -> Result<(&'static str, Value), String> {
                 )
             } else {
                 let factor = req.int("factor", 2).clamp(2, 16);
-                let factor = [2, 4, 8, 16].into_iter().find(|f| *f >= factor).unwrap_or(16);
+                let factor = [2, 4, 8, 16]
+                    .into_iter()
+                    .find(|f| *f >= factor)
+                    .unwrap_or(16);
                 // The result may not pass 25.3 MP: the picture sent is made
                 // small enough for the factor.
                 let max_in = (MAX_UPSCALED / (factor * factor) as f64) as u64;
@@ -174,7 +193,11 @@ pub fn build_body(req: &OpRequest) -> Result<(&'static str, Value), String> {
                 body["prompt"] = json!(req.prompt);
             }
             (
-                if flux { "/ai/image-expand/flux-pro" } else { "/ai/image-expand/seedream-v4-5" },
+                if flux {
+                    "/ai/image-expand/flux-pro"
+                } else {
+                    "/ai/image-expand/seedream-v4-5"
+                },
                 body,
             )
         }
@@ -198,7 +221,11 @@ pub fn build_body(req: &OpRequest) -> Result<(&'static str, Value), String> {
 /// The task of an answer: its id, status and links.
 fn task(v: &Value) -> (String, String, Vec<String>) {
     let d = v.get("data").unwrap_or(v);
-    let id = d.get("task_id").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let id = d
+        .get("task_id")
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string();
     let status = d
         .get("status")
         .or_else(|| d.get("task_status"))
@@ -208,7 +235,11 @@ fn task(v: &Value) -> (String, String, Vec<String>) {
     let links = d
         .get("generated")
         .and_then(|g| g.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     (id, status, links)
 }
@@ -237,14 +268,27 @@ fn upload(t: &dyn Transport, key: &str, png: &[u8]) -> Result<String, String> {
         .or_else(|| v.pointer("/files/0"))
         .or_else(|| v.pointer("/0"))
         .ok_or_else(|| tr("studio.bad_reply"))?;
-    let put_url = f.get("upload_url").and_then(|u| u.as_str()).ok_or_else(|| tr("studio.bad_reply"))?;
-    let asset = f.get("asset_url").and_then(|u| u.as_str()).ok_or_else(|| tr("studio.bad_reply"))?;
+    let put_url = f
+        .get("upload_url")
+        .and_then(|u| u.as_str())
+        .ok_or_else(|| tr("studio.bad_reply"))?;
+    let asset = f
+        .get("asset_url")
+        .and_then(|u| u.as_str())
+        .ok_or_else(|| tr("studio.bad_reply"))?;
     let mut h: Vec<(String, String)> = f
         .get("headers")
         .and_then(|h| h.as_object())
-        .map(|o| o.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+        .map(|o| {
+            o.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
         .unwrap_or_default();
-    if !h.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type")) {
+    if !h
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+    {
         h.push(("content-type".into(), "image/png".into()));
     }
     let r = t.call(&crate::net::HttpRequest {
@@ -262,11 +306,17 @@ fn upload(t: &dyn Transport, key: &str, png: &[u8]) -> Result<String, String> {
 
 pub fn run(t: &dyn Transport, key: &str, req: &OpRequest) -> Result<Output, String> {
     if req.op() == Op::RemoveBackground {
-        let png = req.image.as_deref().ok_or_else(|| tr("aiimg.need_bitmap"))?;
+        let png = req
+            .image
+            .as_deref()
+            .ok_or_else(|| tr("aiimg.need_bitmap"))?;
         let (b, _, _) = fit_image(png, 25_000_000, 0, 0)?;
         let link = upload(t, key, &b)?;
         let mut h = headers(key);
-        h.push(("content-type".into(), "application/x-www-form-urlencoded".into()));
+        h.push((
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        ));
         let body = format!("image_url={}", urlencode(&link));
         let v = transport::json_ok(t.call(&crate::net::HttpRequest {
             method: "POST",
@@ -309,7 +359,9 @@ pub fn run(t: &dyn Transport, key: &str, req: &OpRequest) -> Result<Output, Stri
 fn urlencode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -339,11 +391,25 @@ mod tests {
         };
         let (path, body) = build_body(&req).expect("body");
         assert_eq!(path, "/ai/mystic");
-        assert_eq!((body["aspect_ratio"].as_str(), body["resolution"].as_str()), (Some("widescreen_16_9"), Some("4k")));
-        let nb = OpRequest { model: "nano-banana-2-1".into(), ..req.clone() };
+        assert_eq!(
+            (body["aspect_ratio"].as_str(), body["resolution"].as_str()),
+            (Some("widescreen_16_9"), Some("4k"))
+        );
+        let nb = OpRequest {
+            model: "nano-banana-2-1".into(),
+            ..req.clone()
+        };
         let (_, body) = build_body(&nb).expect("body");
-        assert_eq!((body["aspect_ratio"].as_str(), body["resolution"].as_str()), (Some("16:9"), Some("4K")));
-        let gpt = OpRequest { op: Some(Op::Remix), model: "gpt-image-2-5".into(), image: Some(super::super::test_png(300, 300)), ..req };
+        assert_eq!(
+            (body["aspect_ratio"].as_str(), body["resolution"].as_str()),
+            (Some("16:9"), Some("4K"))
+        );
+        let gpt = OpRequest {
+            op: Some(Op::Remix),
+            model: "gpt-image-2-5".into(),
+            image: Some(super::super::test_png(300, 300)),
+            ..req
+        };
         let (path, body) = build_body(&gpt).expect("body");
         assert!(path.ends_with("gpt-image-2-5-edit") && body["reference_images"].is_array());
     }
@@ -358,7 +424,10 @@ mod tests {
             ..Default::default()
         };
         let (path, body) = build_body(&req).expect("body");
-        assert_eq!((path, body["scale_factor"].as_str()), ("/ai/image-upscaler", Some("4x")));
+        assert_eq!(
+            (path, body["scale_factor"].as_str()),
+            ("/ai/image-upscaler", Some("4x"))
+        );
         let png = transport::unbase64(body["image"].as_str().expect("image")).expect("b64");
         let (w, h) = super::super::image_size(&png).expect("size");
         assert!((w as f64 * h as f64) * 16.0 <= MAX_UPSCALED + 1.0);
@@ -368,13 +437,22 @@ mod tests {
     fn a_task_is_followed_to_its_picture_and_downloaded() {
         fn answer(r: &crate::net::HttpRequest) -> crate::net::HttpResult {
             if r.method == "POST" {
-                return reply(200, json!({"data": {"task_id": "t1", "status": "CREATED", "generated": []}}));
+                return reply(
+                    200,
+                    json!({"data": {"task_id": "t1", "status": "CREATED", "generated": []}}),
+                );
             }
             static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             if N.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
-                reply(200, json!({"data": {"task_id": "t1", "status": "IN_PROGRESS", "generated": []}}))
+                reply(
+                    200,
+                    json!({"data": {"task_id": "t1", "status": "IN_PROGRESS", "generated": []}}),
+                )
             } else {
-                reply(200, json!({"data": {"task_id": "t1", "status": "COMPLETED", "generated": ["https://cdn.example/x.png"]}}))
+                reply(
+                    200,
+                    json!({"data": {"task_id": "t1", "status": "COMPLETED", "generated": ["https://cdn.example/x.png"]}}),
+                )
             }
         }
         let fake = Fake::new(answer, |url| {
@@ -389,27 +467,49 @@ mod tests {
         };
         assert!(matches!(run(&fake, "mk", &req), Ok(Output::Images(v)) if v.len() == 1));
         let sent = fake.sent();
-        assert!(sent[0].headers.contains(&("x-magnific-api-key".into(), "mk".into())));
-        assert!(sent.last().is_some_and(|r| r.url.ends_with("/ai/image-relight/t1")));
+        assert!(sent[0]
+            .headers
+            .contains(&("x-magnific-api-key".into(), "mk".into())));
+        assert!(sent
+            .last()
+            .is_some_and(|r| r.url.ends_with("/ai/image-relight/t1")));
     }
 
     #[test]
     fn background_removal_uploads_the_picture_first() {
         fn answer(r: &crate::net::HttpRequest) -> crate::net::HttpResult {
             if r.url.ends_with("/uploads/request-url") {
-                reply(200, json!({"data": [{"file_id": "upl_img_1", "upload_url": "https://up.example/put", "headers": {"Content-Type": "image/png", "x-goog-content-length-range": "0,1000000"}, "asset_url": "https://up.example/a.png?sig=1"}]}))
+                reply(
+                    200,
+                    json!({"data": [{"file_id": "upl_img_1", "upload_url": "https://up.example/put", "headers": {"Content-Type": "image/png", "x-goog-content-length-range": "0,1000000"}, "asset_url": "https://up.example/a.png?sig=1"}]}),
+                )
             } else if r.method == "PUT" {
                 reply(200, json!({}))
             } else {
-                reply(200, json!({"high_resolution": "https://cdn.example/cut.png", "url": "https://cdn.example/cut.png"}))
+                reply(
+                    200,
+                    json!({"high_resolution": "https://cdn.example/cut.png", "url": "https://cdn.example/cut.png"}),
+                )
             }
         }
         let fake = Fake::new(answer, |_| Ok(super::super::test_png(8, 8)));
-        let req = OpRequest { op: Some(Op::RemoveBackground), image: Some(super::super::test_png(300, 300)), ..Default::default() };
+        let req = OpRequest {
+            op: Some(Op::RemoveBackground),
+            image: Some(super::super::test_png(300, 300)),
+            ..Default::default()
+        };
         assert!(run(&fake, "mk", &req).is_ok());
         let sent = fake.sent();
         assert_eq!(sent[1].method, "PUT");
-        assert!(!sent[1].headers.iter().any(|(k, _)| k == "x-magnific-api-key"), "no key on the upload");
-        assert!(sent[2].body.starts_with("image_url=https%3A%2F%2Fup.example"));
+        assert!(
+            !sent[1]
+                .headers
+                .iter()
+                .any(|(k, _)| k == "x-magnific-api-key"),
+            "no key on the upload"
+        );
+        assert!(sent[2]
+            .body
+            .starts_with("image_url=https%3A%2F%2Fup.example"));
     }
 }

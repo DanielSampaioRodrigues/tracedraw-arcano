@@ -312,8 +312,7 @@ fn render_page(app: &App, args: &Value) -> Result<(String, String), String> {
     let long_mm = page.size.width.max(page.size.height).max(1.0);
     let dpi = (max_px * 25.4 / long_mm).clamp(1.0, 2400.0);
     let pm = tracedraw_render::render_page_image(doc, page.id, dpi).ok_or("render failed")?;
-    let mut white =
-        tiny_skia::Pixmap::new(pm.width(), pm.height()).ok_or("render failed")?;
+    let mut white = tiny_skia::Pixmap::new(pm.width(), pm.height()).ok_or("render failed")?;
     white.fill(tiny_skia::Color::WHITE);
     white.draw_pixmap(
         0,
@@ -570,7 +569,9 @@ mod tests {
         // Red on the left half, white on the right.
         assert_eq!(img.get_pixel(50, 100).0, [255, 0, 0, 255]);
         assert_eq!(img.get_pixel(350, 100).0, [255, 255, 255, 255]);
-        assert!(content[1]["text"].as_str().is_some_and(|t| t.contains("200.0 x 100.0 mm")));
+        assert!(content[1]["text"]
+            .as_str()
+            .is_some_and(|t| t.contains("200.0 x 100.0 mm")));
         // A page that is not there.
         let r = call(
             &mut app,

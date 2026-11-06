@@ -3946,7 +3946,12 @@ impl Document {
     pub fn section_at(&self, index: usize) -> Option<(&Section, usize)> {
         self.sections
             .iter()
-            .filter_map(|s| self.pages.iter().position(|p| p.id == s.first_page).map(|i| (s, i)))
+            .filter_map(|s| {
+                self.pages
+                    .iter()
+                    .position(|p| p.id == s.first_page)
+                    .map(|i| (s, i))
+            })
             .filter(|(_, i)| *i <= index)
             .max_by_key(|(_, i)| *i)
     }

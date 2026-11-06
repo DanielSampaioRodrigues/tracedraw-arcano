@@ -1,4 +1,4 @@
-﻿//! The Arcano edition: what this build changes from the upstream project,
+//! The Arcano edition: what this build changes from the upstream project,
 //! kept in one place so that merging upstream work stays easy.
 //!
 //! - Releases come from the edition's own repository (`fork_repo!`), whose
@@ -100,7 +100,16 @@ pub fn run_source_update(script: &std::path::Path) -> Result<(), String> {
         .ok_or("the script has no source folder")?;
     let mut cmd = if cfg!(windows) {
         let mut c = std::process::Command::new("cmd");
-        c.args(["/C", "start", "TraceDraw", "powershell", "-NoExit", "-ExecutionPolicy", "Bypass", "-File"]);
+        c.args([
+            "/C",
+            "start",
+            "TraceDraw",
+            "powershell",
+            "-NoExit",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ]);
         c.arg(script);
         c
     } else {
@@ -108,7 +117,10 @@ pub fn run_source_update(script: &std::path::Path) -> Result<(), String> {
         c.arg("-File").arg(script);
         c
     };
-    cmd.current_dir(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+    cmd.current_dir(dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// Start a downloaded installer quietly; it closes TraceDraw and installs
@@ -123,7 +135,13 @@ pub fn run_installer(setup: &std::path::Path) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     if cfg!(windows) {
         std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command"])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+            ])
             .arg(relaunch_script(setup, &exe))
             .spawn()
             .map(|_| ())
@@ -174,9 +192,13 @@ mod tests {
             std::path::Path::new(r"C:\Program Files\TraceDraw\tracedraw.exe"),
         );
         assert!(s.starts_with(STOP_AGENT_BRIDGES), "{s}");
-        assert!(STOP_AGENT_BRIDGES.contains("--mcp") && STOP_AGENT_BRIDGES.contains("tracedraw.exe"));
+        assert!(
+            STOP_AGENT_BRIDGES.contains("--mcp") && STOP_AGENT_BRIDGES.contains("tracedraw.exe")
+        );
         assert!(!s.contains('"'), "{s}");
-        let s = s.trim_start_matches(STOP_AGENT_BRIDGES).trim_start_matches("; ");
+        let s = s
+            .trim_start_matches(STOP_AGENT_BRIDGES)
+            .trim_start_matches("; ");
         assert!(s.starts_with(r"$p = Start-Process -FilePath 'C:\Temp\it''s-setup.exe' -ArgumentList '/SILENT','/SP-','/CLOSEAPPLICATIONS','/NORESTART' -Wait -PassThru"), "{s}");
         assert!(s.ends_with(r"if ($p.ExitCode -eq 0) { Start-Process -FilePath 'C:\Program Files\TraceDraw\tracedraw.exe' }"), "{s}");
     }

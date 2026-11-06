@@ -45,7 +45,10 @@ pub fn build(key: &str, req: &OpRequest) -> Result<crate::net::HttpRequest, Stri
     let mut fields: Vec<(&str, String)> = vec![("output_format", "png".into())];
     let mut files: Vec<(&str, &str, &str, Vec<u8>)> = Vec::new();
     let image = |max: u64, max_side: u32| -> Result<Vec<u8>, String> {
-        let png = req.image.as_deref().ok_or_else(|| tr("aiimg.need_bitmap"))?;
+        let png = req
+            .image
+            .as_deref()
+            .ok_or_else(|| tr("aiimg.need_bitmap"))?;
         fit_image(png, max, max_side, 64).map(|(b, _, _)| b)
     };
     let path = match req.op() {
@@ -79,13 +82,19 @@ pub fn build(key: &str, req: &OpRequest) -> Result<crate::net::HttpRequest, Stri
             }
             "creative" => {
                 fields.push(("prompt", prompt_or(req, "high quality, sharp, detailed")));
-                fields.push(("creativity", format!("{}", req.num("creativity", 0.3).clamp(0.1, 0.5))));
+                fields.push((
+                    "creativity",
+                    format!("{}", req.num("creativity", 0.3).clamp(0.1, 0.5)),
+                ));
                 files.push(("image", "image.png", "image/png", image(ONE_MP, 0)?));
                 "/v2beta/stable-image/upscale/creative"
             }
             _ => {
                 fields.push(("prompt", prompt_or(req, "high quality, sharp, detailed")));
-                fields.push(("creativity", format!("{}", req.num("creativity", 0.35).clamp(0.2, 0.5))));
+                fields.push((
+                    "creativity",
+                    format!("{}", req.num("creativity", 0.35).clamp(0.2, 0.5)),
+                ));
                 files.push(("image", "image.png", "image/png", image(MAX_PIXELS, 0)?));
                 "/v2beta/stable-image/upscale/conservative"
             }
@@ -111,23 +120,43 @@ pub fn build(key: &str, req: &OpRequest) -> Result<crate::net::HttpRequest, Stri
             fields.push(("background_prompt", req.prompt.clone()));
             if relight {
                 fields.push(("keep_original_background", "true".into()));
-                fields.push(("light_source_direction", req.text("direction", "above").to_string()));
-                fields.push(("light_source_strength", format!("{}", req.num("strength", 0.5).clamp(0.0, 1.0))));
+                fields.push((
+                    "light_source_direction",
+                    req.text("direction", "above").to_string(),
+                ));
+                fields.push((
+                    "light_source_strength",
+                    format!("{}", req.num("strength", 0.5).clamp(0.0, 1.0)),
+                ));
             } else {
-                fields.push(("preserve_original_subject", format!("{}", req.num("preserve", 0.6).clamp(0.0, 1.0))));
+                fields.push((
+                    "preserve_original_subject",
+                    format!("{}", req.num("preserve", 0.6).clamp(0.0, 1.0)),
+                ));
             }
-            files.push(("subject_image", "image.png", "image/png", image(MAX_PIXELS, 0)?));
+            files.push((
+                "subject_image",
+                "image.png",
+                "image/png",
+                image(MAX_PIXELS, 0)?,
+            ));
             "/v2beta/stable-image/edit/replace-background-and-relight"
         }
         Op::Vectorize => return Err(tr("studio.not_offered")),
     };
-    let file_refs: Vec<(&str, &str, &str, &[u8])> =
-        files.iter().map(|(a, b, c, d)| (*a, *b, *c, d.as_slice())).collect();
+    let file_refs: Vec<(&str, &str, &str, &[u8])> = files
+        .iter()
+        .map(|(a, b, c, d)| (*a, *b, *c, d.as_slice()))
+        .collect();
     let body = transport::multipart(BOUNDARY, &fields, &file_refs);
     if body.len() > 10 * 1024 * 1024 {
         return Err(tr("studio.too_large"));
     }
-    Ok(transport::post_multipart(format!("{BASE}{path}"), headers(key), body))
+    Ok(transport::post_multipart(
+        format!("{BASE}{path}"),
+        headers(key),
+        body,
+    ))
 }
 
 /// The operation runs in the background (the answer is a task).
@@ -169,12 +198,14 @@ pub fn run(t: &dyn Transport, key: &str, req: &OpRequest) -> Result<Output, Stri
         .to_string();
     for _ in 0..POLL_TRIES {
         t.wait(POLL_SECS);
-        let r = t.call(&transport::get(format!("{BASE}/v2beta/results/{id}"), headers(key)))?;
+        let r = t.call(&transport::get(
+            format!("{BASE}/v2beta/results/{id}"),
+            headers(key),
+        ))?;
         match r.status {
             202 => continue,
             200 => {
-                let v: Value =
-                    serde_json::from_str(&r.body).map_err(|_| tr("studio.bad_reply"))?;
+                let v: Value = serde_json::from_str(&r.body).map_err(|_| tr("studio.bad_reply"))?;
                 return Ok(Output::Images(vec![picture(&v)?]));
             }
             s => {
@@ -188,11 +219,17 @@ pub fn run(t: &dyn Transport, key: &str, req: &OpRequest) -> Result<Output, Stri
 
 /// The account's credits (`GET /v1/user/balance`).
 pub fn test_key(t: &dyn Transport, key: &str) -> Result<String, String> {
-    let v = transport::json_ok(t.call(&transport::get(format!("{BASE}/v1/user/balance"), headers(key))))?;
+    let v = transport::json_ok(t.call(&transport::get(
+        format!("{BASE}/v1/user/balance"),
+        headers(key),
+    )))?;
     let credits = v.get("credits").and_then(|c| c.as_f64()).unwrap_or(0.0);
     Ok(crate::i18n::trf(
         "studio.credits",
-        &[("credits", &crate::ai_image::localize_decimal(format!("{credits:.1}")))],
+        &[(
+            "credits",
+            &crate::ai_image::localize_decimal(format!("{credits:.1}")),
+        )],
     ))
 }
 
@@ -221,11 +258,22 @@ mod tests {
             ..Default::default()
         };
         let r = build("sk", &req).expect("request");
-        assert_eq!(r.url, "https://api.stability.ai/v2beta/stable-image/generate/sd3");
+        assert_eq!(
+            r.url,
+            "https://api.stability.ai/v2beta/stable-image/generate/sd3"
+        );
         let b = body_text(&r);
-        assert!(b.contains("name=\"model\"\r\n\r\nsd3.5-large") && b.contains("name=\"aspect_ratio\"\r\n\r\n16:9"));
-        assert!(r.headers.contains(&("authorization".into(), "Bearer sk".into())));
-        let ultra = OpRequest { model: "stable-image-ultra".into(), ..req };
+        assert!(
+            b.contains("name=\"model\"\r\n\r\nsd3.5-large")
+                && b.contains("name=\"aspect_ratio\"\r\n\r\n16:9")
+        );
+        assert!(r
+            .headers
+            .contains(&("authorization".into(), "Bearer sk".into())));
+        let ultra = OpRequest {
+            model: "stable-image-ultra".into(),
+            ..req
+        };
         let r = build("sk", &ultra).expect("request");
         assert!(r.url.ends_with("/generate/ultra") && !body_text(&r).contains("name=\"model\""));
     }
@@ -236,16 +284,30 @@ mod tests {
         let req = OpRequest {
             op: Some(Op::Expand),
             image: Some(png.clone()),
-            params: [("left".to_string(), json!(100)), ("bottom".to_string(), json!(50))].into_iter().collect(),
+            params: [
+                ("left".to_string(), json!(100)),
+                ("bottom".to_string(), json!(50)),
+            ]
+            .into_iter()
+            .collect(),
             ..Default::default()
         };
         let b = body_text(&build("k", &req).expect("request"));
         assert!(b.contains("name=\"left\"\r\n\r\n100") && b.contains("name=\"down\"\r\n\r\n50"));
         // Fast upscale takes at most 1 MP: the picture is made smaller.
-        let up = OpRequest { op: Some(Op::Upscale), variant: "fast".into(), image: Some(png), ..Default::default() };
+        let up = OpRequest {
+            op: Some(Op::Upscale),
+            variant: "fast".into(),
+            image: Some(png),
+            ..Default::default()
+        };
         let r = build("k", &up).expect("request");
         assert!(r.url.ends_with("/upscale/fast"));
-        let start = r.bytes.windows(4).position(|w| w == b"\x89PNG").expect("png in body");
+        let start = r
+            .bytes
+            .windows(4)
+            .position(|w| w == b"\x89PNG")
+            .expect("png in body");
         let (w, h) = super::super::image_size(&r.bytes[start..]).expect("size");
         assert!(w as u64 * h as u64 <= ONE_MP && w <= 1536);
     }
@@ -279,12 +341,40 @@ mod tests {
 
     #[test]
     fn errors_and_moderation_are_reported() {
-        let fake = Fake::new(|_| reply(400, json!({"id": "x", "name": "bad_request", "errors": ["prompt: is required"]})), |_| Err("no".into()));
-        let req = OpRequest { op: Some(Op::Generate), model: "stable-image-core".into(), ..Default::default() };
-        assert!(run(&fake, "k", &req).expect_err("error").contains("prompt: is required"));
-        let fake = Fake::new(|_| reply(200, json!({"image": "", "finish_reason": "CONTENT_FILTERED"})), |_| Err("no".into()));
-        assert_eq!(run(&fake, "k", &req).expect_err("filtered"), tr("studio.filtered"));
-        let fake = Fake::new(|_| reply(200, json!({"credits": 12.5})), |_| Err("no".into()));
+        let fake = Fake::new(
+            |_| {
+                reply(
+                    400,
+                    json!({"id": "x", "name": "bad_request", "errors": ["prompt: is required"]}),
+                )
+            },
+            |_| Err("no".into()),
+        );
+        let req = OpRequest {
+            op: Some(Op::Generate),
+            model: "stable-image-core".into(),
+            ..Default::default()
+        };
+        assert!(run(&fake, "k", &req)
+            .expect_err("error")
+            .contains("prompt: is required"));
+        let fake = Fake::new(
+            |_| {
+                reply(
+                    200,
+                    json!({"image": "", "finish_reason": "CONTENT_FILTERED"}),
+                )
+            },
+            |_| Err("no".into()),
+        );
+        assert_eq!(
+            run(&fake, "k", &req).expect_err("filtered"),
+            tr("studio.filtered")
+        );
+        let fake = Fake::new(
+            |_| reply(200, json!({"credits": 12.5})),
+            |_| Err("no".into()),
+        );
         assert!(test_key(&fake, "k").expect("works").contains("12"));
     }
 }

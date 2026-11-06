@@ -816,9 +816,11 @@ fn swatch(
         Sense::hover()
     };
     let resp = ui.interact(cell, id, sense);
+    // Each colour a little rounded tile, a hairline apart from the next.
+    let tile = cell.shrink(0.5);
     match entry {
         None => {
-            painter.rect_filled(cell, 0.0, Color32::WHITE);
+            painter.rect_filled(tile, 2.0, Color32::WHITE);
             painter.line_segment(
                 [
                     cell.left_bottom() + vec2(2.5, -2.5),
@@ -828,33 +830,21 @@ fn swatch(
             );
         }
         Some((_, c)) => {
-            painter.rect_filled(cell, 0.0, crate::canvas::to_color32(*c));
+            painter.rect_filled(tile, 2.0, crate::canvas::to_color32(*c));
         }
     }
     let current = shows_document(app, which)
         && color_index.is_some()
         && app.doc_palette_current == color_index;
     if resp.hovered() || resp.is_pointer_button_down_on() || current {
-        // A white frame around the swatch under the pointer.
-        let mut px = Pixels::default();
-        let o = cell.expand(1.0);
-        px.rect(
-            Rect::from_min_size(o.min, vec2(o.width(), 1.0)),
-            Color32::WHITE,
+        // A ring around the swatch under the pointer, in the text colour
+        // so that it shows on light and dark themes alike.
+        painter.rect_stroke(
+            cell.expand(1.0),
+            3.0,
+            Stroke::new(1.5, crate::theme::Tokens::text()),
+            egui::StrokeKind::Inside,
         );
-        px.rect(
-            Rect::from_min_size(pos2(o.left(), o.bottom() - 1.0), vec2(o.width(), 1.0)),
-            Color32::WHITE,
-        );
-        px.rect(
-            Rect::from_min_size(o.min, vec2(1.0, o.height())),
-            Color32::WHITE,
-        );
-        px.rect(
-            Rect::from_min_size(pos2(o.right() - 1.0, o.top()), vec2(1.0, o.height())),
-            Color32::WHITE,
-        );
-        px.paint(painter);
     }
     let resp = match entry {
         None => resp.rich_tip(tr("palette.no_color_tip")),

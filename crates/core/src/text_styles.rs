@@ -20,8 +20,10 @@
 //! docs/behavior/text-styles.md.
 
 use crate::document::{spans_apply, Shape, ShapeKind, TextSpan};
+use crate::paragraphs::{
+    edit_paragraph_formats, paragraph_format, paragraph_of, paragraph_ranges, ParagraphFormat,
+};
 use crate::style::Fill;
-use crate::paragraphs::{edit_paragraph_formats, paragraph_format, paragraph_of, paragraph_ranges, ParagraphFormat};
 use serde::{Deserialize, Serialize};
 
 /// What a style is for.
@@ -67,7 +69,10 @@ impl CharFormat {
     /// `self` with what `over` sets laid on top.
     pub fn with(&self, over: &CharFormat) -> CharFormat {
         CharFormat {
-            font_family: over.font_family.clone().or_else(|| self.font_family.clone()),
+            font_family: over
+                .font_family
+                .clone()
+                .or_else(|| self.font_family.clone()),
             size_pt: over.size_pt.or(self.size_pt),
             bold: over.bold.or(self.bold),
             italic: over.italic.or(self.italic),
@@ -181,7 +186,13 @@ impl CharFormat {
 /// The look of paragraph `s..e`'s plain characters: its first characters
 /// outside `skip` without a character style (else its first), with its
 /// paragraph style on top.
-fn plain_look(spans: &[TextSpan], s: usize, e: usize, skip: (usize, usize), style: Option<CharFormat>) -> Option<CharFormat> {
+fn plain_look(
+    spans: &[TextSpan],
+    s: usize,
+    e: usize,
+    skip: (usize, usize),
+    style: Option<CharFormat>,
+) -> Option<CharFormat> {
     let mut pos = 0;
     let mut first = None;
     let mut plain = None;
@@ -240,7 +251,10 @@ fn chain(styles: &[TextStyle], id: u32) -> Vec<&TextStyle> {
             break;
         }
         out.push(s);
-        at = s.based_on.and_then(|p| find(styles, p)).filter(|p| p.kind == s.kind);
+        at = s
+            .based_on
+            .and_then(|p| find(styles, p))
+            .filter(|p| p.kind == s.kind);
     }
     out.reverse();
     out
@@ -277,7 +291,12 @@ pub fn children_of(styles: &[TextStyle], id: u32) -> Vec<u32> {
 /// Give the paragraphs of text `kind` that the characters `range` touch
 /// (`None`: all of them) the paragraph style `id` (`None`: no style, the
 /// formatting stays). Character styles linked inside them stay on top.
-pub fn apply_paragraph_style(kind: &mut ShapeKind, range: Option<(usize, usize)>, styles: &[TextStyle], id: Option<u32>) {
+pub fn apply_paragraph_style(
+    kind: &mut ShapeKind,
+    range: Option<(usize, usize)>,
+    styles: &[TextStyle],
+    id: Option<u32>,
+) {
     let total = match kind {
         ShapeKind::Text { spans, .. } => crate::document::spans_char_count(spans),
         _ => return,
@@ -317,8 +336,17 @@ pub fn apply_paragraph_style(kind: &mut ShapeKind, range: Option<(usize, usize)>
 /// Give the characters `from..to` of text `kind` the character style
 /// `id`; `None` takes the link off and gives them back their
 /// paragraph's style.
-pub fn apply_char_style(kind: &mut ShapeKind, from: usize, to: usize, styles: &[TextStyle], id: Option<u32>) {
-    let ShapeKind::Text { spans, align, para, .. } = kind else {
+pub fn apply_char_style(
+    kind: &mut ShapeKind,
+    from: usize,
+    to: usize,
+    styles: &[TextStyle],
+    id: Option<u32>,
+) {
+    let ShapeKind::Text {
+        spans, align, para, ..
+    } = kind
+    else {
         return;
     };
     let (from, to) = (from.min(to), from.max(to));
@@ -363,7 +391,10 @@ pub fn apply_char_style(kind: &mut ShapeKind, from: usize, to: usize, styles: &[
 /// The paragraph style and the character style at character `at` of
 /// text `kind`.
 pub fn styles_at(kind: &ShapeKind, at: usize) -> (Option<u32>, Option<u32>) {
-    let ShapeKind::Text { spans, align, para, .. } = kind else {
+    let ShapeKind::Text {
+        spans, align, para, ..
+    } = kind
+    else {
         return (None, None);
     };
     let i = paragraph_of(spans, at);
@@ -385,7 +416,10 @@ pub fn styles_at(kind: &ShapeKind, at: usize) -> (Option<u32>, Option<u32>) {
 /// A paragraph style made from the paragraph at character `at`: its
 /// format and its first character's properties.
 pub fn paragraph_style_from(kind: &ShapeKind, at: usize, name: String) -> Option<TextStyle> {
-    let ShapeKind::Text { spans, align, para, .. } = kind else {
+    let ShapeKind::Text {
+        spans, align, para, ..
+    } = kind
+    else {
         return None;
     };
     let i = paragraph_of(spans, at);
@@ -406,15 +440,25 @@ pub fn paragraph_style_from(kind: &ShapeKind, at: usize, name: String) -> Option
 /// A character style made from the character at `at`: what sets it
 /// apart from its paragraph's style (everything, when the paragraph has
 /// none).
-pub fn char_style_from(kind: &ShapeKind, at: usize, styles: &[TextStyle], name: String) -> Option<TextStyle> {
-    let ShapeKind::Text { spans, align, para, .. } = kind else {
+pub fn char_style_from(
+    kind: &ShapeKind,
+    at: usize,
+    styles: &[TextStyle],
+    name: String,
+) -> Option<TextStyle> {
+    let ShapeKind::Text {
+        spans, align, para, ..
+    } = kind
+    else {
         return None;
     };
     let sp = span_at(spans, at)?;
     let i = paragraph_of(spans, at);
     let mine = CharFormat::of(sp);
     let (s, e) = paragraph_ranges(spans).get(i).copied().unwrap_or((0, 0));
-    let st = paragraph_format(spans, *align, para, i).style.map(|p| resolve(styles, p).1);
+    let st = paragraph_format(spans, *align, para, i)
+        .style
+        .map(|p| resolve(styles, p).1);
     let chars = match plain_look(spans, s, e, (at, at + 1), st) {
         Some(base) => {
             let d = mine.differing_from(&base);
@@ -452,7 +496,10 @@ fn span_at(spans: &[TextSpan], at: usize) -> Option<&TextSpan> {
 /// Apply the styles again to text `kind` wherever it is linked to them
 /// (after the styles changed); links to styles that are gone are dropped.
 pub fn refresh_text(kind: &mut ShapeKind, styles: &[TextStyle]) {
-    let ShapeKind::Text { spans, align, para, .. } = kind else {
+    let ShapeKind::Text {
+        spans, align, para, ..
+    } = kind
+    else {
         return;
     };
     let ranges = paragraph_ranges(spans);
@@ -461,7 +508,9 @@ pub fn refresh_text(kind: &mut ShapeKind, styles: &[TextStyle]) {
         .enumerate()
         .map(|(i, &(s, e))| (s, e + 1, paragraph_format(spans, *align, para, i).style))
         .collect();
-    let gone_chars = spans.iter().any(|sp| sp.char_style.is_some_and(|c| find(styles, c).is_none()));
+    let gone_chars = spans
+        .iter()
+        .any(|sp| sp.char_style.is_some_and(|c| find(styles, c).is_none()));
     if gone_chars {
         for sp in spans.iter_mut() {
             if sp.char_style.is_some_and(|c| find(styles, c).is_none()) {
@@ -472,8 +521,15 @@ pub fn refresh_text(kind: &mut ShapeKind, styles: &[TextStyle]) {
     let any_char = spans.iter().any(|sp| sp.char_style.is_some());
     for (s, e, link) in links.into_iter().rev() {
         match link {
-            Some(id) if find(styles, id).is_some() => apply_paragraph_style(kind, Some((s, e.saturating_sub(1).max(s))), styles, Some(id)),
-            Some(_) => apply_paragraph_style(kind, Some((s, e.saturating_sub(1).max(s))), styles, None),
+            Some(id) if find(styles, id).is_some() => apply_paragraph_style(
+                kind,
+                Some((s, e.saturating_sub(1).max(s))),
+                styles,
+                Some(id),
+            ),
+            Some(_) => {
+                apply_paragraph_style(kind, Some((s, e.saturating_sub(1).max(s))), styles, None)
+            }
             None if any_char => {
                 // Character styles outside a paragraph style.
                 if let ShapeKind::Text { spans, .. } = kind {
@@ -517,12 +573,19 @@ pub fn refresh_shape(shape: &mut Shape, styles: &[TextStyle]) {
 pub fn count_uses(shape: &Shape, id: u32) -> usize {
     match &shape.kind {
         ShapeKind::Group { children } => children.iter().map(|c| count_uses(c, id)).sum(),
-        ShapeKind::ClipFrame { frame, contents } => count_uses(frame, id) + contents.iter().map(|c| count_uses(c, id)).sum::<usize>(),
-        ShapeKind::Text { spans, align, para, .. } => {
+        ShapeKind::ClipFrame { frame, contents } => {
+            count_uses(frame, id) + contents.iter().map(|c| count_uses(c, id)).sum::<usize>()
+        }
+        ShapeKind::Text {
+            spans, align, para, ..
+        } => {
             let paras = (0..paragraph_ranges(spans).len())
                 .filter(|&i| paragraph_format(spans, *align, para, i).style == Some(id))
                 .count();
-            let runs = spans.iter().filter(|sp| sp.char_style == Some(id) && !sp.text.is_empty()).count();
+            let runs = spans
+                .iter()
+                .filter(|sp| sp.char_style == Some(id) && !sp.text.is_empty())
+                .count();
             paras + runs
         }
         _ => 0,
@@ -560,8 +623,16 @@ mod tests {
             name: "Texto corrido".into(),
             kind: TextStyleKind::Paragraph,
             based_on: None,
-            para: Some(ParagraphFormat { align: TextAlign::Justify, first_line_indent: 5.0, ..Default::default() }),
-            chars: CharFormat { font_family: Some("Serif".into()), size_pt: Some(11.5), ..Default::default() },
+            para: Some(ParagraphFormat {
+                align: TextAlign::Justify,
+                first_line_indent: 5.0,
+                ..Default::default()
+            }),
+            chars: CharFormat {
+                font_family: Some("Serif".into()),
+                size_pt: Some(11.5),
+                ..Default::default()
+            },
         }
     }
 
@@ -571,8 +642,16 @@ mod tests {
             name: "Título".into(),
             kind: TextStyleKind::Paragraph,
             based_on: Some(1),
-            para: Some(ParagraphFormat { align: TextAlign::Center, space_after: 6.0, ..Default::default() }),
-            chars: CharFormat { size_pt: Some(18.0), bold: Some(true), ..Default::default() },
+            para: Some(ParagraphFormat {
+                align: TextAlign::Center,
+                space_after: 6.0,
+                ..Default::default()
+            }),
+            chars: CharFormat {
+                size_pt: Some(18.0),
+                bold: Some(true),
+                ..Default::default()
+            },
         }
     }
 
@@ -581,7 +660,10 @@ mod tests {
             id: 3,
             name: "Ênfase".into(),
             kind: TextStyleKind::Character,
-            chars: CharFormat { italic: Some(true), ..Default::default() },
+            chars: CharFormat {
+                italic: Some(true),
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -616,7 +698,9 @@ mod tests {
         assert!(uma.italic && uma.size_pt == 11.5);
         // Taking the character style off gives back the paragraph's.
         apply_char_style(&mut k, 16, 19, &styles, None);
-        assert!(spans(&k).iter().all(|sp| !sp.italic && sp.char_style.is_none()));
+        assert!(spans(&k)
+            .iter()
+            .all(|sp| !sp.italic && sp.char_style.is_none()));
     }
 
     #[test]
@@ -630,16 +714,33 @@ mod tests {
         let id = doc.ids_mut().shape();
         let shape = Shape::new(id, k);
         Command::AddShape { layer, shape }.apply(&mut doc).unwrap();
-        Command::SetTextStyles { styles: styles.clone() }.apply(&mut doc).unwrap();
+        Command::SetTextStyles {
+            styles: styles.clone(),
+        }
+        .apply(&mut doc)
+        .unwrap();
         // The body grows to 12 pt and the parent's font changes the title too.
         let mut changed = styles.clone();
         changed[0].chars.size_pt = Some(12.0);
-        Command::SetTextStyles { styles: changed }.apply(&mut doc).unwrap();
+        Command::SetTextStyles { styles: changed }
+            .apply(&mut doc)
+            .unwrap();
         let s = &doc.find_shape(id).unwrap().kind;
-        assert!(spans(s).iter().all(|sp| sp.size_pt == 12.0), "{:?}", spans(s));
-        assert!(spans(s).iter().any(|sp| sp.italic), "the character style stays on top");
+        assert!(
+            spans(s).iter().all(|sp| sp.size_pt == 12.0),
+            "{:?}",
+            spans(s)
+        );
+        assert!(
+            spans(s).iter().any(|sp| sp.italic),
+            "the character style stays on top"
+        );
         // A style that is gone: the text keeps its look, the link goes.
-        Command::SetTextStyles { styles: vec![titulo()] }.apply(&mut doc).unwrap();
+        Command::SetTextStyles {
+            styles: vec![titulo()],
+        }
+        .apply(&mut doc)
+        .unwrap();
         let s = &doc.find_shape(id).unwrap().kind;
         assert_eq!(styles_at(s, 0), (None, None));
         assert!(spans(s).iter().all(|sp| sp.size_pt == 12.0));
@@ -659,13 +760,23 @@ mod tests {
             spans_apply(spans, 3, 8, |sp| sp.bold = true);
         }
         let c = char_style_from(&k, 4, &styles, "Negrito".into()).unwrap();
-        assert_eq!(c.chars, CharFormat { bold: Some(true), ..Default::default() });
+        assert_eq!(
+            c.chars,
+            CharFormat {
+                bold: Some(true),
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
     fn a_drawing_with_styles_saves_and_opens() {
         let mut doc = Document::new("t", Size::new(210.0, 297.0));
-        Command::SetTextStyles { styles: vec![corpo(), titulo(), enfase()] }.apply(&mut doc).unwrap();
+        Command::SetTextStyles {
+            styles: vec![corpo(), titulo(), enfase()],
+        }
+        .apply(&mut doc)
+        .unwrap();
         let json = serde_json::to_string(&doc).unwrap();
         let back: Document = serde_json::from_str(&json).unwrap();
         assert_eq!(back.text_styles, doc.text_styles);

@@ -1417,7 +1417,7 @@ fn distance_in_mixed(
     let r = ui.add_sized(
         [width, ROW],
         crate::ui::field::NumField::new(&mut v)
-            .fixed_decimals(d.min(3))
+            .max_decimals(d.min(3))
             .max_decimals(d)
             .suffix(format!(" {}", u.short()))
             .unit_mm(u.mm())

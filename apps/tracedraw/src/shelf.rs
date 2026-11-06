@@ -237,7 +237,8 @@ impl Shelf {
     /// it is missing or unreadable).
     pub fn load_from(&mut self, p: &Path) {
         self.loaded = true;
-        self.stamp.set(std::fs::metadata(p).and_then(|m| m.modified()).ok());
+        self.stamp
+            .set(std::fs::metadata(p).and_then(|m| m.modified()).ok());
         let too_big = std::fs::metadata(p).is_ok_and(|m| m.len() > MAX_FILE);
         let items = if too_big {
             log::warn!("the shelf file {} is too large to read", p.display());
@@ -320,7 +321,8 @@ impl Shelf {
         let tmp = p.with_extension("json.tmp");
         crate::files::write_creating(&tmp, bytes)?;
         std::fs::rename(&tmp, p)?;
-        self.stamp.set(std::fs::metadata(p).and_then(|m| m.modified()).ok());
+        self.stamp
+            .set(std::fs::metadata(p).and_then(|m| m.modified()).ok());
         Ok(())
     }
 
@@ -336,13 +338,20 @@ impl Shelf {
         if cfg!(test) || crate::files::WEB {
             return;
         }
-        if self.looked.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2)) {
+        if self
+            .looked
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2))
+        {
             return;
         }
         self.looked = Some(web_time::Instant::now());
         let Some(p) = path() else { return };
         let now = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
-        if now.is_some() && now != self.stamp.get() && self.renaming.is_none() && self.dragging.is_none() {
+        if now.is_some()
+            && now != self.stamp.get()
+            && self.renaming.is_none()
+            && self.dragging.is_none()
+        {
             self.load_from(&p);
         }
     }

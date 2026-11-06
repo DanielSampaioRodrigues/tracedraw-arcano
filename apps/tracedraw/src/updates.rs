@@ -175,7 +175,10 @@ pub fn asset_names(version: &str, os: &str, arch: &str, kind: Kind) -> Vec<Strin
         // dash (`0.19.4-arcano.840`), the tag after a plus.
         ("windows", Kind::Setup) if version.contains('+') => {
             return vec![
-                format!("tracedraw-{}-windows-{a}-setup.exe", version.replace('+', "-")),
+                format!(
+                    "tracedraw-{}-windows-{a}-setup.exe",
+                    version.replace('+', "-")
+                ),
                 format!("tracedraw-{version}-windows-{a}-setup.exe"),
             ];
         }
@@ -712,9 +715,11 @@ mod tests {
         assert_eq!(r.download.as_deref(), Some("https://x/setup.exe"));
         assert_eq!(r.setup.map(|p| p.size), Some(9));
         // The same build is not offered again.
-        assert!(parse_latest(json, "0.19.4+arcano.840", "windows", "x86_64", Kind::Setup)
-            .expect("parses")
-            .is_none());
+        assert!(
+            parse_latest(json, "0.19.4+arcano.840", "windows", "x86_64", Kind::Setup)
+                .expect("parses")
+                .is_none()
+        );
     }
 
     #[test]

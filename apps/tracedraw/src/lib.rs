@@ -18,14 +18,6 @@
 #[macro_use]
 mod fork;
 mod ai;
-mod studio;
-mod capa;
-mod biblioteca;
-mod imposicao;
-mod assistente;
-mod estilos;
-mod prelo_casa;
-mod secoes;
 mod ai_image;
 mod anchors;
 #[cfg(target_os = "android")]
@@ -35,9 +27,11 @@ mod android_end;
 #[cfg(test)]
 mod android_package;
 mod app;
+mod assistente;
 mod autocorrect;
 mod barcode;
 mod bg_remove;
+mod biblioteca;
 mod bitmap_fx;
 mod bitmap_modes;
 mod blend_link;
@@ -46,6 +40,7 @@ mod border_grommet;
 mod brushes;
 mod callouts;
 mod canvas;
+mod capa;
 mod clipboard;
 mod clone_effect;
 mod color_drop;
@@ -79,6 +74,7 @@ mod effects_ui;
 mod encode;
 mod envelope_edit;
 mod envelope_shapes;
+mod estilos;
 mod export;
 mod export_assets;
 mod extrude_tool;
@@ -106,6 +102,7 @@ mod help_shots;
 mod hunspell;
 mod i18n;
 mod image_dpi;
+mod imposicao;
 mod imposition;
 #[cfg(test)]
 mod input_method_tests;
@@ -122,9 +119,9 @@ mod macos_package;
 mod macro_forms;
 mod macros;
 mod mcp;
-mod mcp_plus;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp_link;
+mod mcp_plus;
 mod media;
 mod mesh_tool;
 mod mixed;
@@ -151,6 +148,7 @@ mod picture_plates;
 mod placeholder;
 mod preflight;
 mod prefs;
+mod prelo_casa;
 mod print_merge;
 mod printers;
 mod qr;
@@ -161,6 +159,7 @@ mod resample;
 mod script_debug;
 mod script_filters;
 mod scripting;
+mod secoes;
 mod segment_delete;
 mod select_region;
 mod settings;
@@ -182,6 +181,7 @@ mod step_merge;
 mod step_repeat;
 mod storage_full;
 mod straighten;
+mod studio;
 mod styles;
 mod symbol_paste;
 mod symmetry_edit;
@@ -359,10 +359,13 @@ pub fn run() -> eframe::Result<()> {
             .with_decorations(false)
             .with_resizable(true)
             .with_title("TraceDraw")
-            .with_icon(std::sync::Arc::new(ui::brand::window_icon().unwrap_or_default()))
+            .with_icon(std::sync::Arc::new(
+                ui::brand::window_icon().unwrap_or_default(),
+            ))
     } else {
-        splash::main_window_builder(&settings, plain)
-            .with_icon(std::sync::Arc::new(ui::brand::window_icon().unwrap_or_default()))
+        splash::main_window_builder(&settings, plain).with_icon(std::sync::Arc::new(
+            ui::brand::window_icon().unwrap_or_default(),
+        ))
     };
     // The graphics card, or its software adapter with hardware
     // acceleration off; `--renderer=` when a start before could not open

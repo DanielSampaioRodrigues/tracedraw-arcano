@@ -162,7 +162,12 @@ impl App {
     pub fn add_book_styles(&mut self) {
         let mut styles = self.doc().text_styles.clone();
         let mut next = styles.iter().map(|s| s.id).max().unwrap_or(0);
-        let mut add = |styles: &mut Vec<TextStyle>, key: &str, kind, based_on, para: Option<ParagraphFormat>, chars| {
+        let mut add = |styles: &mut Vec<TextStyle>,
+                       key: &str,
+                       kind,
+                       based_on,
+                       para: Option<ParagraphFormat>,
+                       chars| {
             next += 1;
             styles.push(TextStyle {
                 id: next,
@@ -188,14 +193,22 @@ impl App {
             TextStyleKind::Paragraph,
             None,
             Some(body_fmt.clone()),
-            CharFormat { size_pt: Some(11.0), bold: Some(false), italic: Some(false), ..Default::default() },
+            CharFormat {
+                size_pt: Some(11.0),
+                bold: Some(false),
+                italic: Some(false),
+                ..Default::default()
+            },
         );
         add(
             &mut styles,
             "tstyle.book_first",
             TextStyleKind::Paragraph,
             Some(body),
-            Some(ParagraphFormat { first_line_indent: 0.0, ..body_fmt.clone() }),
+            Some(ParagraphFormat {
+                first_line_indent: 0.0,
+                ..body_fmt.clone()
+            }),
             CharFormat::default(),
         );
         add(
@@ -212,7 +225,11 @@ impl App {
                 keep_with_next: true,
                 ..Default::default()
             }),
-            CharFormat { size_pt: Some(20.0), bold: Some(true), ..Default::default() },
+            CharFormat {
+                size_pt: Some(20.0),
+                bold: Some(true),
+                ..Default::default()
+            },
         );
         add(
             &mut styles,
@@ -227,7 +244,11 @@ impl App {
                 keep_with_next: true,
                 ..Default::default()
             }),
-            CharFormat { size_pt: Some(14.0), italic: Some(true), ..Default::default() },
+            CharFormat {
+                size_pt: Some(14.0),
+                italic: Some(true),
+                ..Default::default()
+            },
         );
         add(
             &mut styles,
@@ -242,17 +263,43 @@ impl App {
                 space_after: 4.0,
                 ..body_fmt
             }),
-            CharFormat { size_pt: Some(10.0), ..Default::default() },
+            CharFormat {
+                size_pt: Some(10.0),
+                ..Default::default()
+            },
         );
-        add(&mut styles, "tstyle.book_emphasis", TextStyleKind::Character, None, None, CharFormat { italic: Some(true), ..Default::default() });
-        add(&mut styles, "tstyle.book_strong", TextStyleKind::Character, None, None, CharFormat { bold: Some(true), ..Default::default() });
+        add(
+            &mut styles,
+            "tstyle.book_emphasis",
+            TextStyleKind::Character,
+            None,
+            None,
+            CharFormat {
+                italic: Some(true),
+                ..Default::default()
+            },
+        );
+        add(
+            &mut styles,
+            "tstyle.book_strong",
+            TextStyleKind::Character,
+            None,
+            None,
+            CharFormat {
+                bold: Some(true),
+                ..Default::default()
+            },
+        );
         add(
             &mut styles,
             "tstyle.book_smallcaps",
             TextStyleKind::Character,
             None,
             None,
-            CharFormat { features: Some(vec!["smcp".into()]), ..Default::default() },
+            CharFormat {
+                features: Some(vec!["smcp".into()]),
+                ..Default::default()
+            },
         );
         self.set_text_styles(styles);
     }
@@ -282,7 +329,9 @@ pub fn docker(app: &mut App, ui: &mut egui::Ui) {
     let has_text = !app.text_style_targets().is_empty();
     let (here_p, here_c) = app.text_styles_here();
     if !has_text {
-        ui.label(egui::RichText::new(tr("tstyle.select_text")).color(crate::theme::Tokens::text_dim()));
+        ui.label(
+            egui::RichText::new(tr("tstyle.select_text")).color(crate::theme::Tokens::text_dim()),
+        );
     }
     if app.doc().text_styles.is_empty()
         && ui
@@ -315,13 +364,22 @@ pub fn docker(app: &mut App, ui: &mut egui::Ui) {
         });
         // "None": take the link off.
         if ui
-            .add_enabled(has_text, egui::Button::selectable(here.is_none() && has_text, tr("tstyle.none")))
+            .add_enabled(
+                has_text,
+                egui::Button::selectable(here.is_none() && has_text, tr("tstyle.none")),
+            )
             .rich_tip(pair("tstyle.none", "tstyle.none_desc"))
             .clicked()
         {
             app.apply_named_style(kind, None);
         }
-        let list: Vec<TextStyle> = app.doc().text_styles.iter().filter(|s| s.kind == kind).cloned().collect();
+        let list: Vec<TextStyle> = app
+            .doc()
+            .text_styles
+            .iter()
+            .filter(|s| s.kind == kind)
+            .cloned()
+            .collect();
         for st in list {
             row(app, ui, &st, here == Some(st.id), has_text);
         }
@@ -343,7 +401,10 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
         {
             ui.data_mut(|d| d.insert_temp(open_id, if open { None } else { Some(st.id) }));
         }
-        let parent = st.based_on.and_then(|p| ts::find(&app.doc().text_styles, p)).map(|p| p.name.clone());
+        let parent = st
+            .based_on
+            .and_then(|p| ts::find(&app.doc().text_styles, p))
+            .map(|p| p.name.clone());
         let label = match &parent {
             Some(p) => format!("{}  \u{00AB} {p}", st.name),
             None => st.name.clone(),
@@ -355,93 +416,110 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
         {
             app.apply_named_style(st.kind, Some(st.id));
         }
-        ui.label(egui::RichText::new(uses(app, st.id).to_string()).small().color(crate::theme::Tokens::text_dim()))
-            .rich_tip(pair("tstyle.uses", "tstyle.uses_desc"));
+        ui.label(
+            egui::RichText::new(uses(app, st.id).to_string())
+                .small()
+                .color(crate::theme::Tokens::text_dim()),
+        )
+        .rich_tip(pair("tstyle.uses", "tstyle.uses_desc"));
     });
     if !open {
         return;
     }
-    egui::Frame::new().inner_margin(egui::Margin { left: 18, right: 4, top: 2, bottom: 6 }).show(ui, |ui| {
-        let mut styles = app.doc().text_styles.clone();
-        let Some(i) = styles.iter().position(|s| s.id == st.id) else {
-            return;
-        };
-        // The name, kept when the field is left.
-        let name_id = egui::Id::new(("tstyle_name", st.id));
-        let mut name = ui.data(|d| d.get_temp::<String>(name_id)).unwrap_or_else(|| st.name.clone());
-        let r = ui
-            .add(egui::TextEdit::singleline(&mut name).desired_width(160.0))
-            .rich_tip(pair("tstyle.name", "tstyle.name_desc"));
-        if r.changed() {
-            ui.data_mut(|d| d.insert_temp(name_id, name.clone()));
-        }
-        if r.lost_focus() {
-            ui.data_mut(|d| d.remove::<String>(name_id));
-            let n = name.trim().to_string();
-            if !n.is_empty() && n != st.name {
-                styles[i].name = n;
-                app.set_text_styles(styles.clone());
+    egui::Frame::new()
+        .inner_margin(egui::Margin {
+            left: 18,
+            right: 4,
+            top: 2,
+            bottom: 6,
+        })
+        .show(ui, |ui| {
+            let mut styles = app.doc().text_styles.clone();
+            let Some(i) = styles.iter().position(|s| s.id == st.id) else {
+                return;
+            };
+            // The name, kept when the field is left.
+            let name_id = egui::Id::new(("tstyle_name", st.id));
+            let mut name = ui
+                .data(|d| d.get_temp::<String>(name_id))
+                .unwrap_or_else(|| st.name.clone());
+            let r = ui
+                .add(egui::TextEdit::singleline(&mut name).desired_width(160.0))
+                .rich_tip(pair("tstyle.name", "tstyle.name_desc"));
+            if r.changed() {
+                ui.data_mut(|d| d.insert_temp(name_id, name.clone()));
             }
-        }
-        // Based on.
-        let mut parent = st.based_on;
-        let shown = parent
-            .and_then(|p| ts::find(&styles, p))
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| tr("tstyle.based_none"));
-        ui.horizontal(|ui| {
-            ui.label(tr("tstyle.based_on"));
-            crate::ui::combo::from_id_salt(("tstyle_based", st.id))
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut parent, None, tr("tstyle.based_none"));
-                    for o in styles.iter().filter(|o| o.kind == st.kind && o.id != st.id && !ts::would_loop(&styles, st.id, o.id)) {
-                        ui.selectable_value(&mut parent, Some(o.id), &o.name);
-                    }
-                })
-                .response
-                .rich_tip(pair("tstyle.based_on", "tstyle.based_on_desc"));
-        });
-        if parent != st.based_on {
-            styles[i].based_on = parent;
-            app.set_text_styles(styles.clone());
-        }
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(has_text, egui::Button::new(tr("tstyle.redefine")).small())
-                .rich_tip(pair("tstyle.redefine", "tstyle.redefine_desc"))
-                .clicked()
-            {
-                app.redefine_text_style(st.id);
-            }
-            if ui
-                .add_enabled(has_text, egui::Button::new(tr("tstyle.clear")).small())
-                .rich_tip(pair("tstyle.clear", "tstyle.clear_desc"))
-                .clicked()
-            {
-                app.apply_named_style(st.kind, Some(st.id));
-            }
-            if ui
-                .button(tr("tstyle.delete"))
-                .rich_tip(pair("tstyle.delete", "tstyle.delete_desc"))
-                .clicked()
-            {
-                // Its children take its parent; the text keeps its look.
-                let gone = styles.remove(i);
-                for o in styles.iter_mut().filter(|o| o.based_on == Some(gone.id)) {
-                    o.based_on = gone.based_on;
-                    let (pp, pc) = ts::resolve(&app.doc().text_styles, gone.id);
-                    o.chars = pc.with(&o.chars);
-                    if o.para.is_none() {
-                        o.para = pp;
-                    }
+            if r.lost_focus() {
+                ui.data_mut(|d| d.remove::<String>(name_id));
+                let n = name.trim().to_string();
+                if !n.is_empty() && n != st.name {
+                    styles[i].name = n;
+                    app.set_text_styles(styles.clone());
                 }
-                app.set_text_styles(styles.clone());
-                ui.data_mut(|d| d.insert_temp(open_id, None::<u32>));
-                app.status = trf("tstyle.deleted", &[("name", &gone.name)]);
             }
+            // Based on.
+            let mut parent = st.based_on;
+            let shown = parent
+                .and_then(|p| ts::find(&styles, p))
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| tr("tstyle.based_none"));
+            ui.horizontal(|ui| {
+                ui.label(tr("tstyle.based_on"));
+                crate::ui::combo::from_id_salt(("tstyle_based", st.id))
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut parent, None, tr("tstyle.based_none"));
+                        for o in styles.iter().filter(|o| {
+                            o.kind == st.kind
+                                && o.id != st.id
+                                && !ts::would_loop(&styles, st.id, o.id)
+                        }) {
+                            ui.selectable_value(&mut parent, Some(o.id), &o.name);
+                        }
+                    })
+                    .response
+                    .rich_tip(pair("tstyle.based_on", "tstyle.based_on_desc"));
+            });
+            if parent != st.based_on {
+                styles[i].based_on = parent;
+                app.set_text_styles(styles.clone());
+            }
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add_enabled(has_text, egui::Button::new(tr("tstyle.redefine")).small())
+                    .rich_tip(pair("tstyle.redefine", "tstyle.redefine_desc"))
+                    .clicked()
+                {
+                    app.redefine_text_style(st.id);
+                }
+                if ui
+                    .add_enabled(has_text, egui::Button::new(tr("tstyle.clear")).small())
+                    .rich_tip(pair("tstyle.clear", "tstyle.clear_desc"))
+                    .clicked()
+                {
+                    app.apply_named_style(st.kind, Some(st.id));
+                }
+                if ui
+                    .button(tr("tstyle.delete"))
+                    .rich_tip(pair("tstyle.delete", "tstyle.delete_desc"))
+                    .clicked()
+                {
+                    // Its children take its parent; the text keeps its look.
+                    let gone = styles.remove(i);
+                    for o in styles.iter_mut().filter(|o| o.based_on == Some(gone.id)) {
+                        o.based_on = gone.based_on;
+                        let (pp, pc) = ts::resolve(&app.doc().text_styles, gone.id);
+                        o.chars = pc.with(&o.chars);
+                        if o.para.is_none() {
+                            o.para = pp;
+                        }
+                    }
+                    app.set_text_styles(styles.clone());
+                    ui.data_mut(|d| d.insert_temp(open_id, None::<u32>));
+                    app.status = trf("tstyle.deleted", &[("name", &gone.name)]);
+                }
+            });
         });
-    });
 }
 
 #[cfg(test)]
@@ -477,8 +555,20 @@ mod tests {
         let mut app = App::headless();
         let id = with_text(&mut app, "Capítulo 1\nEra uma vez.");
         app.add_book_styles();
-        let body = app.doc().text_styles.iter().find(|s| s.name == crate::i18n::tr("tstyle.book_body")).unwrap().id;
-        let chapter = app.doc().text_styles.iter().find(|s| s.name == crate::i18n::tr("tstyle.book_chapter")).unwrap().id;
+        let body = app
+            .doc()
+            .text_styles
+            .iter()
+            .find(|s| s.name == crate::i18n::tr("tstyle.book_body"))
+            .unwrap()
+            .id;
+        let chapter = app
+            .doc()
+            .text_styles
+            .iter()
+            .find(|s| s.name == crate::i18n::tr("tstyle.book_chapter"))
+            .unwrap()
+            .id;
         // The whole text in the body style, then the first paragraph as a chapter title.
         app.apply_named_style(TextStyleKind::Paragraph, Some(body));
         let undo_before = app.engine.history_labels().0.len();
@@ -491,18 +581,35 @@ mod tests {
             created: None,
         });
         app.apply_named_style(TextStyleKind::Paragraph, Some(chapter));
-        assert_eq!(app.engine.history_labels().0.len(), undo_before + 1, "one undo step");
+        assert_eq!(
+            app.engine.history_labels().0.len(),
+            undo_before + 1,
+            "one undo step"
+        );
         assert_eq!(app.text_styles_here(), (Some(chapter), None));
         let s = spans(&app, id);
-        assert!(s.iter().any(|sp| sp.text.starts_with("Cap") && sp.size_pt == 20.0 && sp.bold));
-        assert!(s.iter().any(|sp| sp.text.contains("Era") && sp.size_pt == 11.0));
+        assert!(s
+            .iter()
+            .any(|sp| sp.text.starts_with("Cap") && sp.size_pt == 20.0 && sp.bold));
+        assert!(s
+            .iter()
+            .any(|sp| sp.text.contains("Era") && sp.size_pt == 11.0));
         // The body grows: the chapter title (based on it) keeps its own size.
         let mut styles = app.doc().text_styles.clone();
-        styles.iter_mut().find(|s| s.id == body).unwrap().chars.size_pt = Some(12.0);
+        styles
+            .iter_mut()
+            .find(|s| s.id == body)
+            .unwrap()
+            .chars
+            .size_pt = Some(12.0);
         app.set_text_styles(styles);
         let s = spans(&app, id);
-        assert!(s.iter().any(|sp| sp.text.contains("Era") && sp.size_pt == 12.0));
-        assert!(s.iter().any(|sp| sp.text.starts_with("Cap") && sp.size_pt == 20.0));
+        assert!(s
+            .iter()
+            .any(|sp| sp.text.contains("Era") && sp.size_pt == 12.0));
+        assert!(s
+            .iter()
+            .any(|sp| sp.text.starts_with("Cap") && sp.size_pt == 20.0));
         assert_eq!(uses(&app, body), 1);
         assert_eq!(uses(&app, chapter), 1);
     }
@@ -537,10 +644,18 @@ mod tests {
                 let id = app.doc().text_styles[0].id;
                 ctx.data_mut(|d| d.insert_temp(egui::Id::new("tstyle_open"), Some(id)));
             }
-            let mut o = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-                let r = egui::Panel::right("dock").default_size(280.0).show(ui, |ui| docker(&mut app, ui));
-                widths.push(r.response.rect.width());
-            });
+            let mut o = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    let r = egui::Panel::right("dock")
+                        .default_size(280.0)
+                        .show(ui, |ui| docker(&mut app, ui));
+                    widths.push(r.response.rect.width());
+                },
+            );
             o.textures_delta.clear();
         }
         assert!(widths.iter().all(|w| *w < 400.0), "{widths:?}");

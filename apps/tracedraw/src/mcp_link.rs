@@ -67,7 +67,11 @@ impl Link {
 
     /// [`Link::start`] under the process id `pid` (tests: several
     /// windows in one process).
-    fn start_as(dir: Option<PathBuf>, pid: u32, wake: impl Fn() + Send + 'static) -> std::io::Result<Link> {
+    fn start_as(
+        dir: Option<PathBuf>,
+        pid: u32,
+        wake: impl Fn() + Send + 'static,
+    ) -> std::io::Result<Link> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         let port = listener.local_addr()?.port();
         let info = LinkInfo {
@@ -139,7 +143,8 @@ impl Link {
             if let Some(dir) = path.parent() {
                 // The window file's time says which window was used last.
                 let _ = std::fs::write(
-                    dir.join(WINDOWS_DIR).join(format!("{}.json", self.info.pid)),
+                    dir.join(WINDOWS_DIR)
+                        .join(format!("{}.json", self.info.pid)),
                     &json,
                 );
             }
@@ -178,7 +183,8 @@ impl Drop for Link {
             let dir = path.parent().map(|d| d.to_path_buf());
             if let Some(dir) = &dir {
                 let _ = std::fs::remove_file(
-                    dir.join(WINDOWS_DIR).join(format!("{}.json", self.info.pid)),
+                    dir.join(WINDOWS_DIR)
+                        .join(format!("{}.json", self.info.pid)),
                 );
             }
             // Leave the link to another window when one still listens.
@@ -201,16 +207,18 @@ impl Drop for Link {
 /// The other windows that wrote a link file into `dir`, the one used last
 /// first.
 pub fn other_windows(dir: &std::path::Path, me: u32) -> Vec<LinkInfo> {
-    let mut found: Vec<(std::time::SystemTime, LinkInfo)> = std::fs::read_dir(dir.join(WINDOWS_DIR))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let when = e.metadata().and_then(|m| m.modified()).ok()?;
-            let info: LinkInfo = serde_json::from_str(&std::fs::read_to_string(e.path()).ok()?).ok()?;
-            (info.pid != me).then_some((when, info))
-        })
-        .collect();
+    let mut found: Vec<(std::time::SystemTime, LinkInfo)> =
+        std::fs::read_dir(dir.join(WINDOWS_DIR))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let when = e.metadata().and_then(|m| m.modified()).ok()?;
+                let info: LinkInfo =
+                    serde_json::from_str(&std::fs::read_to_string(e.path()).ok()?).ok()?;
+                (info.pid != me).then_some((when, info))
+            })
+            .collect();
     found.sort_by(|a, b| b.0.cmp(&a.0));
     found.into_iter().map(|(_, i)| i).collect()
 }
@@ -425,10 +433,12 @@ fn bridge_message(state: &mut BridgeState, dir: Option<PathBuf>, line: &str) -> 
                 let list: Vec<serde_json::Value> = windows
                     .iter()
                     .filter_map(|w| {
-                        let ask = serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        let ask =
+                            serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                             "params": {"name": "window_info", "arguments": {}}})
-                        .to_string();
-                        let a: serde_json::Value = serde_json::from_str(&forward(Some(w), &ask)?).ok()?;
+                            .to_string();
+                        let a: serde_json::Value =
+                            serde_json::from_str(&forward(Some(w), &ask)?).ok()?;
                         let text = a["result"]["content"][0]["text"].as_str()?;
                         let mut info: serde_json::Value = serde_json::from_str(text).ok()?;
                         info["in_use"] = serde_json::json!(Some(w.pid) == in_use);
@@ -452,7 +462,9 @@ fn bridge_message(state: &mut BridgeState, dir: Option<PathBuf>, line: &str) -> 
                     return reply(Ok("following the window the user uses".into()));
                 }
                 if !windows.iter().any(|w| w.pid == pid) {
-                    return reply(Err(format!("no TraceDraw window {pid} lets agents in (see windows)")));
+                    return reply(Err(format!(
+                        "no TraceDraw window {pid} lets agents in (see windows)"
+                    )));
                 }
                 state.chosen = Some(pid);
                 return reply(Ok(format!("working in window {pid}")));
@@ -466,7 +478,13 @@ fn bridge_message(state: &mut BridgeState, dir: Option<PathBuf>, line: &str) -> 
             // The window picked has closed: follow the user again.
             state.chosen = None;
             let a = forward_any(dir, line);
-            return a.map(|a| annotate(line, a, &format!("[window {pid} closed: now in the window the user used last]")));
+            return a.map(|a| {
+                annotate(
+                    line,
+                    a,
+                    &format!("[window {pid} closed: now in the window the user used last]"),
+                )
+            });
         }
         _ => forward_any(dir, line),
     };
@@ -812,9 +830,21 @@ mod tests {
         let dir = temp_dir("mcp-windows");
         let _ = std::fs::remove_dir_all(&dir);
         let mut a = App::headless();
-        a.open_document(App::localized_document("Window A", tracedraw_core::geometry::Size::new(100.0, 100.0)), None);
+        a.open_document(
+            App::localized_document(
+                "Window A",
+                tracedraw_core::geometry::Size::new(100.0, 100.0),
+            ),
+            None,
+        );
         let mut b = App::headless();
-        b.open_document(App::localized_document("Window B", tracedraw_core::geometry::Size::new(100.0, 100.0)), None);
+        b.open_document(
+            App::localized_document(
+                "Window B",
+                tracedraw_core::geometry::Size::new(100.0, 100.0),
+            ),
+            None,
+        );
         let mut la = Link::start_as(Some(dir.clone()), 4_000_001, || {}).expect("a listens");
         std::thread::sleep(Duration::from_millis(20));
         let lb = Link::start_as(Some(dir.clone()), 4_000_002, || {}).expect("b listens");
@@ -825,13 +855,24 @@ mod tests {
         let d = dir.clone();
         let handle = std::thread::spawn(move || {
             let mut state = BridgeState::default();
-            let call = |state: &mut BridgeState, name: &str, args: serde_json::Value| -> serde_json::Value {
+            let call = |state: &mut BridgeState,
+                        name: &str,
+                        args: serde_json::Value|
+             -> serde_json::Value {
                 let line = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                    "params": {"name": name, "arguments": args}}).to_string();
-                serde_json::from_str(&bridge_message(state, Some(d.clone()), &line).expect("answer")).expect("json")
+                    "params": {"name": name, "arguments": args}})
+                .to_string();
+                serde_json::from_str(
+                    &bridge_message(state, Some(d.clone()), &line).expect("answer"),
+                )
+                .expect("json")
             };
-            let list = bridge_message(&mut state, Some(d.clone()),
-                &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string()).expect("list");
+            let list = bridge_message(
+                &mut state,
+                Some(d.clone()),
+                &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string(),
+            )
+            .expect("list");
             let info_a = call(&mut state, "window_info", json!({}));
             let windows = call(&mut state, "windows", json!({}));
             let picked = call(&mut state, "use_window", json!({"window": 4_000_002}));
@@ -846,12 +887,23 @@ mod tests {
             lb.poll(&mut b);
             std::thread::sleep(Duration::from_millis(5));
         }
-        let (list, info_a, windows, picked, info_b, bad, back, info_again) = handle.join().expect("client");
-        assert!(list.contains("\"use_window\"") && list.contains("\"render_area\""), "{list}");
-        let text = |v: &serde_json::Value| v["result"]["content"][0]["text"].as_str().unwrap_or("").to_string();
+        let (list, info_a, windows, picked, info_b, bad, back, info_again) =
+            handle.join().expect("client");
+        assert!(
+            list.contains("\"use_window\"") && list.contains("\"render_area\""),
+            "{list}"
+        );
+        let text = |v: &serde_json::Value| {
+            v["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        };
         assert!(text(&info_a).contains("Window A"), "{info_a}");
         // Every answer says where it came from.
-        assert!(info_a["result"]["content"][1]["text"].as_str().is_some_and(|t| t.contains("Window A")));
+        assert!(info_a["result"]["content"][1]["text"]
+            .as_str()
+            .is_some_and(|t| t.contains("Window A")));
         let w: serde_json::Value = serde_json::from_str(&text(&windows)).expect("json");
         assert_eq!(w["windows"].as_array().map(|l| l.len()), Some(2), "{w}");
         assert_eq!(picked["result"]["isError"], false);
@@ -866,5 +918,4 @@ mod tests {
         assert!(read_link(Some(dir.clone())).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
-
 }

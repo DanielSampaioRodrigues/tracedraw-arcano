@@ -29,7 +29,11 @@ pub enum Linha {
     Voce(String),
     Assistente(String),
     /// A tool the assistant used: its name and whether it worked.
-    Ferramenta { nome: String, ok: bool, resumo: String },
+    Ferramenta {
+        nome: String,
+        ok: bool,
+        resumo: String,
+    },
     Erro(String),
 }
 
@@ -121,7 +125,10 @@ pub struct Chamada {
 
 /// What a reply holds: the assistant's message to keep in the
 /// conversation, its words and the tools it asks for.
-pub fn ler_resposta(provider: Provider, body: &Value) -> Result<(Value, String, Vec<Chamada>), String> {
+pub fn ler_resposta(
+    provider: Provider,
+    body: &Value,
+) -> Result<(Value, String, Vec<Chamada>), String> {
     match provider {
         Provider::Anthropic => {
             let content = body.get("content").cloned().unwrap_or(json!([]));
@@ -141,10 +148,17 @@ pub fn ler_resposta(provider: Provider, body: &Value) -> Result<(Value, String, 
                     args: b.get("input").cloned().unwrap_or(json!({})),
                 })
                 .collect();
-            Ok((json!({"role": "assistant", "content": content}), text, calls))
+            Ok((
+                json!({"role": "assistant", "content": content}),
+                text,
+                calls,
+            ))
         }
         Provider::OpenAiCompatible => {
-            let msg = body.pointer("/choices/0/message").cloned().ok_or_else(|| crate::i18n::tr("ai.unreadable_reply"))?;
+            let msg = body
+                .pointer("/choices/0/message")
+                .cloned()
+                .ok_or_else(|| crate::i18n::tr("ai.unreadable_reply"))?;
             let text = msg["content"].as_str().unwrap_or("").to_string();
             let calls: Vec<Chamada> = msg["tool_calls"]
                 .as_array()
@@ -152,7 +166,11 @@ pub fn ler_resposta(provider: Provider, body: &Value) -> Result<(Value, String, 
                     list.iter()
                         .map(|c| Chamada {
                             id: c["id"].as_str().unwrap_or("").to_string(),
-                            nome: c.pointer("/function/name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+                            nome: c
+                                .pointer("/function/name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                             args: c
                                 .pointer("/function/arguments")
                                 .and_then(|a| a.as_str())
@@ -165,7 +183,10 @@ pub fn ler_resposta(provider: Provider, body: &Value) -> Result<(Value, String, 
             // Kept as the service gave it (with its tool calls), content
             // never null for services that refuse that.
             let mut keep = json!({"role": "assistant", "content": text});
-            if let Some(tc) = msg.get("tool_calls").filter(|t| t.as_array().is_some_and(|a| !a.is_empty())) {
+            if let Some(tc) = msg
+                .get("tool_calls")
+                .filter(|t| t.as_array().is_some_and(|a| !a.is_empty()))
+            {
                 keep["tool_calls"] = tc.clone();
             }
             Ok((keep, text, calls))
@@ -210,7 +231,8 @@ pub fn respostas(provider: Provider, pictures: bool, calls: &[(Chamada, Resultad
                 .collect();
             let pics: Vec<&String> = calls.iter().flat_map(|(_, r)| &r.imagens).collect();
             if pictures && !pics.is_empty() {
-                let mut content = vec![json!({"type": "text", "text": "The pictures the tools returned:"})];
+                let mut content =
+                    vec![json!({"type": "text", "text": "The pictures the tools returned:"})];
                 for png in pics {
                     content.push(json!({"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{png}")}}));
                 }
@@ -227,12 +249,18 @@ fn executar(app: &mut crate::app::App, call: &Chamada) -> Resultado {
         "params": {"name": call.nome, "arguments": call.args}})
     .to_string();
     let Some(answer) = crate::mcp::handle_line(app, &line) else {
-        return Resultado { texto: "no answer".into(), erro: true, ..Default::default() };
+        return Resultado {
+            texto: "no answer".into(),
+            erro: true,
+            ..Default::default()
+        };
     };
     let v: Value = serde_json::from_str(&answer).unwrap_or(json!({}));
     let result = &v["result"];
     let mut r = Resultado {
-        erro: result["isError"].as_bool().unwrap_or(v.get("error").is_some()),
+        erro: result["isError"]
+            .as_bool()
+            .unwrap_or(v.get("error").is_some()),
         ..Default::default()
     };
     if let Some(e) = v.pointer("/error/message").and_then(|m| m.as_str()) {
@@ -262,7 +290,14 @@ fn executar(app: &mut crate::app::App, call: &Chamada) -> Resultado {
 
 /// A line about a tool's answer for the panel.
 fn resumo(call: &Chamada, r: &Resultado) -> String {
-    let first = r.texto.lines().next().unwrap_or("").chars().take(90).collect::<String>();
+    let first = r
+        .texto
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(90)
+        .collect::<String>();
     if r.erro {
         first
     } else if call.nome == "run_script" && first == "ok" {
@@ -317,7 +352,11 @@ pub fn conexoes(app: &crate::app::App) -> Vec<Conexao> {
         out.push(Conexao {
             id: preset.to_string(),
             nome: crate::i18n::tr(preset),
-            prefs: AiPrefs { provider, endpoint: endpoint.to_string(), ..AiPrefs::default() },
+            prefs: AiPrefs {
+                provider,
+                endpoint: endpoint.to_string(),
+                ..AiPrefs::default()
+            },
             key,
             modelos,
         });
@@ -338,7 +377,13 @@ pub fn conexoes(app: &crate::app::App) -> Vec<Conexao> {
                 modelos.push(m.to_string());
             }
         }
-        out.push(Conexao { id: "main".into(), nome, prefs: main.clone(), key: app.ai.key.clone(), modelos });
+        out.push(Conexao {
+            id: "main".into(),
+            nome,
+            prefs: main.clone(),
+            key: app.ai.key.clone(),
+            modelos,
+        });
     }
     out
 }
@@ -348,7 +393,11 @@ pub fn conexoes(app: &crate::app::App) -> Vec<Conexao> {
 pub fn ativa(app: &crate::app::App) -> Option<(Conexao, String)> {
     let list = conexoes(app);
     let chosen = &app.settings.arcano_assist;
-    let c = list.iter().find(|c| c.id == chosen.servico).or(list.first())?.clone();
+    let c = list
+        .iter()
+        .find(|c| c.id == chosen.servico)
+        .or(list.first())?
+        .clone();
     let modelo = if c.modelos.iter().any(|m| *m == chosen.modelo) {
         chosen.modelo.clone()
     } else {
@@ -422,7 +471,9 @@ impl crate::app::App {
         }
         self.assistente.entrada.clear();
         self.assistente.linhas.push(Linha::Voce(text.clone()));
-        self.assistente.mensagens.push(json!({"role": "user", "content": text}));
+        self.assistente
+            .mensagens
+            .push(json!({"role": "user", "content": text}));
         self.assistente.passos = 0;
         self.assistente.parar = false;
         self.assist_request();
@@ -451,7 +502,9 @@ impl crate::app::App {
     pub fn assist_stop(&mut self) {
         self.assistente.parar = true;
         if self.assistente.pending.take().is_some() {
-            self.assistente.linhas.push(Linha::Erro(crate::i18n::tr("assist.stopped")));
+            self.assistente
+                .linhas
+                .push(Linha::Erro(crate::i18n::tr("assist.stopped")));
             self.assist_drop_open_calls();
         }
     }
@@ -470,7 +523,9 @@ impl crate::app::App {
         let open = self.assistente.mensagens.last().is_some_and(|m| {
             m["role"] == "assistant"
                 && (m.get("tool_calls").is_some()
-                    || m["content"].as_array().is_some_and(|c| c.iter().any(|b| b["type"] == "tool_use")))
+                    || m["content"]
+                        .as_array()
+                        .is_some_and(|c| c.iter().any(|b| b["type"] == "tool_use")))
         });
         if open {
             self.assistente.mensagens.pop();
@@ -486,7 +541,9 @@ impl crate::app::App {
         let result = match rx.try_recv() {
             Ok(r) => r,
             Err(std::sync::mpsc::TryRecvError::Empty) => return true,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(crate::i18n::tr("ai.connection_lost")),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err(crate::i18n::tr("ai.connection_lost"))
+            }
         };
         self.assistente.pending = None;
         let Some((prefs, _)) = self.assistente.conn.clone() else {
@@ -494,10 +551,17 @@ impl crate::app::App {
         };
         let provider = prefs.provider;
         let parsed = result.and_then(|r| {
-            let v: Value = serde_json::from_str(&r.body).map_err(|_| crate::i18n::tr("ai.unreadable_reply"))?;
+            let v: Value = serde_json::from_str(&r.body)
+                .map_err(|_| crate::i18n::tr("ai.unreadable_reply"))?;
             if !(200..300).contains(&r.status) {
-                let m = v.pointer("/error/message").and_then(|m| m.as_str()).unwrap_or("");
-                return Err(crate::i18n::trf("ai.http_error", &[("status", &r.status.to_string()), ("message", m)]));
+                let m = v
+                    .pointer("/error/message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("");
+                return Err(crate::i18n::trf(
+                    "ai.http_error",
+                    &[("status", &r.status.to_string()), ("message", m)],
+                ));
             }
             ler_resposta(provider, &v)
         });
@@ -510,7 +574,9 @@ impl crate::app::App {
         };
         self.assistente.mensagens.push(keep);
         if !text.trim().is_empty() {
-            self.assistente.linhas.push(Linha::Assistente(text.trim().to_string()));
+            self.assistente
+                .linhas
+                .push(Linha::Assistente(text.trim().to_string()));
         }
         if calls.is_empty() {
             return false;
@@ -518,7 +584,10 @@ impl crate::app::App {
         if self.assistente.parar || self.assistente.passos >= MAX_STEPS {
             self.assist_drop_open_calls();
             if !self.assistente.parar {
-                self.assistente.linhas.push(Linha::Erro(crate::i18n::trf("assist.too_many", &[("n", &MAX_STEPS.to_string())])));
+                self.assistente.linhas.push(Linha::Erro(crate::i18n::trf(
+                    "assist.too_many",
+                    &[("n", &MAX_STEPS.to_string())],
+                )));
             }
             return false;
         }
@@ -563,7 +632,12 @@ pub fn sem_marcas(text: &str) -> String {
 }
 
 /// Suggestions shown on an empty conversation (i18n keys).
-const SUGESTOES: [&str; 4] = ["assist.suggest_1", "assist.suggest_2", "assist.suggest_3", "assist.suggest_4"];
+const SUGESTOES: [&str; 4] = [
+    "assist.suggest_1",
+    "assist.suggest_2",
+    "assist.suggest_3",
+    "assist.suggest_4",
+];
 
 /// One message as a bubble: the user's at the right in the accent colour,
 /// the assistant's at the left.
@@ -583,13 +657,21 @@ fn bolha(ui: &mut egui::Ui, text: &str, mine: bool) {
         };
         egui::Frame::new()
             .fill(fill)
-            .stroke(if mine { egui::Stroke::NONE } else { egui::Stroke::new(1.0, Tokens::border()) })
+            .stroke(if mine {
+                egui::Stroke::NONE
+            } else {
+                egui::Stroke::new(1.0, Tokens::border())
+            })
             .corner_radius(10)
             .inner_margin(egui::Margin::symmetric(10, 7))
             .show(ui, |ui| {
                 ui.set_max_width(max);
                 ui.vertical(|ui| {
-                    ui.add(egui::Label::new(egui::RichText::new(text).color(color)).wrap().selectable(true));
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(text).color(color))
+                            .wrap()
+                            .selectable(true),
+                    );
                 });
             });
     });
@@ -624,7 +706,11 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                         .rich_tip(pair("assist.pick_service", "assist.pick_service_desc"));
                 });
                 if servico != c.id {
-                    let first = list.iter().find(|o| o.id == servico).and_then(|o| o.modelos.first().cloned()).unwrap_or_default();
+                    let first = list
+                        .iter()
+                        .find(|o| o.id == servico)
+                        .and_then(|o| o.modelos.first().cloned())
+                        .unwrap_or_default();
                     app.assist_choose(servico, first);
                 } else {
                     let mut m = modelo.clone();
@@ -672,8 +758,17 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
             if app.assistente.linhas.is_empty() {
                 ui.add_space(12.0);
                 ui.vertical_centered(|ui| {
-                    ui.label(egui::RichText::new(tr("assist.welcome")).size(16.0).strong());
-                    ui.add(egui::Label::new(egui::RichText::new(tr("assist.empty")).color(Tokens::text_dim())).wrap());
+                    ui.label(
+                        egui::RichText::new(tr("assist.welcome"))
+                            .size(16.0)
+                            .strong(),
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(tr("assist.empty")).color(Tokens::text_dim()),
+                        )
+                        .wrap(),
+                    );
                 });
                 ui.add_space(8.0);
                 for k in SUGESTOES {
@@ -681,7 +776,11 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                     let b = egui::Button::new(egui::RichText::new(&text))
                         .corner_radius(14)
                         .wrap();
-                    if ui.add_enabled(!busy, b).rich_tip(pair("assist.suggest", "assist.suggest_desc")).clicked() {
+                    if ui
+                        .add_enabled(!busy, b)
+                        .rich_tip(pair("assist.suggest", "assist.suggest_desc"))
+                        .clicked()
+                    {
                         app.assistente.entrada = text;
                     }
                 }
@@ -692,11 +791,22 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                     Linha::Assistente(t) => bolha(ui, &sem_marcas(t), false),
                     Linha::Ferramenta { nome, ok, resumo } => {
                         let mark = if *ok { "\u{203A}" } else { "!" };
-                        let line = if resumo.is_empty() { format!("{mark} {nome}") } else { format!("{mark} {nome}: {resumo}") };
-                        let color = if *ok { Tokens::text_dim() } else { egui::Color32::from_rgb(220, 140, 40) };
+                        let line = if resumo.is_empty() {
+                            format!("{mark} {nome}")
+                        } else {
+                            format!("{mark} {nome}: {resumo}")
+                        };
+                        let color = if *ok {
+                            Tokens::text_dim()
+                        } else {
+                            egui::Color32::from_rgb(220, 140, 40)
+                        };
                         ui.horizontal(|ui| {
                             ui.add_space(6.0);
-                            ui.add(egui::Label::new(egui::RichText::new(line).small().color(color)).truncate());
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(line).small().color(color))
+                                    .truncate(),
+                            );
                         });
                     }
                     Linha::Erro(t) => {
@@ -705,7 +815,13 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                             .corner_radius(8)
                             .inner_margin(egui::Margin::symmetric(10, 6))
                             .show(ui, |ui| {
-                                ui.add(egui::Label::new(egui::RichText::new(t).color(egui::Color32::from_rgb(230, 100, 80))).wrap());
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(t)
+                                            .color(egui::Color32::from_rgb(230, 100, 80)),
+                                    )
+                                    .wrap(),
+                                );
                             });
                     }
                 }
@@ -722,11 +838,20 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
     // taken before the field sees it.
     let input_id = egui::Id::new("arcano_assist_input");
     let focused = ui.memory(|m| m.has_focus(input_id));
-    let enter = focused && !busy && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+    let enter = focused
+        && !busy
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
     ui.add_space(6.0);
     egui::Frame::new()
         .fill(Tokens::field())
-        .stroke(egui::Stroke::new(1.0, if focused { Tokens::ACCENT } else { Tokens::control_border() }))
+        .stroke(egui::Stroke::new(
+            1.0,
+            if focused {
+                Tokens::ACCENT
+            } else {
+                Tokens::control_border()
+            },
+        ))
         .corner_radius(10)
         .inner_margin(egui::Margin::symmetric(8, 6))
         .show(ui, |ui| {
@@ -740,7 +865,11 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
             )
             .rich_tip(pair("assist.field", "assist.field_desc"));
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tr("assist.keys_hint")).small().color(Tokens::text_dim()));
+                ui.label(
+                    egui::RichText::new(tr("assist.keys_hint"))
+                        .small()
+                        .color(Tokens::text_dim()),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if busy {
                         if ui
@@ -752,9 +881,11 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                         }
                     } else {
                         let ready = !app.assistente.entrada.trim().is_empty();
-                        let send = egui::Button::new(egui::RichText::new(tr("assist.send")).color(egui::Color32::WHITE))
-                            .fill(Tokens::ACCENT)
-                            .corner_radius(6);
+                        let send = egui::Button::new(
+                            egui::RichText::new(tr("assist.send")).color(egui::Color32::WHITE),
+                        )
+                        .fill(Tokens::ACCENT)
+                        .corner_radius(6);
                         if ui
                             .add_enabled(ready, send)
                             .rich_tip(pair("assist.send", "assist.send_desc"))
@@ -771,7 +902,8 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
         ui.memory_mut(|m| m.request_focus(input_id));
     }
     if busy {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(150));
     }
 }
 
@@ -792,7 +924,9 @@ mod tests {
     fn anthropic(req: &HttpRequest) -> HttpResult {
         let body: Value = serde_json::from_str(&req.body).unwrap();
         let last = body["messages"].as_array().unwrap().last().unwrap().clone();
-        let answered = last["content"].as_array().is_some_and(|c| c.iter().any(|b| b["type"] == "tool_result"));
+        let answered = last["content"]
+            .as_array()
+            .is_some_and(|c| c.iter().any(|b| b["type"] == "tool_result"));
         let reply = if answered {
             json!({"content": [{"type": "text", "text": "Pronto: desenhei o círculo."}], "stop_reason": "end_turn"})
         } else {
@@ -801,25 +935,35 @@ mod tests {
                 {"type": "tool_use", "id": "t1", "name": "run_script", "input": {"source": "ActiveLayer.CreateEllipse(10, 10, 20, 20); print('ok')"}}
             ], "stop_reason": "tool_use"})
         };
-        Ok(HttpResponse { status: 200, body: reply.to_string() })
+        Ok(HttpResponse {
+            status: 200,
+            body: reply.to_string(),
+        })
     }
 
     fn openai(req: &HttpRequest) -> HttpResult {
         let body: Value = serde_json::from_str(&req.body).unwrap();
         assert_eq!(body["messages"][0]["role"], "system");
-        assert!(body["tools"].as_array().is_some_and(|t| t.iter().any(|t| t["function"]["name"] == "render_area")));
+        assert!(body["tools"]
+            .as_array()
+            .is_some_and(|t| t.iter().any(|t| t["function"]["name"] == "render_area")));
         let msgs = body["messages"].as_array().unwrap();
         let answered = msgs.iter().any(|m| m["role"] == "tool");
         let reply = if answered {
             // The picture came back after the tool's answer.
-            assert!(msgs.iter().any(|m| m["role"] == "user" && m["content"].is_array()));
+            assert!(msgs
+                .iter()
+                .any(|m| m["role"] == "user" && m["content"].is_array()));
             json!({"choices": [{"message": {"role": "assistant", "content": "A página está vazia."}, "finish_reason": "stop"}]})
         } else {
             json!({"choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [
                 {"id": "c1", "type": "function", "function": {"name": "render_area", "arguments": "{\"area\": \"page\", \"max_px\": 128}"}}
             ]}, "finish_reason": "tool_calls"}]})
         };
-        Ok(HttpResponse { status: 200, body: reply.to_string() })
+        Ok(HttpResponse {
+            status: 200,
+            body: reply.to_string(),
+        })
     }
 
     #[test]
@@ -827,20 +971,41 @@ mod tests {
         let mut app = App::headless();
         ready(&mut app, Provider::Anthropic);
         app.assistente.fake = Some(anthropic);
-        let before = app.doc().pages[0].layers.iter().map(|l| l.shapes.len()).sum::<usize>();
+        let before = app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
         app.assistente.entrada = "desenhe um círculo".into();
         app.assist_send();
         app.poll_assistente();
-        let after = app.doc().pages[0].layers.iter().map(|l| l.shapes.len()).sum::<usize>();
+        let after = app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
         assert_eq!(after, before + 1, "the circle was drawn");
-        assert!(matches!(app.assistente.linhas.last(), Some(Linha::Assistente(t)) if t.contains("Pronto")));
-        assert!(app.assistente.linhas.iter().any(|l| matches!(l, Linha::Ferramenta { nome, ok: true, .. } if nome == "run_script")));
+        assert!(
+            matches!(app.assistente.linhas.last(), Some(Linha::Assistente(t)) if t.contains("Pronto"))
+        );
+        assert!(app.assistente.linhas.iter().any(
+            |l| matches!(l, Linha::Ferramenta { nome, ok: true, .. } if nome == "run_script")
+        ));
         // The tools went with the request, in the Messages API's form.
         let sent: Value = serde_json::from_str(&app.assistente.enviados[0].body).unwrap();
-        assert!(sent["tools"].as_array().is_some_and(|t| t.iter().any(|t| t["name"] == "get_selection" && t["input_schema"].is_object())));
+        assert!(sent["tools"].as_array().is_some_and(|t| t
+            .iter()
+            .any(|t| t["name"] == "get_selection" && t["input_schema"].is_object())));
         // One undo step takes it back.
         app.undo();
-        assert_eq!(app.doc().pages[0].layers.iter().map(|l| l.shapes.len()).sum::<usize>(), before);
+        assert_eq!(
+            app.doc().pages[0]
+                .layers
+                .iter()
+                .map(|l| l.shapes.len())
+                .sum::<usize>(),
+            before
+        );
     }
 
     #[test]
@@ -852,7 +1017,11 @@ mod tests {
         app.assistente.entrada = "o que tem na página?".into();
         app.assist_send();
         app.poll_assistente();
-        assert!(matches!(app.assistente.linhas.last(), Some(Linha::Assistente(t)) if t.contains("vazia")), "{:?}", app.assistente.linhas);
+        assert!(
+            matches!(app.assistente.linhas.last(), Some(Linha::Assistente(t)) if t.contains("vazia")),
+            "{:?}",
+            app.assistente.linhas
+        );
     }
 
     #[test]
@@ -871,7 +1040,10 @@ mod tests {
     fn a_service_that_never_stops_is_stopped() {
         fn forever(_: &HttpRequest) -> HttpResult {
             let reply = json!({"content": [{"type": "tool_use", "id": "t", "name": "document_info", "input": {}}], "stop_reason": "tool_use"});
-            Ok(HttpResponse { status: 200, body: reply.to_string() })
+            Ok(HttpResponse {
+                status: 200,
+                body: reply.to_string(),
+            })
         }
         let mut app = App::headless();
         ready(&mut app, Provider::Anthropic);
@@ -894,9 +1066,16 @@ mod tests {
         app.studio_set_key("openai", "ko".into());
         let list = conexoes(&app);
         let ids: Vec<&str> = list.iter().map(|c| c.id.as_str()).collect();
-        assert!(ids.contains(&"aipreset.anthropic") && ids.contains(&"aipreset.openai"), "{ids:?}");
+        assert!(
+            ids.contains(&"aipreset.anthropic") && ids.contains(&"aipreset.openai"),
+            "{ids:?}"
+        );
         let claude = list.iter().find(|c| c.id == "aipreset.anthropic").unwrap();
-        assert!(claude.modelos.iter().all(|m| m.starts_with("claude-")), "{:?}", claude.modelos);
+        assert!(
+            claude.modelos.iter().all(|m| m.starts_with("claude-")),
+            "{:?}",
+            claude.modelos
+        );
         // The chosen one is used, with its own key and model.
         app.assist_choose("aipreset.openai".into(), "gpt-6-luna".into());
         fn ok(req: &HttpRequest) -> HttpResult {
@@ -904,13 +1083,20 @@ mod tests {
             assert_eq!(body["model"], "gpt-6-luna");
             assert!(req.headers.iter().any(|(_, v)| v.contains("ko")));
             let reply = json!({"choices": [{"message": {"role": "assistant", "content": "oi"}}]});
-            Ok(HttpResponse { status: 200, body: reply.to_string() })
+            Ok(HttpResponse {
+                status: 200,
+                body: reply.to_string(),
+            })
         }
         app.assistente.fake = Some(ok);
         app.assistente.entrada = "oi".into();
         app.assist_send();
         app.poll_assistente();
-        assert!(matches!(app.assistente.linhas.last(), Some(Linha::Assistente(t)) if t == "oi"), "{:?}", app.assistente.linhas);
+        assert!(
+            matches!(app.assistente.linhas.last(), Some(Linha::Assistente(t)) if t == "oi"),
+            "{:?}",
+            app.assistente.linhas
+        );
         // Another service carries on the conversation in plain words.
         app.assist_choose("aipreset.anthropic".into(), "claude-opus-5-5".into());
         assert_eq!(app.assistente.mensagens.len(), 2);
@@ -920,7 +1106,10 @@ mod tests {
 
     #[test]
     fn markdown_marks_are_taken_out() {
-        assert_eq!(sem_marcas("## Pronto\n- **um**\n- `dois`"), "Pronto\n\u{2022} um\n\u{2022} dois");
+        assert_eq!(
+            sem_marcas("## Pronto\n- **um**\n- `dois`"),
+            "Pronto\n\u{2022} um\n\u{2022} dois"
+        );
     }
 
     /// The panel keeps the docker's width, with a conversation and a
@@ -934,13 +1123,25 @@ mod tests {
         let mut widths = Vec::new();
         for frame in 0..10 {
             if frame == 5 {
-                app.assistente.linhas.push(Linha::Voce("um pedido bem comprido ".repeat(20)));
-                app.assistente.linhas.push(Linha::Assistente("uma resposta **longa** ".repeat(30)));
+                app.assistente
+                    .linhas
+                    .push(Linha::Voce("um pedido bem comprido ".repeat(20)));
+                app.assistente
+                    .linhas
+                    .push(Linha::Assistente("uma resposta **longa** ".repeat(30)));
             }
-            let mut o = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-                let r = egui::Panel::right("dock").default_size(300.0).show(ui, |ui| docker(&mut app, ui));
-                widths.push(r.response.rect.width());
-            });
+            let mut o = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    let r = egui::Panel::right("dock")
+                        .default_size(300.0)
+                        .show(ui, |ui| docker(&mut app, ui));
+                    widths.push(r.response.rect.width());
+                },
+            );
             o.textures_delta.clear();
         }
         assert!(widths.iter().all(|w| *w < 400.0), "{widths:?}");

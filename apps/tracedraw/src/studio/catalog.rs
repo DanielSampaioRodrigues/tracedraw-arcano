@@ -189,7 +189,6 @@ impl ProviderInfo {
         self.models.iter().find(|m| m.id == id)
     }
 
-
     /// The models that can do `op` (Generate or Remix).
     pub fn models_for(&self, op: Op) -> Vec<&ModelInfo> {
         self.models
@@ -237,7 +236,10 @@ impl ModelInfo {
         if self.aspects.iter().any(|a| a == "1:1") {
             return "1:1".into();
         }
-        self.aspects.first().cloned().unwrap_or_else(|| "1:1".into())
+        self.aspects
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "1:1".into())
     }
 
     /// The price line for one picture at `res`.
@@ -280,7 +282,11 @@ fn non_empty(s: String) -> Option<String> {
 
 /// Dollars with the interface's decimal separator.
 pub fn dollars(v: f64) -> String {
-    let s = if v < 0.1 { format!("{v:.3}") } else { format!("{v:.2}") };
+    let s = if v < 0.1 {
+        format!("{v:.3}")
+    } else {
+        format!("{v:.2}")
+    };
     let s = s.trim_end_matches('0').trim_end_matches('.').to_string();
     crate::ai_image::localize_decimal(s)
 }
@@ -295,9 +301,16 @@ mod tests {
         assert!(c.version >= 1);
         for id in ["gemini", "openai", "recraft", "freepik", "stability"] {
             let p = c.provider(id).unwrap_or_else(|| panic!("{id} missing"));
-            assert!(!p.name.is_empty() && p.key_url.starts_with("https://"), "{id}");
+            assert!(
+                !p.name.is_empty() && p.key_url.starts_with("https://"),
+                "{id}"
+            );
             for m in &p.models {
-                assert!(!m.ops.is_empty() && !m.aspects.is_empty() && !m.resolutions.is_empty(), "{id}/{}", m.id);
+                assert!(
+                    !m.ops.is_empty() && !m.aspects.is_empty() && !m.resolutions.is_empty(),
+                    "{id}/{}",
+                    m.id
+                );
                 for o in &m.ops {
                     assert!(Op::from_id(o).is_some(), "{id}/{}: {o}", m.id);
                 }
@@ -318,11 +331,18 @@ mod tests {
         let c = Catalog::built_in();
         let mut newer = c.clone();
         newer.version += 1;
-        assert!(c.newer(&serde_json::to_string(&newer).expect("json")).is_some());
+        assert!(c
+            .newer(&serde_json::to_string(&newer).expect("json"))
+            .is_some());
         assert!(c.newer(&serde_json::to_string(&c).expect("json")).is_none());
         assert!(c.newer("not json").is_none());
-        let empty = Catalog { version: c.version + 5, ..Default::default() };
-        assert!(c.newer(&serde_json::to_string(&empty).expect("json")).is_none());
+        let empty = Catalog {
+            version: c.version + 5,
+            ..Default::default()
+        };
+        assert!(c
+            .newer(&serde_json::to_string(&empty).expect("json"))
+            .is_none());
     }
 
     #[test]

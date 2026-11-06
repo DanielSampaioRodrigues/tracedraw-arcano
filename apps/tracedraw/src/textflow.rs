@@ -443,8 +443,18 @@ impl App {
                     on_path: on_path.as_ref(),
                 });
                 // Widows, orphans and titles kept with what follows.
-                let lines: Vec<(usize, usize)> = layout.lines.iter().map(|l| (l.start_char, l.end_char)).collect();
-                let at = tracedraw_core::paragraphs::keep_split(&rest, align, &para, &lines, layout.fitted_chars);
+                let lines: Vec<(usize, usize)> = layout
+                    .lines
+                    .iter()
+                    .map(|l| (l.start_char, l.end_char))
+                    .collect();
+                let at = tracedraw_core::paragraphs::keep_split(
+                    &rest,
+                    align,
+                    &para,
+                    &lines,
+                    layout.fitted_chars,
+                );
                 let (head, tail) = tracedraw_core::split_spans_at(&rest, at);
                 rest = tail;
                 head
@@ -471,14 +481,22 @@ impl App {
 
     /// The paragraph format at the caret (else the first paragraph) of
     /// text `id`, for its rules between frames.
-    pub fn keep_rules_at(&self, id: ShapeId) -> Option<tracedraw_core::paragraphs::ParagraphFormat> {
+    pub fn keep_rules_at(
+        &self,
+        id: ShapeId,
+    ) -> Option<tracedraw_core::paragraphs::ParagraphFormat> {
         let s = self.doc().find_shape(id)?;
-        let ShapeKind::Text { spans, align, para, .. } = &s.kind else {
+        let ShapeKind::Text {
+            spans, align, para, ..
+        } = &s.kind
+        else {
             return None;
         };
         let at = self.paragraph_range(id).map_or(0, |r| r.0);
         let i = tracedraw_core::paragraphs::paragraph_of(spans, at);
-        Some(tracedraw_core::paragraphs::paragraph_format(spans, *align, para, i))
+        Some(tracedraw_core::paragraphs::paragraph_format(
+            spans, *align, para, i,
+        ))
     }
 
     /// Give the paragraphs at the caret (else all of text `id`) these
@@ -488,11 +506,15 @@ impl App {
             return;
         };
         let mut kind = s.kind.clone();
-        tracedraw_core::paragraphs::edit_paragraph_formats(&mut kind, self.paragraph_range(id), |f| {
-            f.orphans = orphans;
-            f.widows = widows;
-            f.keep_with_next = keep;
-        });
+        tracedraw_core::paragraphs::edit_paragraph_formats(
+            &mut kind,
+            self.paragraph_range(id),
+            |f| {
+                f.orphans = orphans;
+                f.widows = widows;
+                f.keep_with_next = keep;
+            },
+        );
         if kind != s.kind {
             self.run(Command::SetShapeKind { shape: id, kind });
             self.reflow_chain(id);
@@ -692,7 +714,9 @@ mod tests {
                     f.orphans = 2;
                 });
                 let t0 = "Um parágrafo curto.\n".chars().count();
-                tracedraw_core::paragraphs::edit_paragraph_formats(&mut k, Some((t0, t0)), |f| f.keep_with_next = true);
+                tracedraw_core::paragraphs::edit_paragraph_formats(&mut k, Some((t0, t0)), |f| {
+                    f.keep_with_next = true
+                });
             }
             app.run(Command::SetShapeKind { shape: a, kind: k });
             app.select(vec![a, b]);
@@ -725,10 +749,16 @@ mod tests {
                 let here = &ra[cut..];
                 if !here.is_empty() && !rb.is_empty() {
                     assert!(lines_in(here) >= 2, "h={h}: orphan {here:?}");
-                    assert!(lines_in(rb.trim_start_matches("Título\n")) >= 2 || rb.is_empty(), "h={h}: widow {rb:?}");
+                    assert!(
+                        lines_in(rb.trim_start_matches("Título\n")) >= 2 || rb.is_empty(),
+                        "h={h}: widow {rb:?}"
+                    );
                 }
             }
         }
-        assert!(title_alone_without_rules, "some height leaves the title alone without the rules");
+        assert!(
+            title_alone_without_rules,
+            "some height leaves the title alone without the rules"
+        );
     }
 }

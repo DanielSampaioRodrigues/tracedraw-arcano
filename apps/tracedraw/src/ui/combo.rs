@@ -26,7 +26,11 @@ fn paint(painter: &Painter, rect: Rect, color: egui::Color32, up: bool) {
     let h = w * 0.55;
     let s = if up { -1.0 } else { 1.0 };
     painter.add(egui::Shape::line(
-        vec![c + egui::vec2(-w, -h * s), c + egui::vec2(0.0, h * s), c + egui::vec2(w, -h * s)],
+        vec![
+            c + egui::vec2(-w, -h * s),
+            c + egui::vec2(0.0, h * s),
+            c + egui::vec2(w, -h * s),
+        ],
         Stroke::new(1.4, color),
     ));
 }

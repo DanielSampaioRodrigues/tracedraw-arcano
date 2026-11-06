@@ -260,7 +260,11 @@ impl<N: Numeric> NumField<'_, N> {
         let lit = resp.hovered() || spin_resp.hovered() || spin_resp.dragged() || resp.has_focus();
         if ui.is_rect_visible(spin) && lit {
             let p = ui.painter();
-            p.rect_filled(spin.shrink2(egui::vec2(0.0, 1.0)), 4.0, crate::theme::Tokens::field());
+            p.rect_filled(
+                spin.shrink2(egui::vec2(0.0, 1.0)),
+                4.0,
+                crate::theme::Tokens::field(),
+            );
             let hover = spin_resp.hover_pos();
             let halves = [
                 (

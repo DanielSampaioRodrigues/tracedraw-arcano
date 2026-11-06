@@ -168,7 +168,11 @@ pub fn multipart(
 pub const BOUNDARY: &str = "tracedraw-studio-boundary-5d1e8a";
 
 /// A JSON POST.
-pub fn post_json(url: String, headers: Vec<(String, String)>, body: &serde_json::Value) -> HttpRequest {
+pub fn post_json(
+    url: String,
+    headers: Vec<(String, String)>,
+    body: &serde_json::Value,
+) -> HttpRequest {
     let mut h = headers;
     h.push(("content-type".into(), "application/json".into()));
     HttpRequest {
@@ -237,9 +241,12 @@ pub fn service_error(status: u16, v: Option<&serde_json::Value>, body: &str) -> 
             .iter()
             .find_map(|p| match v.pointer(p) {
                 Some(serde_json::Value::String(s)) if !s.is_empty() => Some(s.clone()),
-                Some(serde_json::Value::Array(a)) if !a.is_empty() => {
-                    Some(a.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("; "))
-                }
+                Some(serde_json::Value::Array(a)) if !a.is_empty() => Some(
+                    a.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                ),
                 _ => None,
             })
         })
@@ -270,10 +277,16 @@ mod tests {
 
     #[test]
     fn multipart_bodies_carry_fields_and_files() {
-        let b = multipart(BOUNDARY, &[("prompt", "a cat".into())], &[("image", "i.png", "image/png", b"PNG")]);
+        let b = multipart(
+            BOUNDARY,
+            &[("prompt", "a cat".into())],
+            &[("image", "i.png", "image/png", b"PNG")],
+        );
         let s = String::from_utf8_lossy(&b);
         assert!(s.contains("name=\"prompt\"\r\n\r\na cat\r\n"));
-        assert!(s.contains("name=\"image\"; filename=\"i.png\"\r\nContent-Type: image/png\r\n\r\nPNG\r\n"));
+        assert!(s.contains(
+            "name=\"image\"; filename=\"i.png\"\r\nContent-Type: image/png\r\n\r\nPNG\r\n"
+        ));
         assert!(s.ends_with(&format!("--{BOUNDARY}--\r\n")));
     }
 
@@ -284,6 +297,9 @@ mod tests {
         let v = serde_json::json!({"errors": ["too big"], "name": "bad_request"});
         assert!(service_error(400, Some(&v), "").contains("too big"));
         assert!(service_error(500, None, "oops").contains("oops"));
-        assert_eq!(unbase64("data:image/png;base64,UE5H"), Some(b"PNG".to_vec()));
+        assert_eq!(
+            unbase64("data:image/png;base64,UE5H"),
+            Some(b"PNG".to_vec())
+        );
     }
 }

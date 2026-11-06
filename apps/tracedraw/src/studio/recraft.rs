@@ -24,7 +24,10 @@ fn headers(key: &str) -> Vec<(String, String)> {
 }
 
 fn data_url(req: &OpRequest, min_side: u32) -> Result<String, String> {
-    let png = req.image.as_deref().ok_or_else(|| tr("aiimg.need_bitmap"))?;
+    let png = req
+        .image
+        .as_deref()
+        .ok_or_else(|| tr("aiimg.need_bitmap"))?;
     let (b, _, _) = fit_image(png, MAX_PIXELS, MAX_SIDE, min_side)?;
     Ok(format!("data:image/png;base64,{}", transport::base64(&b)))
 }
@@ -71,7 +74,11 @@ pub fn build(key: &str, req: &OpRequest) -> Result<(crate::net::HttpRequest, boo
                 }
                 _ => "/images/crispUpscale",
             };
-            let min = if req.variant == "crisp" || req.variant.is_empty() { 32 } else { MIN_SIDE };
+            let min = if req.variant == "crisp" || req.variant.is_empty() {
+                32
+            } else {
+                MIN_SIDE
+            };
             body["image_url"] = json!(data_url(req, min)?);
             body["image_format"] = json!("png");
             (path, true)
@@ -84,7 +91,12 @@ pub fn build(key: &str, req: &OpRequest) -> Result<(crate::net::HttpRequest, boo
                 req.prompt.clone()
             };
             body["prompt"] = json!(prompt);
-            for (ours, theirs) in [("left", "expand_left"), ("right", "expand_right"), ("top", "expand_top"), ("bottom", "expand_bottom")] {
+            for (ours, theirs) in [
+                ("left", "expand_left"),
+                ("right", "expand_right"),
+                ("top", "expand_top"),
+                ("bottom", "expand_bottom"),
+            ] {
                 let v = req.num(ours, 0.0).clamp(0.0, 4096.0).round() as u64;
                 if v > 0 {
                     body[theirs] = json!(v);
@@ -111,7 +123,10 @@ pub fn build(key: &str, req: &OpRequest) -> Result<(crate::net::HttpRequest, boo
         }
         Op::Relight => return Err(tr("studio.not_offered")),
     };
-    Ok((transport::post_json(format!("{BASE}{path}"), headers(key), &body), single))
+    Ok((
+        transport::post_json(format!("{BASE}{path}"), headers(key), &body),
+        single,
+    ))
 }
 
 /// The picture or SVG of an answer.
@@ -167,11 +182,20 @@ mod tests {
             ..Default::default()
         };
         let (r, single) = build("t", &req).expect("request");
-        assert_eq!(r.url, "https://external.api.recraft.ai/v1/images/generations");
+        assert_eq!(
+            r.url,
+            "https://external.api.recraft.ai/v1/images/generations"
+        );
         assert!(!single);
         let v: Value = serde_json::from_str(&r.body).expect("json");
-        assert_eq!((v["model"].as_str(), v["size"].as_str()), (Some("recraftv4_1_vector"), Some("16:9")));
-        assert!(v.get("image_format").is_none(), "vectors take no image format");
+        assert_eq!(
+            (v["model"].as_str(), v["size"].as_str()),
+            (Some("recraftv4_1_vector"), Some("16:9"))
+        );
+        assert!(
+            v.get("image_format").is_none(),
+            "vectors take no image format"
+        );
         let up = OpRequest {
             op: Some(Op::Upscale),
             variant: "crisp".into(),
@@ -181,14 +205,17 @@ mod tests {
         let (r, single) = build("t", &up).expect("request");
         assert!(r.url.ends_with("/crispUpscale") && single);
         let v: Value = serde_json::from_str(&r.body).expect("json");
-        assert!(v["image_url"].as_str().is_some_and(|u| u.starts_with("data:image/png;base64,")));
+        assert!(v["image_url"]
+            .as_str()
+            .is_some_and(|u| u.starts_with("data:image/png;base64,")));
         let ex = OpRequest {
             op: Some(Op::Expand),
             image: Some(super::super::test_png(300, 300)),
             params: [("top".to_string(), json!(120))].into_iter().collect(),
             ..Default::default()
         };
-        let v: Value = serde_json::from_str(&build("t", &ex).expect("request").0.body).expect("json");
+        let v: Value =
+            serde_json::from_str(&build("t", &ex).expect("request").0.body).expect("json");
         assert_eq!(v["expand_top"], 120);
         assert!(v.get("expand_left").is_none());
     }
@@ -199,19 +226,43 @@ mod tests {
         let fake = Fake::new(
             |r| {
                 if r.url.ends_with("/vectorize") {
-                    reply(200, json!({"image": {"image_id": "1", "b64_json": transport::base64(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>")}}))
+                    reply(
+                        200,
+                        json!({"image": {"image_id": "1", "b64_json": transport::base64(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>")}}),
+                    )
                 } else {
-                    reply(200, json!({"data": [{"image_id": "1", "b64_json": transport::base64(&super::super::test_png(4, 4))}]}))
+                    reply(
+                        200,
+                        json!({"data": [{"image_id": "1", "b64_json": transport::base64(&super::super::test_png(4, 4))}]}),
+                    )
                 }
             },
             |_| Err("no".into()),
         );
         let _ = svg;
-        let vec = OpRequest { op: Some(Op::Vectorize), image: Some(super::super::test_png(300, 300)), ..Default::default() };
-        assert!(matches!(run(&fake, "t", &vec).expect("svg"), Output::Svg(s) if s.contains("<svg")));
-        let gen = OpRequest { op: Some(Op::Generate), model: "recraftv4_1".into(), prompt: "x".into(), aspect: "1:1".into(), ..Default::default() };
+        let vec = OpRequest {
+            op: Some(Op::Vectorize),
+            image: Some(super::super::test_png(300, 300)),
+            ..Default::default()
+        };
+        assert!(
+            matches!(run(&fake, "t", &vec).expect("svg"), Output::Svg(s) if s.contains("<svg"))
+        );
+        let gen = OpRequest {
+            op: Some(Op::Generate),
+            model: "recraftv4_1".into(),
+            prompt: "x".into(),
+            aspect: "1:1".into(),
+            ..Default::default()
+        };
         assert!(matches!(run(&fake, "t", &gen).expect("png"), Output::Images(v) if v.len() == 1));
-        let fake = Fake::new(|_| reply(200, json!({"id": "u", "credits": 1250})), |_| Err("no".into()));
-        assert!(test_key(&fake, "t").expect("works").contains("1,25") || test_key(&fake, "t").expect("works").contains("1.25"));
+        let fake = Fake::new(
+            |_| reply(200, json!({"id": "u", "credits": 1250})),
+            |_| Err("no".into()),
+        );
+        assert!(
+            test_key(&fake, "t").expect("works").contains("1,25")
+                || test_key(&fake, "t").expect("works").contains("1.25")
+        );
     }
 }

@@ -26,7 +26,9 @@ fn headers(key: &str) -> Vec<(String, String)> {
 
 /// Width over height of `"16:9"`.
 fn ratio(aspect: &str) -> f64 {
-    let mut it = aspect.split(':').map(|x| x.trim().parse::<f64>().unwrap_or(1.0));
+    let mut it = aspect
+        .split(':')
+        .map(|x| x.trim().parse::<f64>().unwrap_or(1.0));
     let (w, h) = (it.next().unwrap_or(1.0), it.next().unwrap_or(1.0));
     (w / h.max(0.01)).clamp(1.0 / 3.0, 3.0)
 }
@@ -87,9 +89,16 @@ pub fn build(key: &str, req: &OpRequest) -> Result<crate::net::HttpRequest, Stri
             "quality": quality,
             "output_format": "png",
         });
-        return Ok(transport::post_json(format!("{BASE}/images/generations"), headers(key), &body));
+        return Ok(transport::post_json(
+            format!("{BASE}/images/generations"),
+            headers(key),
+            &body,
+        ));
     }
-    let png = req.image.as_deref().ok_or_else(|| tr("aiimg.need_bitmap"))?;
+    let png = req
+        .image
+        .as_deref()
+        .ok_or_else(|| tr("aiimg.need_bitmap"))?;
     let (img, w, h) = fit_image(png, MAX_PIXELS as u64, MAX_SIDE as u32, 0)?;
     let mut body = json!({"model": model, "n": 1, "quality": quality, "output_format": "png"});
     let prompt = match req.op() {
@@ -137,7 +146,11 @@ pub fn build(key: &str, req: &OpRequest) -> Result<crate::net::HttpRequest, Stri
     }
     body["prompt"] = json!(prompt);
     body["images"] = json!([{"image_url": data_url(&img)}]);
-    Ok(transport::post_json(format!("{BASE}/images/edits"), headers(key), &body))
+    Ok(transport::post_json(
+        format!("{BASE}/images/edits"),
+        headers(key),
+        &body,
+    ))
 }
 
 /// The picture `png` scaled by `k` and placed at (`x`, `y`) on a
@@ -180,8 +193,14 @@ pub fn run(t: &dyn Transport, key: &str, req: &OpRequest) -> Result<Output, Stri
 /// The key lists the models (`GET /v1/models`).
 pub fn test_key(t: &dyn Transport, key: &str) -> Result<String, String> {
     let v = transport::json_ok(t.call(&transport::get(format!("{BASE}/models"), headers(key))))?;
-    let n = v.get("data").and_then(|d| d.as_array()).map_or(0, |d| d.len());
-    Ok(crate::i18n::trf("studio.models_listed", &[("n", &n.to_string())]))
+    let n = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map_or(0, |d| d.len());
+    Ok(crate::i18n::trf(
+        "studio.models_listed",
+        &[("n", &n.to_string())],
+    ))
 }
 
 #[cfg(test)]
@@ -190,14 +209,27 @@ mod tests {
 
     #[test]
     fn sizes_are_exact_shapes_the_api_takes() {
-        for (aspect, res) in [("16:9", "1K"), ("16:9", "4K"), ("2:3", "2K"), ("1:1", "4K"), ("21:9", "2K"), ("1:1", "1K")] {
+        for (aspect, res) in [
+            ("16:9", "1K"),
+            ("16:9", "4K"),
+            ("2:3", "2K"),
+            ("1:1", "4K"),
+            ("21:9", "2K"),
+            ("1:1", "1K"),
+        ] {
             let (w, h) = size_for(aspect, res);
             assert!(w % 16 == 0 && h % 16 == 0, "{aspect} {res}");
             let px = w as f64 * h as f64;
-            assert!((MIN_PIXELS..=MAX_PIXELS).contains(&px), "{aspect} {res}: {w}x{h}");
+            assert!(
+                (MIN_PIXELS..=MAX_PIXELS).contains(&px),
+                "{aspect} {res}: {w}x{h}"
+            );
             assert!(w as f64 <= MAX_SIDE && h as f64 <= MAX_SIDE);
             let r = w as f64 / h as f64;
-            assert!((r - ratio(aspect)).abs() / ratio(aspect) < 0.03, "{aspect} {res}: {w}x{h}");
+            assert!(
+                (r - ratio(aspect)).abs() / ratio(aspect) < 0.03,
+                "{aspect} {res}: {w}x{h}"
+            );
         }
         assert_eq!(size_for("1:1", "1K"), (1024, 1024));
         assert_eq!(size_for("16:9", "4K"), (3840, 2160));
@@ -215,16 +247,28 @@ mod tests {
         assert_eq!(r.url, "https://api.openai.com/v1/images/edits");
         let v: Value = serde_json::from_str(&r.body).expect("json");
         assert_eq!(v["background"], "transparent");
-        assert!(v.pointer("/images/0/image_url").and_then(|u| u.as_str()).is_some_and(|u| u.starts_with("data:image/png")));
+        assert!(v
+            .pointer("/images/0/image_url")
+            .and_then(|u| u.as_str())
+            .is_some_and(|u| u.starts_with("data:image/png")));
         let ex = OpRequest {
             op: Some(Op::Expand),
             params: [("right".to_string(), json!(400))].into_iter().collect(),
             ..req
         };
-        let v: Value = serde_json::from_str(&build("ok", &ex).expect("request").body).expect("json");
+        let v: Value =
+            serde_json::from_str(&build("ok", &ex).expect("request").body).expect("json");
         assert!(v.get("mask").is_some());
         let size = v["size"].as_str().expect("size");
-        let (w, h) = size.split_once('x').map(|(a, b)| (a.parse::<f64>().unwrap_or(0.0), b.parse::<f64>().unwrap_or(1.0))).expect("WxH");
+        let (w, h) = size
+            .split_once('x')
+            .map(|(a, b)| {
+                (
+                    a.parse::<f64>().unwrap_or(0.0),
+                    b.parse::<f64>().unwrap_or(1.0),
+                )
+            })
+            .expect("WxH");
         assert!((w / h - 1200.0 / 600.0).abs() < 0.05, "{size}");
     }
 }

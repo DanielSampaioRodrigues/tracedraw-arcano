@@ -5653,6 +5653,9 @@ fn esc_finishes_the_curve_being_drawn_and_keeps_it() {
 #[test]
 fn the_move_goes_on_after_a_right_click() {
     let (ctx, mut app, id) = setup();
+    // The copy must follow the pointer exactly: no snapping, which would
+    // pull it onto whatever the window's size happens to put near it.
+    app.snap.off = true;
     let from = app.view.to_screen(Point::new(35.0, 25.0));
     let n = Modifiers::NONE;
     let right = |p: Pos2, down: bool| button(p, down, PointerButton::Secondary, n);
@@ -18685,7 +18688,7 @@ fn property_bar_values_commit_and_stay_after_a_click_outside() {
         Leave::ClickCanvas,
     ] {
         let (ctx, mut app, id) = setup();
-        type_in_bar(&ctx, &mut app, "50.000 mm", "80", leave);
+        type_in_bar(&ctx, &mut app, "50 mm", "80", leave);
         let b = app.doc().find_shape(id).expect("rect").bounds();
         assert!(near(b.width(), 80.0), "{leave:?}: width {}", b.width());
         assert!(near(b.height(), 30.0), "{leave:?}: height {}", b.height());

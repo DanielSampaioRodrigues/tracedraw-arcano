@@ -71,13 +71,20 @@ impl Stacks {
                 continue;
             }
             // A panel that came joins the group in front's, else the first.
-            let at = groups.iter().position(|g| g.tabs.contains(&front)).unwrap_or(0);
+            let at = groups
+                .iter()
+                .position(|g| g.tabs.contains(&front))
+                .unwrap_or(0);
             match groups.get_mut(at) {
                 Some(g) => {
                     g.tabs.push(*t);
                     g.front = *t;
                 }
-                None => groups.push(StackGroup { tabs: vec![*t], front: *t, weight: 1.0 }),
+                None => groups.push(StackGroup {
+                    tabs: vec![*t],
+                    front: *t,
+                    weight: 1.0,
+                }),
             }
         }
         for g in groups.iter_mut() {
@@ -104,14 +111,25 @@ impl Stacks {
             g.tabs.retain(|t| *t != tab);
         }
         let mut at = target
-            .and_then(|tabs| groups.iter().position(|g| g.tabs.iter().any(|t| tabs.contains(t))))
+            .and_then(|tabs| {
+                groups
+                    .iter()
+                    .position(|g| g.tabs.iter().any(|t| tabs.contains(t)))
+            })
             .unwrap_or(groups.len().saturating_sub(1));
         let emptied_before = groups.iter().take(at).filter(|g| g.tabs.is_empty()).count();
         groups.retain(|g| !g.tabs.is_empty());
         at = at.saturating_sub(emptied_before);
         if new_after || groups.is_empty() {
             let pos = (at + 1).min(groups.len());
-            groups.insert(pos, StackGroup { tabs: vec![tab], front: tab, weight: 1.0 });
+            groups.insert(
+                pos,
+                StackGroup {
+                    tabs: vec![tab],
+                    front: tab,
+                    weight: 1.0,
+                },
+            );
         } else if let Some(g) = groups.get_mut(at) {
             g.tabs.push(tab);
             g.front = tab;
@@ -138,35 +156,42 @@ fn layout_id(place: DockerPlace) -> egui::Id {
 /// band that shows where it goes.
 pub fn drop_on(ctx: &egui::Context, p: egui::Pos2) -> Option<(DockerPlace, usize, bool, Rect)> {
     let nr = ctx.cumulative_frame_nr();
-    [DockerPlace::Right, DockerPlace::RightInner, DockerPlace::Left, DockerPlace::LeftInner]
-        .into_iter()
-        .find_map(|place| {
-            let l = ctx.data(|d| d.get_temp::<StackLayout>(layout_id(place)))?;
-            if l.frame + 1 < nr {
-                return None;
-            }
-            for g in 0..8 {
-                if let Some(h) = l.heads[g] {
-                    if h.contains(p) {
-                        return Some((place, g, false, h));
-                    }
-                }
-                if let Some(b) = l.bodies[g] {
-                    if b.contains(p) {
-                        // The upper half joins the group, the lower half
-                        // starts a group under it.
-                        let lower = p.y > b.center().y;
-                        let band = if lower {
-                            Rect::from_min_max(pos2(b.left(), b.center().y), b.max)
-                        } else {
-                            l.heads[g].map_or(b, |h| h.union(Rect::from_min_max(b.min, pos2(b.right(), b.center().y))))
-                        };
-                        return Some((place, g, lower, band));
-                    }
+    [
+        DockerPlace::Right,
+        DockerPlace::RightInner,
+        DockerPlace::Left,
+        DockerPlace::LeftInner,
+    ]
+    .into_iter()
+    .find_map(|place| {
+        let l = ctx.data(|d| d.get_temp::<StackLayout>(layout_id(place)))?;
+        if l.frame + 1 < nr {
+            return None;
+        }
+        for g in 0..8 {
+            if let Some(h) = l.heads[g] {
+                if h.contains(p) {
+                    return Some((place, g, false, h));
                 }
             }
-            None
-        })
+            if let Some(b) = l.bodies[g] {
+                if b.contains(p) {
+                    // The upper half joins the group, the lower half
+                    // starts a group under it.
+                    let lower = p.y > b.center().y;
+                    let band = if lower {
+                        Rect::from_min_max(pos2(b.left(), b.center().y), b.max)
+                    } else {
+                        l.heads[g].map_or(b, |h| {
+                            h.union(Rect::from_min_max(b.min, pos2(b.right(), b.center().y)))
+                        })
+                    };
+                    return Some((place, g, lower, band));
+                }
+            }
+        }
+        None
+    })
 }
 
 /// The stacked column at `place`, open: its groups one under the other.
@@ -180,11 +205,22 @@ pub fn column(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     let n = groups.len().max(1);
     let room = (full.height() - SPLIT_H * (n as f32 - 1.0)).max(0.0);
     let total: f32 = groups.iter().map(|g| g.weight).sum::<f32>().max(0.001);
-    let mut layout = StackLayout { frame: ui.ctx().cumulative_frame_nr(), heads: [None; 8], bodies: [None; 8] };
+    let mut layout = StackLayout {
+        frame: ui.ctx().cumulative_frame_nr(),
+        heads: [None; 8],
+        bodies: [None; 8],
+    };
     let mut y = full.top();
     for (i, g) in groups.iter().enumerate() {
-        let h = if i + 1 == n { full.bottom() - y } else { (room * g.weight / total).max(MIN_GROUP_H.min(room / n as f32)) };
-        let rect = Rect::from_min_max(pos2(full.left(), y), pos2(full.right(), (y + h).min(full.bottom())));
+        let h = if i + 1 == n {
+            full.bottom() - y
+        } else {
+            (room * g.weight / total).max(MIN_GROUP_H.min(room / n as f32))
+        };
+        let rect = Rect::from_min_max(
+            pos2(full.left(), y),
+            pos2(full.right(), (y + h).min(full.bottom())),
+        );
         let head = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + HEAD_H));
         let body = Rect::from_min_max(pos2(rect.left(), head.bottom()), rect.max);
         if i < 8 {
@@ -200,16 +236,28 @@ pub fn column(app: &mut App, ui: &mut Ui, place: DockerPlace) {
             y = split.bottom();
         }
     }
-    ui.ctx().data_mut(|d| d.insert_temp(layout_id(place), layout));
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(layout_id(place), layout));
     ui.advance_cursor_after_rect(full);
 }
 
 /// A group's tabs across its top; at the right, the panel list (three
 /// dots) and, on the first group, collapse.
-fn group_head(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, g: &StackGroup, head: Rect) {
+fn group_head(
+    app: &mut App,
+    ui: &mut Ui,
+    place: DockerPlace,
+    gi: usize,
+    g: &StackGroup,
+    head: Rect,
+) {
     let p = ui.painter().clone();
     p.rect_filled(head, 0.0, Tokens::tab_strip());
-    p.hline(head.x_range(), head.bottom() - 0.5, egui::Stroke::new(1.0, Tokens::border()));
+    p.hline(
+        head.x_range(),
+        head.bottom() - 0.5,
+        egui::Stroke::new(1.0, Tokens::border()),
+    );
     let buttons = if gi == 0 { 52.0 } else { 28.0 };
     let mut x = head.left() + 4.0;
     let font = egui::FontId::proportional(12.0);
@@ -222,13 +270,30 @@ fn group_head(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, g: &Sta
             break;
         }
         let r = Rect::from_min_max(pos2(x, head.top() + 4.0), pos2(x + w, head.bottom()));
-        let resp = ui.interact(r, egui::Id::new(("stack_tab", place as u8, tab.key())), Sense::click_and_drag());
+        let resp = ui.interact(
+            r,
+            egui::Id::new(("stack_tab", place as u8, tab.key())),
+            Sense::click_and_drag(),
+        );
         if active {
-            p.rect_filled(r, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, Tokens::panel());
+            p.rect_filled(
+                r,
+                egui::CornerRadius {
+                    nw: 6,
+                    ne: 6,
+                    sw: 0,
+                    se: 0,
+                },
+                Tokens::panel(),
+            );
         } else if resp.hovered() {
             p.rect_filled(r.shrink2(vec2(0.0, 2.0)), 5.0, Tokens::tool_hover());
         }
-        let color = if active { Tokens::text() } else { Tokens::text_dim() };
+        let color = if active {
+            Tokens::text()
+        } else {
+            Tokens::text_dim()
+        };
         p.with_clip_rect(r.shrink2(vec2(6.0, 0.0))).galley(
             pos2(r.left() + 12.0, r.center().y - galley.size().y / 2.0),
             galley,
@@ -239,7 +304,11 @@ fn group_head(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, g: &Sta
         let over_close = resp.hover_pos().is_some_and(|q| close.contains(q));
         if resp.hovered() && w > 50.0 {
             let c = close.center();
-            let col = if over_close { Tokens::text() } else { Tokens::text_dim() };
+            let col = if over_close {
+                Tokens::text()
+            } else {
+                Tokens::text_dim()
+            };
             let s = egui::Stroke::new(1.2, col);
             p.line_segment([c + vec2(-3.0, -3.0), c + vec2(3.0, 3.0)], s);
             p.line_segment([c + vec2(3.0, -3.0), c + vec2(-3.0, 3.0)], s);
@@ -250,8 +319,15 @@ fn group_head(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, g: &Sta
             resp.rich_tip(format!("{name}\n{}", tr("docker.tab_desc")))
         };
         if resp.drag_started_by(egui::PointerButton::Primary) {
-            let grab = resp.interact_pointer_pos().map(|q| q - r.min).unwrap_or(vec2(12.0, 12.0));
-            app.docker_drag = Some(DockerDrag { tab, grab: vec2(grab.x.min(60.0), grab.y.min(HEAD_H)), last: None });
+            let grab = resp
+                .interact_pointer_pos()
+                .map(|q| q - r.min)
+                .unwrap_or(vec2(12.0, 12.0));
+            app.docker_drag = Some(DockerDrag {
+                tab,
+                grab: vec2(grab.x.min(60.0), grab.y.min(HEAD_H)),
+                last: None,
+            });
         }
         if resp.clicked() {
             if over_close && w > 50.0 {
@@ -275,8 +351,15 @@ fn group_head(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, g: &Sta
         x += w + 2.0;
     }
     // The panel list.
-    let more = Rect::from_center_size(pos2(head.right() - 15.0, head.center().y + 2.0), vec2(22.0, 22.0));
-    let resp = ui.interact(more, egui::Id::new(("stack_more", place as u8, gi)), Sense::click());
+    let more = Rect::from_center_size(
+        pos2(head.right() - 15.0, head.center().y + 2.0),
+        vec2(22.0, 22.0),
+    );
+    let resp = ui.interact(
+        more,
+        egui::Id::new(("stack_more", place as u8, gi)),
+        Sense::click(),
+    );
     if resp.hovered() {
         p.rect_filled(more, 5.0, Tokens::tool_hover());
     }
@@ -286,16 +369,34 @@ fn group_head(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, g: &Sta
     let resp = resp.rich_tip(tr("docker.add_docker"));
     crate::ui::dockers::panels_menu(app, &resp, place);
     if gi == 0 {
-        let fold = Rect::from_center_size(pos2(head.right() - 39.0, head.center().y + 2.0), vec2(22.0, 22.0));
+        let fold = Rect::from_center_size(
+            pos2(head.right() - 39.0, head.center().y + 2.0),
+            vec2(22.0, 22.0),
+        );
         let resp = ui
-            .interact(fold, egui::Id::new(("stack_fold", place as u8)), Sense::click())
+            .interact(
+                fold,
+                egui::Id::new(("stack_fold", place as u8)),
+                Sense::click(),
+            )
             .rich_tip(tr("docker.collapse"));
         if resp.hovered() {
             p.rect_filled(fold, 5.0, Tokens::tool_hover());
         }
-        let col = if resp.hovered() { Tokens::text() } else { Tokens::text_dim() };
-        for pts in crate::ui::dockers::fold_arrows(fold.shrink(5.0), crate::ui::dockers::strip_at_left(place)) {
-            p.add(egui::epaint::PathShape::convex_polygon(pts.to_vec(), col, egui::Stroke::NONE));
+        let col = if resp.hovered() {
+            Tokens::text()
+        } else {
+            Tokens::text_dim()
+        };
+        for pts in crate::ui::dockers::fold_arrows(
+            fold.shrink(5.0),
+            crate::ui::dockers::strip_at_left(place),
+        ) {
+            p.add(egui::epaint::PathShape::convex_polygon(
+                pts.to_vec(),
+                col,
+                egui::Stroke::NONE,
+            ));
         }
         if resp.clicked() {
             app.set_docker_column(place, false, None);
@@ -306,7 +407,11 @@ fn group_head(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, g: &Sta
 /// A group's page, kept to its part of the column.
 fn group_body(app: &mut App, ui: &mut Ui, tab: DockerTab, body: Rect) {
     let inner = body.shrink2(vec2(8.0, 8.0));
-    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(inner).id_salt(("stack_body", tab.key())));
+    let mut page = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .id_salt(("stack_body", tab.key())),
+    );
     page.set_clip_rect(body.intersect(ui.clip_rect()));
     if !app.drawing_shown() && tab != DockerTab::Hints {
         page.label(egui::RichText::new(tr("docker.no_drawing")).color(Tokens::text_dim()));
@@ -317,12 +422,32 @@ fn group_body(app: &mut App, ui: &mut Ui, tab: DockerTab, body: Rect) {
 
 /// The divider under group `gi`: dragging it gives height to one group
 /// from the next.
-fn divider(app: &mut App, ui: &mut Ui, place: DockerPlace, gi: usize, split: Rect, room: f32, total: f32) {
+fn divider(
+    app: &mut App,
+    ui: &mut Ui,
+    place: DockerPlace,
+    gi: usize,
+    split: Rect,
+    room: f32,
+    total: f32,
+) {
     let resp = ui
-        .interact(split, egui::Id::new(("stack_split", place as u8, gi)), Sense::drag())
+        .interact(
+            split,
+            egui::Id::new(("stack_split", place as u8, gi)),
+            Sense::drag(),
+        )
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-    let line = if resp.hovered() || resp.dragged() { Tokens::ACCENT } else { Tokens::border() };
-    ui.painter().hline(split.x_range(), split.center().y, egui::Stroke::new(1.0, line));
+    let line = if resp.hovered() || resp.dragged() {
+        Tokens::ACCENT
+    } else {
+        Tokens::border()
+    };
+    ui.painter().hline(
+        split.x_range(),
+        split.center().y,
+        egui::Stroke::new(1.0, line),
+    );
     if resp.dragged() && room > 0.0 {
         let dy = resp.drag_delta().y;
         let Some(i) = index(place) else { return };
@@ -350,22 +475,39 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     for tab in tabs {
         let r = Rect::from_center_size(pos2(full.center().x, y + 16.0), vec2(32.0, 32.0));
         let resp = ui
-            .interact(r, egui::Id::new(("stack_strip", place as u8, tab.key())), Sense::click_and_drag())
+            .interact(
+                r,
+                egui::Id::new(("stack_strip", place as u8, tab.key())),
+                Sense::click_and_drag(),
+            )
             .rich_tip(format!("{}\n{}", tr(tab.key()), tr("docker.tab_desc")));
         if resp.hovered() {
             ui.painter().rect_filled(r, 6.0, Tokens::tool_hover());
         }
         match crate::ui::dockers::tab_icon(tab) {
-            Some(icon) => icon(ui.painter(), Rect::from_center_size(r.center(), vec2(18.0, 18.0))),
+            Some(icon) => icon(
+                ui.painter(),
+                Rect::from_center_size(r.center(), vec2(18.0, 18.0)),
+            ),
             None => {
                 // No picture: the name's first letters.
                 let name = tr(tab.key());
                 let short: String = name.chars().take(2).collect();
-                ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, short, egui::FontId::proportional(12.0), Tokens::text());
+                ui.painter().text(
+                    r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    short,
+                    egui::FontId::proportional(12.0),
+                    Tokens::text(),
+                );
             }
         }
         if resp.drag_started_by(egui::PointerButton::Primary) {
-            app.docker_drag = Some(DockerDrag { tab, grab: vec2(12.0, 12.0), last: None });
+            app.docker_drag = Some(DockerDrag {
+                tab,
+                grab: vec2(12.0, 12.0),
+                last: None,
+            });
         }
         if resp.clicked() {
             app.set_docker_column(place, true, Some(tab));
@@ -376,12 +518,17 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
         }
     }
     let more = Rect::from_center_size(pos2(full.center().x, y + 12.0), vec2(28.0, 22.0));
-    let resp = ui.interact(more, crate::ui::dockers::more_button_id(place), Sense::click());
+    let resp = ui.interact(
+        more,
+        crate::ui::dockers::more_button_id(place),
+        Sense::click(),
+    );
     if resp.hovered() {
         ui.painter().rect_filled(more, 5.0, Tokens::tool_hover());
     }
     for dx in [-4.5, 0.0, 4.5] {
-        ui.painter().circle_filled(more.center() + vec2(dx, 0.0), 1.4, Tokens::text_dim());
+        ui.painter()
+            .circle_filled(more.center() + vec2(dx, 0.0), 1.4, Tokens::text_dim());
     }
     let resp = resp.rich_tip(tr("docker.add_docker"));
     crate::ui::dockers::panels_menu(app, &resp, place);
@@ -396,7 +543,11 @@ mod tests {
     fn groups_follow_the_column_and_regroup() {
         let mut s = Stacks::default();
         let p = DockerPlace::Right;
-        s.follow(p, &[DockerTab::Hints, DockerTab::Properties, DockerTab::Objects], DockerTab::Hints);
+        s.follow(
+            p,
+            &[DockerTab::Hints, DockerTab::Properties, DockerTab::Objects],
+            DockerTab::Hints,
+        );
         assert_eq!(s.groups(p).len(), 1);
         // Objects starts a group under the first.
         s.regroup(p, DockerTab::Objects, 0, true);
@@ -405,11 +556,21 @@ mod tests {
         // Properties joins Objects' group, in front.
         s.regroup(p, DockerTab::Properties, 1, false);
         assert_eq!(s.groups(p)[0].tabs, vec![DockerTab::Hints]);
-        assert_eq!(s.groups(p)[1].tabs, vec![DockerTab::Objects, DockerTab::Properties]);
+        assert_eq!(
+            s.groups(p)[1].tabs,
+            vec![DockerTab::Objects, DockerTab::Properties]
+        );
         assert_eq!(s.groups(p)[1].front, DockerTab::Properties);
         // A panel closed leaves its group; one opened joins the front's.
-        s.follow(p, &[DockerTab::Hints, DockerTab::Objects, DockerTab::Color], DockerTab::Objects);
-        assert_eq!(s.groups(p)[1].tabs, vec![DockerTab::Objects, DockerTab::Color]);
+        s.follow(
+            p,
+            &[DockerTab::Hints, DockerTab::Objects, DockerTab::Color],
+            DockerTab::Objects,
+        );
+        assert_eq!(
+            s.groups(p)[1].tabs,
+            vec![DockerTab::Objects, DockerTab::Color]
+        );
         assert_eq!(s.groups(p)[1].front, DockerTab::Objects);
         // Hints moved into the second group: the first one goes.
         s.regroup(p, DockerTab::Hints, 1, false);
@@ -422,23 +583,41 @@ mod tests {
         app.settings.stacked_panels = true;
         app.open_dockers = vec![DockerTab::Hints, DockerTab::Properties, DockerTab::Objects];
         app.show_dockers = true;
-        app.stacks.follow(DockerPlace::Right, &app.open_dockers.clone(), DockerTab::Hints);
-        app.stacks.regroup(DockerPlace::Right, DockerTab::Objects, 0, true);
+        app.stacks.follow(
+            DockerPlace::Right,
+            &app.open_dockers.clone(),
+            DockerTab::Hints,
+        );
+        app.stacks
+            .regroup(DockerPlace::Right, DockerTab::Objects, 0, true);
         let ctx = crate::theme::ui_context();
         let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(1400.0, 800.0));
         let mut widths = Vec::new();
         for _ in 0..5 {
-            let mut o = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-                let r = egui::Panel::right("dock").default_size(300.0).show(ui, |ui| column(&mut app, ui, DockerPlace::Right));
-                widths.push(r.response.rect.width());
-            });
+            let mut o = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    let r = egui::Panel::right("dock")
+                        .default_size(300.0)
+                        .show(ui, |ui| column(&mut app, ui, DockerPlace::Right));
+                    widths.push(r.response.rect.width());
+                },
+            );
             o.textures_delta.clear();
         }
         assert!(widths.iter().all(|w| *w < 420.0), "{widths:?}");
         assert!((widths[4] - widths[2]).abs() < 1.0, "{widths:?}");
-        let l = ctx.data(|d| d.get_temp::<StackLayout>(layout_id(DockerPlace::Right))).unwrap();
+        let l = ctx
+            .data(|d| d.get_temp::<StackLayout>(layout_id(DockerPlace::Right)))
+            .unwrap();
         let (h0, h1) = (l.heads[0].unwrap(), l.heads[1].unwrap());
-        assert!(h1.top() > h0.bottom() + MIN_GROUP_H - 1.0, "two groups, one under the other");
+        assert!(
+            h1.top() > h0.bottom() + MIN_GROUP_H - 1.0,
+            "two groups, one under the other"
+        );
         // A drop on the second group's lower half starts a third group.
         let p = pos2(h1.center().x, screen.bottom() - 20.0);
         let (place, g, new_after, _) = drop_on(&ctx, p).unwrap();

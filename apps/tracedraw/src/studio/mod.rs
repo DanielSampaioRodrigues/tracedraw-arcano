@@ -135,7 +135,6 @@ impl Op {
             Op::Generate | Op::Remix | Op::ReplaceBackground | Op::Relight
         )
     }
-
 }
 
 /// Everything one request needs. `params` carries what is particular to
@@ -212,7 +211,12 @@ pub enum Output {
 pub const TRANSLATE_PROMPT: &str = "Translate the user's text into natural English for an image generation service. Keep every detail, name and number; do not add anything. Reply with the translation only, without quotes or notes. If it is already in English, reply with it unchanged.";
 
 /// `text` in English, through the main AI service.
-pub fn translate(t: &dyn transport::Transport, prefs: &crate::ai::AiPrefs, key: &str, text: &str) -> Result<String, String> {
+pub fn translate(
+    t: &dyn transport::Transport,
+    prefs: &crate::ai::AiPrefs,
+    key: &str,
+    text: &str,
+) -> Result<String, String> {
     let http = crate::ai::build_request_with(
         prefs,
         key,
@@ -233,9 +237,12 @@ pub fn translate(t: &dyn transport::Transport, prefs: &crate::ai::AiPrefs, key: 
 /// (accents); plain ASCII is sent as it is.
 fn needs_translation(text: &str) -> bool {
     !text.is_ascii()
-        || text
-            .split(|c: char| !c.is_alphabetic())
-            .any(|w| matches!(w.to_lowercase().as_str(), "um" | "uma" | "com" | "de" | "do" | "da" | "em" | "no" | "na" | "para" | "que"))
+        || text.split(|c: char| !c.is_alphabetic()).any(|w| {
+            matches!(
+                w.to_lowercase().as_str(),
+                "um" | "uma" | "com" | "de" | "do" | "da" | "em" | "no" | "na" | "para" | "que"
+            )
+        })
 }
 
 pub fn run(t: &dyn transport::Transport, key: &str, req: &OpRequest) -> Result<Output, String> {
@@ -257,7 +264,10 @@ pub fn run(t: &dyn transport::Transport, key: &str, req: &OpRequest) -> Result<O
         "recraft" => recraft::run(t, key, req),
         "freepik" => freepik::run(t, key, req),
         "stability" => stability::run(t, key, req),
-        other => Err(crate::i18n::trf("studio.unknown_service", &[("name", other)])),
+        other => Err(crate::i18n::trf(
+            "studio.unknown_service",
+            &[("name", other)],
+        )),
     }
 }
 
@@ -273,7 +283,10 @@ pub fn test_key(t: &dyn transport::Transport, provider: &str, key: &str) -> Resu
         "recraft" => recraft::test_key(t, key),
         "freepik" => freepik::test_key(t, key),
         "stability" => stability::test_key(t, key),
-        other => Err(crate::i18n::trf("studio.unknown_service", &[("name", other)])),
+        other => Err(crate::i18n::trf(
+            "studio.unknown_service",
+            &[("name", other)],
+        )),
     }
 }
 
@@ -332,7 +345,12 @@ pub fn provider_of_preset(preset_key: &str) -> Option<&'static str> {
 /// `max_side` on its longer side (scaled down evenly, never up), and
 /// at least `min_side` on its shorter one (scaled up when smaller). The
 /// answer is a PNG and its size; the picture itself when it already fits.
-pub fn fit_image(png: &[u8], max_pixels: u64, max_side: u32, min_side: u32) -> Result<(Vec<u8>, u32, u32), String> {
+pub fn fit_image(
+    png: &[u8],
+    max_pixels: u64,
+    max_side: u32,
+    min_side: u32,
+) -> Result<(Vec<u8>, u32, u32), String> {
     let img = image::load_from_memory(png)
         .map_err(|_| crate::i18n::tr("aiimg.unreadable_image"))?
         .to_rgba8();
@@ -356,7 +374,10 @@ pub fn fit_image(png: &[u8], max_pixels: u64, max_side: u32, min_side: u32) -> R
     let out = image::imageops::resize(&img, nw, nh, image::imageops::FilterType::Lanczos3);
     let mut bytes = Vec::new();
     image::DynamicImage::ImageRgba8(out)
-        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
         .map_err(|e| e.to_string())?;
     Ok((bytes, nw, nh))
 }
@@ -370,10 +391,14 @@ pub fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
 
 #[cfg(test)]
 pub(crate) fn test_png(w: u32, h: u32) -> Vec<u8> {
-    let img = image::RgbaImage::from_fn(w, h, |x, y| image::Rgba([(x % 256) as u8, (y % 256) as u8, 128, 255]));
+    let img = image::RgbaImage::from_fn(w, h, |x, y| {
+        image::Rgba([(x % 256) as u8, (y % 256) as u8, 128, 255])
+    });
     let mut bytes = Vec::new();
-    let _ = image::DynamicImage::ImageRgba8(img)
-        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png);
+    let _ = image::DynamicImage::ImageRgba8(img).write_to(
+        &mut std::io::Cursor::new(&mut bytes),
+        image::ImageFormat::Png,
+    );
     bytes
 }
 
@@ -387,9 +412,15 @@ mod tests {
         let fake = Fake::new(
             |r| {
                 if r.url.contains("anthropic") {
-                    reply(200, serde_json::json!({"content": [{"type": "text", "text": "a red fox in the snow"}], "stop_reason": "end_turn"}))
+                    reply(
+                        200,
+                        serde_json::json!({"content": [{"type": "text", "text": "a red fox in the snow"}], "stop_reason": "end_turn"}),
+                    )
                 } else {
-                    reply(200, serde_json::json!({"image": transport::base64(&test_png(4, 4)), "finish_reason": "SUCCESS"}))
+                    reply(
+                        200,
+                        serde_json::json!({"image": transport::base64(&test_png(4, 4)), "finish_reason": "SUCCESS"}),
+                    )
                 }
             },
             |_| Err("no".into()),
@@ -406,15 +437,28 @@ mod tests {
         };
         assert!(matches!(run(&fake, "sk", &req), Ok(Output::Images(_))));
         let sent = fake.sent();
-        assert!(sent[0].body.contains("uma raposa"), "translation asked first");
+        assert!(
+            sent[0].body.contains("uma raposa"),
+            "translation asked first"
+        );
         assert!(String::from_utf8_lossy(&sent[1].bytes).contains("a red fox in the snow"));
         // Without a service to translate: said so, nothing sent.
         let fake2 = Fake::new(|_| reply(500, serde_json::json!({})), |_| Err("no".into()));
-        let no = OpRequest { translator: None, ..req.clone() };
-        assert_eq!(run(&fake2, "sk", &no).expect_err("refused"), crate::i18n::tr("studio.english_only"));
+        let no = OpRequest {
+            translator: None,
+            ..req.clone()
+        };
+        assert_eq!(
+            run(&fake2, "sk", &no).expect_err("refused"),
+            crate::i18n::tr("studio.english_only")
+        );
         assert!(fake2.sent().is_empty());
         // English goes as it is.
-        let en = OpRequest { prompt: "a red fox".into(), translator: None, ..req };
+        let en = OpRequest {
+            prompt: "a red fox".into(),
+            translator: None,
+            ..req
+        };
         assert!(run(&fake, "sk", &en).is_ok());
     }
 

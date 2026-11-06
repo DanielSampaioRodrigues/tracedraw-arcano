@@ -2688,8 +2688,14 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
         .rich_tip(tr("options.ui_shadows_tip"));
     ui.checkbox(&mut app.settings.colored_icons, tr("options.colored_icons"))
         .rich_tip(tr("options.colored_icons_tip"));
-    ui.checkbox(&mut app.settings.stacked_panels, tr("options.stacked_panels"))
-        .rich_tip(crate::ui::tips::pair("options.stacked_panels", "options.stacked_panels_tip"));
+    ui.checkbox(
+        &mut app.settings.stacked_panels,
+        tr("options.stacked_panels"),
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.stacked_panels",
+        "options.stacked_panels_tip",
+    ));
     crate::ui::chrome::section(ui, &tr("options.ui_size"));
     // The size takes effect when the slider is let go or the field is
     // left, so the page does not grow under the pointer.

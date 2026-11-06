@@ -42,13 +42,23 @@ pub fn typography(text: &str, prev: Option<char>) -> (String, usize) {
         let next = chars.get(i + 1).copied();
         match c {
             '"' => {
-                out.push(if is_open_context(last(&out)) { '\u{201C}' } else { '\u{201D}' });
+                out.push(if is_open_context(last(&out)) {
+                    '\u{201C}'
+                } else {
+                    '\u{201D}'
+                });
                 n += 1;
             }
             '\'' => {
                 // Inside a word an apostrophe; else opening or closing.
                 let p = last(&out);
-                let q = if p.is_some_and(|p| p.is_alphanumeric()) { '\u{2019}' } else if is_open_context(p) { '\u{2018}' } else { '\u{2019}' };
+                let q = if p.is_some_and(|p| p.is_alphanumeric()) {
+                    '\u{2019}'
+                } else if is_open_context(p) {
+                    '\u{2018}'
+                } else {
+                    '\u{2019}'
+                };
                 out.push(q);
                 n += 1;
             }
@@ -69,7 +79,9 @@ pub fn typography(text: &str, prev: Option<char>) -> (String, usize) {
                 out.push('\u{2014}');
                 n += 1;
             }
-            '-' if last(&out).is_some_and(|p| p.is_ascii_digit()) && next.is_some_and(|q| q.is_ascii_digit()) => {
+            '-' if last(&out).is_some_and(|p| p.is_ascii_digit())
+                && next.is_some_and(|q| q.is_ascii_digit()) =>
+            {
                 // Between numbers (pages, years): the en dash.
                 out.push('\u{2013}');
                 n += 1;
@@ -110,13 +122,17 @@ pub fn typography_spans(spans: &[TextSpan]) -> (Vec<TextSpan>, usize) {
 /// The runs of characters in text `kind` whose look differs from their
 /// paragraph style where the style sets it, without a character style.
 pub fn local_overrides(kind: &ShapeKind, styles: &[ts::TextStyle]) -> usize {
-    let ShapeKind::Text { spans, align, para, .. } = kind else {
+    let ShapeKind::Text {
+        spans, align, para, ..
+    } = kind
+    else {
         return 0;
     };
     let ranges = tracedraw_core::paragraphs::paragraph_ranges(spans);
     let mut n = 0;
     for (i, &(s, e)) in ranges.iter().enumerate() {
-        let Some(id) = tracedraw_core::paragraphs::paragraph_format(spans, *align, para, i).style else {
+        let Some(id) = tracedraw_core::paragraphs::paragraph_format(spans, *align, para, i).style
+        else {
             continue;
         };
         let chars = ts::resolve(styles, id).1;
@@ -183,7 +199,9 @@ impl App {
         let mut found = Found::default();
         let mut cmds = Vec::new();
         for (id, kind) in texts(self, only) {
-            let ShapeKind::Text { spans, .. } = &kind else { continue };
+            let ShapeKind::Text { spans, .. } = &kind else {
+                continue;
+            };
             let (fixed, n) = typography_spans(spans);
             if n == 0 {
                 continue;
@@ -240,7 +258,12 @@ impl App {
     /// page. One undo step.
     pub fn apply_house_standard(&mut self) {
         let h = house_prefs(self);
-        let names: Vec<String> = self.doc().text_styles.iter().map(|s| s.name.clone()).collect();
+        let names: Vec<String> = self
+            .doc()
+            .text_styles
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
         if !names.contains(&crate::i18n::tr("tstyle.book_body")) {
             self.add_book_styles();
         }
@@ -254,7 +277,11 @@ impl App {
             let (w, ht) = (page.size.width, page.size.height);
             // The first page is a right-hand one: its inner margin at the left.
             let right_hand = i % 2 == 0;
-            let (left, right) = if right_hand { (h.inner, h.outer) } else { (h.outer, h.inner) };
+            let (left, right) = if right_hand {
+                (h.inner, h.outer)
+            } else {
+                (h.outer, h.inner)
+            };
             let mut guides: Vec<Guide> = page
                 .guides
                 .iter()
@@ -276,7 +303,10 @@ impl App {
                 add(GuideLine::Horizontal { y: h.safety });
                 add(GuideLine::Horizontal { y: ht - h.safety });
             }
-            cmds.push(Command::SetGuides { page: page.id, guides });
+            cmds.push(Command::SetGuides {
+                page: page.id,
+                guides,
+            });
         }
         if let Err(e) = self.engine.run_batch("House Standard", &cmds) {
             self.status = e.to_string();
@@ -288,7 +318,11 @@ impl App {
 
 /// The colour that marks the house standard's guides (so applying again
 /// replaces them and leaves the user's own).
-const HOUSE_GUIDE: tracedraw_core::Color = tracedraw_core::Color::Rgb { r: 0.85, g: 0.35, b: 0.75 };
+const HOUSE_GUIDE: tracedraw_core::Color = tracedraw_core::Color::Rgb {
+    r: 0.85,
+    g: 0.35,
+    b: 0.75,
+};
 
 /// The house standard's values, millimetres.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -304,7 +338,14 @@ pub struct HousePrefs {
 
 impl Default for HousePrefs {
     fn default() -> Self {
-        HousePrefs { top: 20.0, bottom: 25.0, inner: 22.0, outer: 18.0, bleed: 3.0, safety: 5.0 }
+        HousePrefs {
+            top: 20.0,
+            bottom: 25.0,
+            inner: 22.0,
+            outer: 18.0,
+            bleed: 3.0,
+            safety: 5.0,
+        }
     }
 }
 
@@ -337,55 +378,108 @@ fn save_house_prefs(app: &mut App, h: HousePrefs) {
 pub fn docker(app: &mut App, ui: &mut egui::Ui) {
     use crate::i18n::{tr, trf};
     use crate::ui::tips::{pair, RichTip as _};
-    let scope = if app.selection.is_empty() { tr("prelo.scope_all") } else { tr("prelo.scope_selection") };
+    let scope = if app.selection.is_empty() {
+        tr("prelo.scope_all")
+    } else {
+        tr("prelo.scope_selection")
+    };
     ui.label(egui::RichText::new(scope).color(crate::theme::Tokens::text_dim()));
     let result_id = egui::Id::new("prelo_result");
-    let job = |ui: &mut egui::Ui, app: &mut App, title: &str, desc: &str, key: &str, run: &dyn Fn(&mut App, bool) -> Found| {
+    let job = |ui: &mut egui::Ui,
+               app: &mut App,
+               title: &str,
+               desc: &str,
+               key: &str,
+               run: &dyn Fn(&mut App, bool) -> Found| {
         ui.add_space(6.0);
         ui.strong(tr(title)).rich_tip(pair(title, desc));
         ui.horizontal(|ui| {
-            if ui.button(tr("prelo.check")).rich_tip(pair("prelo.check", "prelo.check_desc")).clicked() {
+            if ui
+                .button(tr("prelo.check"))
+                .rich_tip(pair("prelo.check", "prelo.check_desc"))
+                .clicked()
+            {
                 let f = run(app, false);
                 ui.data_mut(|d| d.insert_temp(result_id.with(key), Some(f)));
             }
-            if ui.button(tr("prelo.fix")).rich_tip(pair("prelo.fix", "prelo.fix_desc")).clicked() {
+            if ui
+                .button(tr("prelo.fix"))
+                .rich_tip(pair("prelo.fix", "prelo.fix_desc"))
+                .clicked()
+            {
                 let f = run(app, true);
                 ui.data_mut(|d| d.insert_temp(result_id.with(key), Some(f)));
                 app.status = trf("prelo.fixed", &[("n", &f.changes.to_string())]);
             }
         });
-        if let Some(f) = ui.data(|d| d.get_temp::<Option<Found>>(result_id.with(key))).flatten() {
+        if let Some(f) = ui
+            .data(|d| d.get_temp::<Option<Found>>(result_id.with(key)))
+            .flatten()
+        {
             let msg = if f.changes == 0 {
                 tr("prelo.nothing")
             } else {
-                trf("prelo.found", &[("n", &f.changes.to_string()), ("t", &f.texts.to_string())])
+                trf(
+                    "prelo.found",
+                    &[("n", &f.changes.to_string()), ("t", &f.texts.to_string())],
+                )
             };
-            ui.label(egui::RichText::new(msg).small().color(crate::theme::Tokens::text_dim()));
+            ui.label(
+                egui::RichText::new(msg)
+                    .small()
+                    .color(crate::theme::Tokens::text_dim()),
+            );
         }
     };
-    job(ui, app, "prelo.typography", "prelo.typography_desc", "typo", &|a, fix| a.house_typography(fix));
-    job(ui, app, "prelo.local", "prelo.local_desc", "local", &|a, fix| a.house_local_formatting(fix));
+    job(
+        ui,
+        app,
+        "prelo.typography",
+        "prelo.typography_desc",
+        "typo",
+        &|a, fix| a.house_typography(fix),
+    );
+    job(
+        ui,
+        app,
+        "prelo.local",
+        "prelo.local_desc",
+        "local",
+        &|a, fix| a.house_local_formatting(fix),
+    );
     // House standard: its values and Apply.
     ui.add_space(10.0);
-    ui.strong(tr("prelo.standard")).rich_tip(pair("prelo.standard", "prelo.standard_desc"));
+    ui.strong(tr("prelo.standard"))
+        .rich_tip(pair("prelo.standard", "prelo.standard_desc"));
     let mut h = house_prefs(app);
     let before = h.clone();
-    egui::Grid::new("prelo_standard").num_columns(4).spacing([6.0, 4.0]).show(ui, |ui| {
-        let field = |ui: &mut egui::Ui, key: &str, v: &mut f64| {
-            ui.label(tr(key));
-            ui.add(egui::DragValue::new(v).range(0.0..=100.0).speed(0.5).suffix(" mm"))
+    egui::Grid::new("prelo_standard")
+        .num_columns(4)
+        .spacing([6.0, 4.0])
+        .show(ui, |ui| {
+            let field = |ui: &mut egui::Ui, key: &str, v: &mut f64| {
+                ui.label(tr(key));
+                ui.add(
+                    egui::DragValue::new(v)
+                        .range(0.0..=100.0)
+                        .speed(0.5)
+                        .custom_formatter(|v, _| {
+                            crate::ui::field::format_number(v, false, 0, Some(1))
+                        })
+                        .suffix(" mm"),
+                )
                 .rich_tip(pair(key, "prelo.margin_desc"));
-        };
-        field(ui, "prelo.top", &mut h.top);
-        field(ui, "prelo.bottom", &mut h.bottom);
-        ui.end_row();
-        field(ui, "prelo.inner", &mut h.inner);
-        field(ui, "prelo.outer", &mut h.outer);
-        ui.end_row();
-        field(ui, "prelo.bleed", &mut h.bleed);
-        field(ui, "prelo.safety", &mut h.safety);
-        ui.end_row();
-    });
+            };
+            field(ui, "prelo.top", &mut h.top);
+            field(ui, "prelo.bottom", &mut h.bottom);
+            ui.end_row();
+            field(ui, "prelo.inner", &mut h.inner);
+            field(ui, "prelo.outer", &mut h.outer);
+            ui.end_row();
+            field(ui, "prelo.bleed", &mut h.bleed);
+            field(ui, "prelo.safety", &mut h.safety);
+            ui.end_row();
+        });
     if h != before {
         save_house_prefs(app, h);
     }
@@ -405,7 +499,10 @@ mod tests {
 
     #[test]
     fn house_typography() {
-        let (t, n) = typography("Ele disse: \"Vamos...\"  E foi - sem pressa , d'água; páginas 10-20 -- fim .", None);
+        let (t, n) = typography(
+            "Ele disse: \"Vamos...\"  E foi - sem pressa , d'água; páginas 10-20 -- fim .",
+            None,
+        );
         assert_eq!(t, "Ele disse: \u{201C}Vamos\u{2026}\u{201D} E foi \u{2014} sem pressa, d\u{2019}água; páginas 10\u{2013}20 \u{2014} fim.");
         assert!(n >= 8, "{n}");
         // Already right: nothing to do.
@@ -416,7 +513,10 @@ mod tests {
 
     #[test]
     fn fixing_keeps_the_formatting_and_is_one_undo_step() {
-        use tracedraw_core::{geometry::{Point, Size}, ParagraphStyle, TextAlign};
+        use tracedraw_core::{
+            geometry::{Point, Size},
+            ParagraphStyle, TextAlign,
+        };
         let mut app = App::headless();
         let mut bold = TextSpan::new("\"Olá\"", "Sans", 12.0);
         bold.bold = true;
@@ -432,11 +532,19 @@ mod tests {
             .unwrap();
         app.select(Vec::new());
         let found = app.house_typography(false);
-        assert_eq!(found, Found { changes: 3, texts: 1 });
+        assert_eq!(
+            found,
+            Found {
+                changes: 3,
+                texts: 1
+            }
+        );
         let steps = app.engine.history_labels().0.len();
         app.house_typography(true);
         assert_eq!(app.engine.history_labels().0.len(), steps + 1);
-        let ShapeKind::Text { spans, .. } = &app.doc().find_shape(id).unwrap().kind else { unreachable!() };
+        let ShapeKind::Text { spans, .. } = &app.doc().find_shape(id).unwrap().kind else {
+            unreachable!()
+        };
         assert_eq!(spans[0].text, "Ela disse ");
         assert!(spans[1].bold && spans[1].text == "\u{201C}Olá\u{201D}");
         assert_eq!(app.house_typography(false).changes, 0);
@@ -444,7 +552,10 @@ mod tests {
 
     #[test]
     fn local_formatting_is_found_and_cleared() {
-        use tracedraw_core::{geometry::{Point, Size}, ParagraphStyle, TextAlign};
+        use tracedraw_core::{
+            geometry::{Point, Size},
+            ParagraphStyle, TextAlign,
+        };
         let mut app = App::headless();
         let id = app
             .new_shape(ShapeKind::Text {
@@ -476,13 +587,25 @@ mod tests {
     fn the_house_standard_sets_guides_and_bleed_and_keeps_the_users_guides() {
         let mut app = App::headless();
         let page = app.doc().pages[0].id;
-        app.run(Command::SetGuides { page, guides: vec![Guide::from(GuideLine::Vertical { x: 50.0 })] });
+        app.run(Command::SetGuides {
+            page,
+            guides: vec![Guide::from(GuideLine::Vertical { x: 50.0 })],
+        });
         app.apply_house_standard();
         app.apply_house_standard();
         let p = &app.doc().pages[0];
-        assert_eq!(p.guides.len(), 1 + 8, "the user's guide and the house's, once");
+        assert_eq!(
+            p.guides.len(),
+            1 + 8,
+            "the user's guide and the house's, once"
+        );
         assert!((app.doc().metadata.bleed - 3.0).abs() < 1e-9);
         assert!(!app.doc().text_styles.is_empty());
-        assert!(p.guides.iter().any(|g| matches!(g.line, GuideLine::Vertical { x } if (x - 22.0).abs() < 1e-9)), "inner margin at the left of page 1");
+        assert!(
+            p.guides
+                .iter()
+                .any(|g| matches!(g.line, GuideLine::Vertical { x } if (x - 22.0).abs() < 1e-9)),
+            "inner margin at the left of page 1"
+        );
     }
 }

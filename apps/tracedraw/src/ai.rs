@@ -136,26 +136,91 @@ pub const DEEPSEEK_ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
 /// price page). Models that reason before answering are marked, since
 /// they write more.
 pub const TEXT_MODELS: [(&str, &str, f64, f64, &str, bool); 15] = [
-    ("aipreset.anthropic", "claude-sonnet-5-5", 2.0, 10.0, "US$", false),
-    ("aipreset.anthropic", "claude-opus-5-5", 4.0, 20.0, "US$", true),
-    ("aipreset.anthropic", "claude-haiku-5-5", 0.10, 0.50, "US$", false),
-    ("aipreset.anthropic", "claude-fable-5-1", 10.0, 50.0, "US$", true),
+    (
+        "aipreset.anthropic",
+        "claude-sonnet-5-5",
+        2.0,
+        10.0,
+        "US$",
+        false,
+    ),
+    (
+        "aipreset.anthropic",
+        "claude-opus-5-5",
+        4.0,
+        20.0,
+        "US$",
+        true,
+    ),
+    (
+        "aipreset.anthropic",
+        "claude-haiku-5-5",
+        0.10,
+        0.50,
+        "US$",
+        false,
+    ),
+    (
+        "aipreset.anthropic",
+        "claude-fable-5-1",
+        10.0,
+        50.0,
+        "US$",
+        true,
+    ),
     ("aipreset.openai", "gpt-6.1-sol", 2.0, 10.0, "US$", true),
     ("aipreset.openai", "gpt-6-luna", 0.10, 0.50, "US$", true),
     ("aipreset.openai", "gpt-6-astra", 10.0, 50.0, "US$", true),
-    ("aipreset.gemini", "gemini-3.8-flash", 0.75, 3.75, "US$", true),
+    (
+        "aipreset.gemini",
+        "gemini-3.8-flash",
+        0.75,
+        3.75,
+        "US$",
+        true,
+    ),
     ("aipreset.gemini", "gemini-4-argon", 2.0, 10.0, "US$", true),
-    ("aipreset.gemini", "gemini-3.5-flash-lite", 0.30, 2.50, "US$", false),
+    (
+        "aipreset.gemini",
+        "gemini-3.5-flash-lite",
+        0.30,
+        2.50,
+        "US$",
+        false,
+    ),
     ("aipreset.maritaca", "sabia-4", 5.0, 20.0, "R$", false),
     ("aipreset.maritaca", "sabiazinho-4", 1.0, 4.0, "R$", false),
-    ("aipreset.maritaca", "sabia-4-thinking", 5.0, 40.0, "R$", true),
-    ("aipreset.deepseek", "deepseek-flash", 0.30, 1.20, "US$", true),
-    ("aipreset.deepseek", "deepseek-v4-pro", 1.32, 3.96, "US$", true),
+    (
+        "aipreset.maritaca",
+        "sabia-4-thinking",
+        5.0,
+        40.0,
+        "R$",
+        true,
+    ),
+    (
+        "aipreset.deepseek",
+        "deepseek-flash",
+        0.30,
+        1.20,
+        "US$",
+        true,
+    ),
+    (
+        "aipreset.deepseek",
+        "deepseek-v4-pro",
+        1.32,
+        3.96,
+        "US$",
+        true,
+    ),
 ];
 
 /// The preset key of the connection, if it is a preset.
 fn preset_key(prefs: &AiPrefs) -> Option<&'static str> {
-    preset_of(prefs).and_then(|i| PRESETS.get(i)).map(|(k, _, _)| *k)
+    preset_of(prefs)
+        .and_then(|i| PRESETS.get(i))
+        .map(|(k, _, _)| *k)
 }
 
 /// The models offered for the connection's preset.
@@ -201,12 +266,20 @@ pub fn preset_default_model(key: &str) -> &'static str {
 /// gets one program back; the estimate takes 4,000 tokens in and 2,000
 /// out (6,000 out for a model that reasons before it answers).
 pub fn text_price_caption(prefs: &AiPrefs, model: &str) -> Option<String> {
-    let key = preset_key(prefs).or((prefs.provider == Provider::Anthropic).then_some("aipreset.anthropic"))?;
-    let (_, _, input, output, currency, reasons) =
-        TEXT_MODELS.iter().find(|(k, m, ..)| *k == key && *m == model)?;
+    let key = preset_key(prefs)
+        .or((prefs.provider == Provider::Anthropic).then_some("aipreset.anthropic"))?;
+    let (_, _, input, output, currency, reasons) = TEXT_MODELS
+        .iter()
+        .find(|(k, m, ..)| *k == key && *m == model)?;
     let out_tokens = if *reasons { 6000.0 } else { 2000.0 };
     let cost = 4000.0 * input / 1e6 + out_tokens * output / 1e6;
-    let digits = if cost < 0.01 { 4 } else if cost < 0.1 { 3 } else { 2 };
+    let digits = if cost < 0.01 {
+        4
+    } else if cost < 0.1 {
+        3
+    } else {
+        2
+    };
     let shown = crate::ai_image::localize_decimal(format!("{cost:.digits$}"));
     Some(if *currency == "R$" {
         trf("ai.price_request_brl", &[("price", &shown)])
@@ -1598,7 +1671,10 @@ mod tests {
         // Requests go to its chat completions address with the key.
         let r = build_request(&prefs, "mk", &[]);
         assert_eq!(r.url, MARITACA_ENDPOINT);
-        assert!(r.headers.iter().any(|(h, v)| h.eq_ignore_ascii_case("authorization") && v == "Bearer mk"));
+        assert!(r
+            .headers
+            .iter()
+            .any(|(h, v)| h.eq_ignore_ascii_case("authorization") && v == "Bearer mk"));
         // The model list offers its models before any fetch.
         let mut app = crate::app::App::headless();
         app.settings.ai = prefs.clone();

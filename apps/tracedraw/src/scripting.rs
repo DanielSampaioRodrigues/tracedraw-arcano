@@ -322,7 +322,12 @@ pub fn run_vgcore(app: &mut App, src: &str, label: &'static str) -> Result<Vec<S
 /// user's access, in TraceDraw's object model or (`vg`) the one VBA macros
 /// use, but nothing applied unless the whole script runs, so a failed
 /// attempt leaves no half-made objects. One undo step named `label`.
-pub fn run_agent(app: &mut App, src: &str, vg: bool, label: &'static str) -> Result<Vec<String>, String> {
+pub fn run_agent(
+    app: &mut App,
+    src: &str,
+    vg: bool,
+    label: &'static str,
+) -> Result<Vec<String>, String> {
     run_host(app, src, Trust::User, label, vg, false).map(|(output, _)| output)
 }
 

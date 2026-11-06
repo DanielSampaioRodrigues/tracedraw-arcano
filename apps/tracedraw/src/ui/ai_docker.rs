@@ -228,7 +228,10 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             if let Some(c) = company {
                 app.studio.keys.insert(c.to_string(), app.ai.key.clone());
                 if app.settings.studio.remember_keys {
-                    app.settings.studio.keys.insert(c.to_string(), app.ai.key.clone());
+                    app.settings
+                        .studio
+                        .keys
+                        .insert(c.to_string(), app.ai.key.clone());
                 }
             }
         }

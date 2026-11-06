@@ -54,7 +54,13 @@ pub fn templates_dir() -> Option<PathBuf> {
 pub fn free_name(dir: &Path, title: &str, ext: &str) -> PathBuf {
     let clean: String = title
         .chars()
-        .map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { ' ' } else { c })
+        .map(|c| {
+            if "\\/:*?\"<>|".contains(c) || c.is_control() {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
     let base = match clean.trim() {
         "" => "Modelo".to_string(),
@@ -111,7 +117,13 @@ impl crate::app::App {
         self.status = match written {
             Ok(()) => crate::i18n::trf(
                 "library.template_saved",
-                &[("name", &path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default())],
+                &[(
+                    "name",
+                    &path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                )],
             ),
             Err(e) => crate::i18n::trf("status.save_failed", &[("e", &e)]),
         };
@@ -132,7 +144,9 @@ pub fn header(app: &mut crate::app::App, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         let action = crate::files::FolderUse::HouseLibrary.action();
         let can = matches!(action, crate::files::FolderAction::PickFolder(_));
-        let tip = crate::files::FolderUse::HouseLibrary.tip().unwrap_or("library.choose_desc");
+        let tip = crate::files::FolderUse::HouseLibrary
+            .tip()
+            .unwrap_or("library.choose_desc");
         if ui
             .add_enabled(can, egui::Button::new(tr("library.choose")))
             .rich_tip(crate::ui::tips::pair("library.choose", tip))
@@ -147,15 +161,24 @@ pub fn header(app: &mut crate::app::App, ui: &mut egui::Ui) {
         if dir().is_some()
             && ui
                 .button(tr("library.local_only"))
-                .rich_tip(crate::ui::tips::pair("library.local_only", "library.local_only_desc"))
+                .rich_tip(crate::ui::tips::pair(
+                    "library.local_only",
+                    "library.local_only_desc",
+                ))
                 .clicked()
         {
             app.set_library_folder(String::new());
         }
         let drawing = app.has_document() && !app.show_welcome;
         if ui
-            .add_enabled(drawing && dir().is_some(), egui::Button::new(tr("library.save_template")))
-            .rich_tip(crate::ui::tips::pair("library.save_template", "library.save_template_desc"))
+            .add_enabled(
+                drawing && dir().is_some(),
+                egui::Button::new(tr("library.save_template")),
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "library.save_template",
+                "library.save_template_desc",
+            ))
             .clicked()
         {
             app.save_house_template();
@@ -174,11 +197,23 @@ mod tests {
         let d = std::env::temp_dir().join(format!("arcano-lib-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&d);
         let a = free_name(&d, "Capa: livro/1", "tdt");
-        assert_eq!(a.file_name().unwrap().to_string_lossy(), "Capa  livro 1.tdt");
+        assert_eq!(
+            a.file_name().unwrap().to_string_lossy(),
+            "Capa  livro 1.tdt"
+        );
         std::fs::write(&a, "x").unwrap();
         let b = free_name(&d, "Capa: livro/1", "tdt");
-        assert_eq!(b.file_name().unwrap().to_string_lossy(), "Capa  livro 1 2.tdt");
-        assert_eq!(free_name(&d, "  ", "tdt").file_name().unwrap().to_string_lossy(), "Modelo.tdt");
+        assert_eq!(
+            b.file_name().unwrap().to_string_lossy(),
+            "Capa  livro 1 2.tdt"
+        );
+        assert_eq!(
+            free_name(&d, "  ", "tdt")
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
+            "Modelo.tdt"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }

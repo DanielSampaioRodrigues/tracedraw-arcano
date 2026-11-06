@@ -204,10 +204,8 @@ fn paint(
         Vec2::new(logo_h * brand::PUBLISHER_LOGO_ASPECT, logo_h),
     );
     brand::paint_icon(&painter, logo, logo_rect);
-    let icon_rect = Rect::from_min_size(
-        rect.min + Vec2::new(pad, 140.0 * s),
-        Vec2::splat(72.0 * s),
-    );
+    let icon_rect =
+        Rect::from_min_size(rect.min + Vec2::new(pad, 140.0 * s), Vec2::splat(72.0 * s));
     brand::paint_icon(&painter, icon, icon_rect);
     let name = brand::name_galley(&painter, 38.0 * s);
     let edition = texts.then(|| {
@@ -246,11 +244,7 @@ fn paint(
         Pos2::new(rect.left(), bar_y - 40.0 * s),
         rect.right_bottom(),
     );
-    painter.rect_filled(
-        strip,
-        CornerRadius::ZERO,
-        brand::STRIP,
-    );
+    painter.rect_filled(strip, CornerRadius::ZERO, brand::STRIP);
     painter.hline(
         strip.x_range(),
         strip.top(),

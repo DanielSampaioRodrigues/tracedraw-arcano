@@ -47,9 +47,14 @@ pub fn build(key: &str, req: &OpRequest) -> Result<crate::net::HttpRequest, Stri
     let text = if req.op() == Op::Generate {
         req.prompt.clone()
     } else {
-        let png = req.image.as_deref().ok_or_else(|| tr("aiimg.need_bitmap"))?;
+        let png = req
+            .image
+            .as_deref()
+            .ok_or_else(|| tr("aiimg.need_bitmap"))?;
         let (b, _, _) = fit_image(png, MAX_PIXELS, 0, 0)?;
-        parts.push(json!({"inline_data": {"mime_type": "image/png", "data": transport::base64(&b)}}));
+        parts.push(
+            json!({"inline_data": {"mime_type": "image/png", "data": transport::base64(&b)}}),
+        );
         edit_words(req)?
     };
     // The text after the picture, as Gemini's own examples have it.
@@ -92,9 +97,16 @@ pub fn run(t: &dyn Transport, key: &str, req: &OpRequest) -> Result<Output, Stri
 
 /// The key lists the models (`GET /v1beta/models`).
 pub fn test_key(t: &dyn Transport, key: &str) -> Result<String, String> {
-    let v: Value = transport::json_ok(t.call(&transport::get(format!("{BASE}/models"), headers(key))))?;
-    let n = v.get("models").and_then(|m| m.as_array()).map_or(0, |m| m.len());
-    Ok(crate::i18n::trf("studio.models_listed", &[("n", &n.to_string())]))
+    let v: Value =
+        transport::json_ok(t.call(&transport::get(format!("{BASE}/models"), headers(key))))?;
+    let n = v
+        .get("models")
+        .and_then(|m| m.as_array())
+        .map_or(0, |m| m.len());
+    Ok(crate::i18n::trf(
+        "studio.models_listed",
+        &[("n", &n.to_string())],
+    ))
 }
 
 #[cfg(test)]
@@ -120,10 +132,22 @@ mod tests {
         assert!(r.headers.contains(&("x-goog-api-key".into(), "gk".into())));
         let v: Value = serde_json::from_str(&r.body).expect("json");
         assert!(v.pointer("/contents/0/parts/0/inline_data/data").is_some());
-        assert!(v.pointer("/contents/0/parts/1/text").and_then(|t| t.as_str()).is_some_and(|t| t.contains("sunny beach")));
-        assert_eq!(v.pointer("/generationConfig/imageConfig/imageSize"), Some(&json!("4K")));
-        assert_eq!(v.pointer("/generationConfig/imageConfig/aspectRatio"), Some(&json!("16:9")));
-        let ex = OpRequest { op: Some(Op::Expand), ..req };
+        assert!(v
+            .pointer("/contents/0/parts/1/text")
+            .and_then(|t| t.as_str())
+            .is_some_and(|t| t.contains("sunny beach")));
+        assert_eq!(
+            v.pointer("/generationConfig/imageConfig/imageSize"),
+            Some(&json!("4K"))
+        );
+        assert_eq!(
+            v.pointer("/generationConfig/imageConfig/aspectRatio"),
+            Some(&json!("16:9"))
+        );
+        let ex = OpRequest {
+            op: Some(Op::Expand),
+            ..req
+        };
         assert!(build("gk", &ex).is_err());
     }
 }

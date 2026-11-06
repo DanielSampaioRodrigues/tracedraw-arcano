@@ -3831,9 +3831,15 @@ impl App {
                     let tabs: Vec<DockerTab> = g.tabs.iter().filter_map(|k| by_key(k)).collect();
                     let first = *tabs.first()?;
                     Some(crate::ui::panel_stack::StackGroup {
-                        front: by_key(&g.front).filter(|t| tabs.contains(t)).unwrap_or(first),
+                        front: by_key(&g.front)
+                            .filter(|t| tabs.contains(t))
+                            .unwrap_or(first),
                         tabs,
-                        weight: if g.weight.is_finite() && g.weight > 0.0 { g.weight } else { 1.0 },
+                        weight: if g.weight.is_finite() && g.weight > 0.0 {
+                            g.weight
+                        } else {
+                            1.0
+                        },
                     })
                 })
                 .collect();

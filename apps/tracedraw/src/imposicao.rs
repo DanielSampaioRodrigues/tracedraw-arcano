@@ -107,8 +107,16 @@ fn fit(room: f64, cell: f64, gap: f64) -> u32 {
 /// The grid of `page` (with its bleed) that fits on `sheet`, and the
 /// sheet turned the way more fit: (columns, rows, sheet).
 pub fn grade(page: Size, sheet: Size, p: &ImposPrefs) -> (u32, u32, Size) {
-    let bleed = if p.produto == Produto::Etiquetas { 0.0 } else { p.sangria.max(0.0) };
-    let gap = if p.produto == Produto::Etiquetas { 0.0 } else { p.espaco.max(0.0) };
+    let bleed = if p.produto == Produto::Etiquetas {
+        0.0
+    } else {
+        p.sangria.max(0.0)
+    };
+    let gap = if p.produto == Produto::Etiquetas {
+        0.0
+    } else {
+        p.espaco.max(0.0)
+    };
     let marks = if p.marcas { MARK_MARGIN } else { 0.0 };
     let edge = p.margem.max(0.0) + marks;
     let (w, h) = (page.width + 2.0 * bleed, page.height + 2.0 * bleed);
@@ -127,8 +135,15 @@ pub fn grade(page: Size, sheet: Size, p: &ImposPrefs) -> (u32, u32, Size) {
 
 /// The layout options for `doc` set as `p`.
 pub fn opcoes(doc: &Document, p: &ImposPrefs) -> Options {
-    let first = doc.pages.first().map(|pg| pg.size).unwrap_or(Size::new(210.0, 297.0));
-    let sheet = p.folha.and_then(|i| FOLHAS.get(i)).map(|(_, w, h)| Size::new(*w, *h));
+    let first = doc
+        .pages
+        .first()
+        .map(|pg| pg.size)
+        .unwrap_or(Size::new(210.0, 297.0));
+    let sheet = p
+        .folha
+        .and_then(|i| FOLHAS.get(i))
+        .map(|(_, w, h)| Size::new(*w, *h));
     let marks = Marks {
         crop: p.marcas,
         ..Marks::default()
@@ -152,14 +167,25 @@ pub fn opcoes(doc: &Document, p: &ImposPrefs) -> Options {
                     Binding::SaddleStitch
                 },
                 signature_sheets: p.folhas_caderno.clamp(1, 32),
-                creep: if p.produto == Produto::Grampeado { p.creep.max(0.0) } else { 0.0 },
+                creep: if p.produto == Produto::Grampeado {
+                    p.creep.max(0.0)
+                } else {
+                    0.0
+                },
                 ..Booklet::default()
             };
             // Two pages side by side: on a printing sheet when one is
             // chosen and they fit, else a sheet the size of the spread.
             o.sheet = sheet.and_then(|s| {
                 let spread = Size::new(2.0 * first.width, first.height);
-                let (c, r, turned) = grade(spread, s, &ImposPrefs { produto: Produto::Cartoes, ..p.clone() });
+                let (c, r, turned) = grade(
+                    spread,
+                    s,
+                    &ImposPrefs {
+                        produto: Produto::Cartoes,
+                        ..p.clone()
+                    },
+                );
                 (c >= 1 && r >= 1).then_some(turned)
             });
             o.gutter = 0.0;
@@ -191,7 +217,12 @@ pub fn resumo(doc: &Document, p: &ImposPrefs) -> (usize, usize, bool, Option<Siz
     let plans = crate::imposition::plan(&sizes, &o);
     let per = plans.first().map(|s| s.cells.len()).unwrap_or(0);
     let sheet = plans.first().map(|s| s.size);
-    (plans.len(), per, crate::imposition::overflows(&plans), sheet)
+    (
+        plans.len(),
+        per,
+        crate::imposition::overflows(&plans),
+        sheet,
+    )
 }
 
 // ----- the dialog -----------------------------------------------------------
@@ -204,7 +235,9 @@ pub struct ImposDialog {
 
 impl std::fmt::Debug for ImposDialog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ImposDialog").field("prefs", &self.prefs).finish()
+        f.debug_struct("ImposDialog")
+            .field("prefs", &self.prefs)
+            .finish()
     }
 }
 
@@ -257,11 +290,19 @@ fn preview(ctx: &egui::Context, doc: &Document, p: &ImposPrefs) -> Option<egui::
     let long = page.size.width.max(page.size.height).max(1.0);
     let dpi = (360.0 * 25.4 / long).clamp(1.0, 300.0);
     let pm = tracedraw_render::render_page_image(&out, page.id, dpi)?;
-    let image = egui::ColorImage::from_rgba_unmultiplied([pm.width() as usize, pm.height() as usize], pm.data());
+    let image = egui::ColorImage::from_rgba_unmultiplied(
+        [pm.width() as usize, pm.height() as usize],
+        pm.data(),
+    );
     Some(ctx.load_texture("arcano_impos_preview", image, egui::TextureOptions::LINEAR))
 }
 
-pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut ImposDialog, close: &mut bool) {
+pub fn dialog(
+    app: &mut crate::app::App,
+    ctx: &egui::Context,
+    st: &mut ImposDialog,
+    close: &mut bool,
+) {
     use crate::i18n::{tr, trf};
     use crate::ui::tips::RichTip as _;
     let mut create = false;
@@ -269,7 +310,11 @@ pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut ImposDial
     crate::ui::dialogs::window(ctx, tr("impos.title")).show(ctx, |ui| {
         if !has_doc {
             ui.label(tr("impos.no_drawing"));
-            if ui.button(tr("dialog.close")).rich_tip(tip("impos.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.close"))
+                .rich_tip(tip("impos.cancel"))
+                .clicked()
+            {
                 *close = true;
             }
             return;
@@ -281,91 +326,122 @@ pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut ImposDial
                 // take all the room left, and the preview beside it grow
                 // the window every frame.
                 ui.set_max_width(340.0);
-                egui::Grid::new("impos_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                    ui.label(tr("impos.product"));
-                    ui.vertical(|ui| {
-                        for pr in Produto::ALL {
-                            ui.radio_value(&mut p.produto, pr, tr(pr.key())).rich_tip(tip(pr.key()));
+                egui::Grid::new("impos_grid")
+                    .num_columns(2)
+                    .spacing([10.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label(tr("impos.product"));
+                        ui.vertical(|ui| {
+                            for pr in Produto::ALL {
+                                ui.radio_value(&mut p.produto, pr, tr(pr.key()))
+                                    .rich_tip(tip(pr.key()));
+                            }
+                        });
+                        ui.end_row();
+                        ui.label(tr("impos.sheet"));
+                        let shown = match p.folha.and_then(|i| FOLHAS.get(i)) {
+                            Some((n, w, h)) => format!("{n} ({w} x {h} mm)"),
+                            None => tr("impos.sheet_fit"),
+                        };
+                        crate::ui::combo::from_id_salt("impos_sheet")
+                            .width(200.0)
+                            .selected_text(shown)
+                            .show_ui(ui, |ui| {
+                                if p.produto.booklet() {
+                                    ui.selectable_value(&mut p.folha, None, tr("impos.sheet_fit"));
+                                }
+                                for (i, (n, w, h)) in FOLHAS.iter().enumerate() {
+                                    ui.selectable_value(
+                                        &mut p.folha,
+                                        Some(i),
+                                        format!("{n} ({w} x {h} mm)"),
+                                    );
+                                }
+                            })
+                            .response
+                            .rich_tip(tip("impos.sheet"));
+                        ui.end_row();
+                        let field = |ui: &mut egui::Ui, v: &mut f64, key: &str| {
+                            ui.add(
+                                crate::ui::field::NumField::new(v)
+                                    .range(0.0..=100.0)
+                                    .max_decimals(1)
+                                    .suffix(" mm")
+                                    .width(80.0),
+                            )
+                            .rich_tip(tip(key));
+                        };
+                        if p.produto != Produto::Etiquetas {
+                            ui.label(tr("impos.bleed"));
+                            field(ui, &mut p.sangria, "impos.bleed");
+                            ui.end_row();
                         }
-                    });
-                    ui.end_row();
-                    ui.label(tr("impos.sheet"));
-                    let shown = match p.folha.and_then(|i| FOLHAS.get(i)) {
-                        Some((n, w, h)) => format!("{n} ({w} x {h} mm)"),
-                        None => tr("impos.sheet_fit"),
-                    };
-                    crate::ui::combo::from_id_salt("impos_sheet")
-                        .width(200.0)
-                        .selected_text(shown)
-                        .show_ui(ui, |ui| {
-                            if p.produto.booklet() {
-                                ui.selectable_value(&mut p.folha, None, tr("impos.sheet_fit"));
-                            }
-                            for (i, (n, w, h)) in FOLHAS.iter().enumerate() {
-                                ui.selectable_value(&mut p.folha, Some(i), format!("{n} ({w} x {h} mm)"));
-                            }
-                        })
-                        .response
-                        .rich_tip(tip("impos.sheet"));
-                    ui.end_row();
-                    let field = |ui: &mut egui::Ui, v: &mut f64, key: &str| {
-                        ui.add(
-                            crate::ui::field::NumField::new(v)
-                                .range(0.0..=100.0)
-                                .max_decimals(1)
-                                .suffix(" mm")
-                                .width(80.0),
-                        )
-                        .rich_tip(tip(key));
-                    };
-                    if p.produto != Produto::Etiquetas {
-                        ui.label(tr("impos.bleed"));
-                        field(ui, &mut p.sangria, "impos.bleed");
+                        if matches!(p.produto, Produto::Cartoes | Produto::Baralho) {
+                            ui.label(tr("impos.gap"));
+                            field(ui, &mut p.espaco, "impos.gap");
+                            ui.end_row();
+                        }
+                        ui.label(tr("impos.margin"));
+                        field(ui, &mut p.margem, "impos.margin");
                         ui.end_row();
-                    }
-                    if matches!(p.produto, Produto::Cartoes | Produto::Baralho) {
-                        ui.label(tr("impos.gap"));
-                        field(ui, &mut p.espaco, "impos.gap");
-                        ui.end_row();
-                    }
-                    ui.label(tr("impos.margin"));
-                    field(ui, &mut p.margem, "impos.margin");
-                    ui.end_row();
-                    if p.produto == Produto::Cadernos {
-                        ui.label(tr("impos.signature_sheets"));
-                        ui.add(crate::ui::field::NumField::new(&mut p.folhas_caderno).range(1..=32).width(80.0))
+                        if p.produto == Produto::Cadernos {
+                            ui.label(tr("impos.signature_sheets"));
+                            ui.add(
+                                crate::ui::field::NumField::new(&mut p.folhas_caderno)
+                                    .range(1..=32)
+                                    .width(80.0),
+                            )
                             .rich_tip(tip("impos.signature_sheets"));
+                            ui.end_row();
+                        }
+                        if p.produto == Produto::Grampeado {
+                            ui.label(tr("impos.creep"));
+                            field(ui, &mut p.creep, "impos.creep");
+                            ui.end_row();
+                        }
+                        ui.label("");
+                        ui.checkbox(&mut p.marcas, tr("impos.marks"))
+                            .rich_tip(tip("impos.marks"));
                         ui.end_row();
-                    }
-                    if p.produto == Produto::Grampeado {
-                        ui.label(tr("impos.creep"));
-                        field(ui, &mut p.creep, "impos.creep");
-                        ui.end_row();
-                    }
-                    ui.label("");
-                    ui.checkbox(&mut p.marcas, tr("impos.marks")).rich_tip(tip("impos.marks"));
-                    ui.end_row();
-                });
+                    });
                 let doc = app.engine.document();
                 let (sheets, per, over, size) = resumo(doc, p);
                 ui.separator();
-                ui.label(egui::RichText::new(trf(
-                    "impos.summary",
-                    &[("sheets", &sheets.to_string()), ("per", &per.to_string())],
-                )).strong());
+                ui.label(
+                    egui::RichText::new(trf(
+                        "impos.summary",
+                        &[("sheets", &sheets.to_string()), ("per", &per.to_string())],
+                    ))
+                    .strong(),
+                );
                 if let Some(s) = size {
-                    ui.label(trf("impos.sheet_size", &[("w", &format!("{:.0}", s.width)), ("h", &format!("{:.0}", s.height))]));
+                    ui.label(trf(
+                        "impos.sheet_size",
+                        &[
+                            ("w", &format!("{:.0}", s.width)),
+                            ("h", &format!("{:.0}", s.height)),
+                        ],
+                    ));
                 }
                 if p.produto.booklet() {
                     let pages = doc.pages.len();
                     let padded = pages.div_ceil(4) * 4;
                     if padded != pages {
-                        ui.label(trf("impos.blank_pages", &[("n", &(padded - pages).to_string())]));
+                        ui.label(trf(
+                            "impos.blank_pages",
+                            &[("n", &(padded - pages).to_string())],
+                        ));
                     }
-                    ui.label(egui::RichText::new(tr("impos.duplex")).color(crate::theme::Tokens::text_dim()));
+                    ui.label(
+                        egui::RichText::new(tr("impos.duplex"))
+                            .color(crate::theme::Tokens::text_dim()),
+                    );
                 }
                 if over || per == 0 {
-                    ui.label(egui::RichText::new(tr("impos.overflow")).color(egui::Color32::from_rgb(220, 140, 40)));
+                    ui.label(
+                        egui::RichText::new(tr("impos.overflow"))
+                            .color(egui::Color32::from_rgb(220, 140, 40)),
+                    );
                 }
             });
             // The first sheet, drawn again when a value changes.
@@ -404,7 +480,12 @@ mod tests {
     fn doc(pages: usize, w: f64, h: f64) -> Document {
         let mut d = Document::new("t", Size::new(w, h));
         for _ in 1..pages {
-            let _ = (tracedraw_core::Command::AddPage { name: None, size: Size::new(w, h), layer: None }).apply(&mut d);
+            let _ = (tracedraw_core::Command::AddPage {
+                name: None,
+                size: Size::new(w, h),
+                layer: None,
+            })
+            .apply(&mut d);
         }
         d
     }
@@ -414,7 +495,10 @@ mod tests {
         // 55 x 85 mm cards with 3 mm bleed, 4 mm gaps, on A4 with a 5 mm
         // margin and crop marks: 61 x 91 cells in 162 x 249 mm of room
         // gives 2 x 2 upright, 3 x 1... the larger count wins.
-        let p = ImposPrefs { produto: Produto::Cartoes, ..ImposPrefs::default() };
+        let p = ImposPrefs {
+            produto: Produto::Cartoes,
+            ..ImposPrefs::default()
+        };
         let (c, r, s) = grade(Size::new(55.0, 85.0), Size::new(210.0, 297.0), &p);
         assert!(c * r >= 4, "{c} x {r} on {s:?}");
         let d = doc(1, 55.0, 85.0);
@@ -424,14 +508,22 @@ mod tests {
         assert!(!over);
         // A deck: 60 cards, as many to a sheet, in sequence.
         let d = doc(60, 55.0, 85.0);
-        let p = ImposPrefs { produto: Produto::Baralho, ..p };
+        let p = ImposPrefs {
+            produto: Produto::Baralho,
+            ..p
+        };
         let (sheets, per, _, _) = resumo(&d, &p);
         assert_eq!(sheets, 60usize.div_ceil(per));
     }
 
     #[test]
     fn labels_have_no_gaps_or_bleed() {
-        let p = ImposPrefs { produto: Produto::Etiquetas, marcas: false, margem: 0.0, ..ImposPrefs::default() };
+        let p = ImposPrefs {
+            produto: Produto::Etiquetas,
+            marcas: false,
+            margem: 0.0,
+            ..ImposPrefs::default()
+        };
         let (c, r, _) = grade(Size::new(70.0, 37.0), Size::new(210.0, 297.0), &p);
         assert_eq!((c, r), (3, 8));
     }
@@ -441,7 +533,11 @@ mod tests {
         // 30 A5 pages: padded to 32, on sheets two pages wide; four
         // sheets a signature make 16 pages, two signatures.
         let d = doc(30, 148.0, 210.0);
-        let p = ImposPrefs { produto: Produto::Cadernos, folha: None, ..ImposPrefs::default() };
+        let p = ImposPrefs {
+            produto: Produto::Cadernos,
+            folha: None,
+            ..ImposPrefs::default()
+        };
         let o = opcoes(&d, &p);
         assert_eq!(o.layout, Layout::Booklet);
         assert_eq!(o.booklet.binding, Binding::PerfectBound);
@@ -457,7 +553,10 @@ mod tests {
 
     #[test]
     fn nothing_fits_says_so() {
-        let p = ImposPrefs { produto: Produto::Cartoes, ..ImposPrefs::default() };
+        let p = ImposPrefs {
+            produto: Produto::Cartoes,
+            ..ImposPrefs::default()
+        };
         let (c, r, _) = grade(Size::new(400.0, 500.0), Size::new(210.0, 297.0), &p);
         assert_eq!(c * r, 0);
     }
@@ -471,10 +570,16 @@ mod tests {
             let ctx = egui::Context::default();
             let mut out = Vec::new();
             for _ in 0..8 {
-                let mut o = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-                    let c = ui.ctx().clone();
-                    draw(&c);
-                });
+                let mut o = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(screen),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let c = ui.ctx().clone();
+                        draw(&c);
+                    },
+                );
                 o.textures_delta.clear();
                 let w = ctx.memory(|m| {
                     m.layer_ids()
@@ -488,13 +593,19 @@ mod tests {
             out
         };
         let mut app = crate::app::App::headless();
-        let mut impos = ImposDialog { prefs: ImposPrefs::default(), preview: None };
+        let mut impos = ImposDialog {
+            prefs: ImposPrefs::default(),
+            preview: None,
+        };
         let a = widths(&mut |c| {
             let mut close = false;
             dialog(&mut app, c, &mut impos, &mut close);
         });
         let mut app = crate::app::App::headless();
-        let mut capa = crate::capa::CapaDialog { spec: Default::default(), tabela: true };
+        let mut capa = crate::capa::CapaDialog {
+            spec: Default::default(),
+            tabela: true,
+        };
         let b = widths(&mut |c| {
             let mut close = false;
             crate::capa::dialog(&mut app, c, &mut capa, &mut close);

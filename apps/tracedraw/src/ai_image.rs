@@ -205,7 +205,11 @@ pub fn price_estimate(model: &str, res: Resolution) -> Option<Price> {
 /// A number of dollars with the decimal separator of the interface
 /// language and no more digits than the price needs.
 fn dollars(v: f64) -> String {
-    let s = if v < 0.1 { format!("{v:.3}") } else { format!("{v:.2}") };
+    let s = if v < 0.1 {
+        format!("{v:.3}")
+    } else {
+        format!("{v:.2}")
+    };
     let s = if s.contains('.') {
         s.trim_end_matches('0').trim_end_matches('.').to_string()
     } else {
@@ -2415,7 +2419,10 @@ mod tests {
             resolutions(ImageProvider::OpenAi, "gpt-image-2.5-flare"),
             &[Resolution::K1, Resolution::K2]
         );
-        assert_eq!(resolutions(ImageProvider::OpenAi, "sd-xl"), &[Resolution::K1]);
+        assert_eq!(
+            resolutions(ImageProvider::OpenAi, "sd-xl"),
+            &[Resolution::K1]
+        );
         assert_eq!(
             fit_resolution(ImageProvider::OpenAi, "gpt-image-2.5-flare", Resolution::K4),
             Resolution::K2
@@ -2452,18 +2459,29 @@ mod tests {
         };
         let r = build_generate(&p, "k", "a cat", Aspect::Square, 1);
         let v: Value = serde_json::from_str(&r.body).expect("json");
-        assert_eq!(v.pointer("/generationConfig/imageConfig/imageSize"), Some(&json!("4K")));
-        assert_eq!(v.pointer("/generationConfig/imageConfig/aspectRatio"), Some(&json!("1:1")));
+        assert_eq!(
+            v.pointer("/generationConfig/imageConfig/imageSize"),
+            Some(&json!("4K"))
+        );
+        assert_eq!(
+            v.pointer("/generationConfig/imageConfig/aspectRatio"),
+            Some(&json!("1:1"))
+        );
         // 1K is the service's own size: not named.
         p.resolution = Resolution::K1;
         let r = build_generate(&p, "k", "a cat", Aspect::Square, 1);
         let v: Value = serde_json::from_str(&r.body).expect("json");
-        assert!(v.pointer("/generationConfig/imageConfig/imageSize").is_none());
+        assert!(v
+            .pointer("/generationConfig/imageConfig/imageSize")
+            .is_none());
         // An edit (no aspect) still names a larger size.
         p.resolution = Resolution::K2;
         let r = build_edit(&p, "k", "remove the dog", &[1, 2, 3], false);
         let v: Value = serde_json::from_str(&r.body).expect("json");
-        assert_eq!(v.pointer("/generationConfig/imageConfig/imageSize"), Some(&json!("2K")));
+        assert_eq!(
+            v.pointer("/generationConfig/imageConfig/imageSize"),
+            Some(&json!("2K"))
+        );
         // GPT Image 2.5 at 2K: twice the usual sides.
         let o = ImagePrefs {
             provider: ImageProvider::OpenAi,
