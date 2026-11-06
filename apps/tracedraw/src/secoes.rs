@@ -66,7 +66,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, close: &mut bool) {
                     .rich_tip(pair("section.numbering", "section.numbering_desc"));
                 ui.add(egui::DragValue::new(&mut s.start_at).range(1..=9999).speed(0.1))
                     .rich_tip(pair("section.start_at", "section.start_at_desc"));
-                ui.add(egui::TextEdit::singleline(&mut s.title).desired_width(160.0))
+                ui.add_sized([160.0, 20.0], egui::TextEdit::singleline(&mut s.title))
                     .rich_tip(pair("section.name", "section.name_desc"));
                 if ui.small_button(tr("section.remove")).rich_tip(pair("section.remove", "section.remove_desc")).clicked() {
                     remove = Some(i);
