@@ -1068,6 +1068,8 @@ pub enum Dialog {
     Capa(Box<crate::capa::CapaDialog>),
     /// Arcano edition: File > Imposition.
     Impos(Box<crate::imposicao::ImposDialog>),
+    /// Page > Sections.
+    Sections,
     About,
     /// File > GitHub.
     GithubOpen(crate::github::GithubForm),
@@ -2756,6 +2758,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         }
         Dialog::Capa(st) => crate::capa::dialog(app, ctx, st, &mut close),
         Dialog::Impos(st) => crate::imposicao::dialog(app, ctx, st, &mut close),
+        Dialog::Sections => crate::secoes::dialog(app, ctx, &mut close),
         Dialog::PageNumberSettings => {
             window(ctx, tr("dialog.page_number_settings")).show(ctx, |ui| {
                 let pn = &mut app.page_numbers;

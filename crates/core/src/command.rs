@@ -113,6 +113,11 @@ pub enum Command {
     SetTextStyles {
         styles: Vec<crate::text_styles::TextStyle>,
     },
+    /// Replace the sections (page numbering and running heads by part of
+    /// the drawing).
+    SetSections {
+        sections: Vec<crate::document::Section>,
+    },
     /// Link objects to an object style and give them its parts; `None`
     /// breaks their links and leaves their properties as they are.
     LinkObjectStyle {
@@ -470,6 +475,7 @@ impl Command {
             Command::SetNodeTypes { .. } => "Node Type",
             Command::SetObjectStyles { .. } => "Object Styles",
             Command::SetTextStyles { .. } => "Text Styles",
+            Command::SetSections { .. } => "Sections",
             Command::LinkObjectStyle { style: Some(_), .. } => "Apply Style",
             Command::LinkObjectStyle { style: None, .. } => "Break Link to Style",
             Command::SetObjectDefaults { .. } => "Default Properties",
@@ -653,6 +659,9 @@ impl Command {
                 }
                 doc.object_styles = styles;
                 restyle(doc);
+            }
+            Command::SetSections { sections } => {
+                doc.sections = sections.clone();
             }
             Command::SetTextStyles { styles } => {
                 let mut styles = styles.clone();

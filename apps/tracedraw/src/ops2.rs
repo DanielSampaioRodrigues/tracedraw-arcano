@@ -274,6 +274,12 @@ impl App {
     /// layer active it is one field on that layer that shows the number
     /// of each page it is drawn on (#807).
     pub fn insert_page_number(&mut self, where_: PageNumberWhere) {
+        self.insert_page_field(where_, 0);
+    }
+
+    /// [`App::insert_page_number`] for a field showing `show`: 0 the page
+    /// number, 1 the title of the page's section (a running head).
+    pub fn insert_page_field(&mut self, where_: PageNumberWhere, show: u8) {
         let pages: Vec<(usize, tracedraw_core::PageId)> = self
             .doc()
             .pages
@@ -302,7 +308,9 @@ impl App {
                 .map(|p| p.size);
             if let Some(size) = size {
                 let mut s = self.page_number_text(i, size);
-                s.page_number = Some(self.page_numbers.field());
+                let mut field = self.page_numbers.field();
+                field.show = show;
+                s.page_number = Some(field);
                 cmds.push(Command::AddShape { layer, shape: s });
             }
         }
@@ -323,7 +331,19 @@ impl App {
                 continue;
             };
             let size = page.size;
-            let s = self.page_number_text(i, size);
+            let mut s = self.page_number_text(i, size);
+            if show == 1 {
+                // A running head on the page itself: its section's title.
+                let mut field = self.page_numbers.field();
+                field.show = 1;
+                let title = self.doc().field_text(&field, i);
+                if let ShapeKind::Text { spans, .. } = &mut s.kind {
+                    spans.truncate(1);
+                    if let Some(first) = spans.first_mut() {
+                        first.text = title;
+                    }
+                }
+            }
             cmds.push(Command::AddShape { layer, shape: s });
         }
         if !cmds.is_empty() {

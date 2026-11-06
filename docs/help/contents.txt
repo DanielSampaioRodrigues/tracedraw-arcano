@@ -90,6 +90,7 @@ templates-styles/index
   templates-styles/house-press
 pages-layout/index
   pages-layout/pages
+  pages-layout/sections
   pages-layout/multipage-view
   pages-layout/document-options
   pages-layout/guidelines-and-grid

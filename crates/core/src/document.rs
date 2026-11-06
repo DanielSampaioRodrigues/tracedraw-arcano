@@ -3910,6 +3910,67 @@ pub struct PageNumberField {
     pub prefix: String,
     #[serde(default)]
     pub suffix: String,
+    /// What the field shows: 0 the page number, 1 the title of the page's
+    /// section (a running head, see [`Section`]).
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
+    pub show: u8,
+}
+
+fn is_zero_u8(v: &u8) -> bool {
+    *v == 0
+}
+
+/// A section of the drawing: from its first page on (until the next
+/// section) the page numbers start again at `start_at` in their own
+/// style, and running heads show its title (Page > Sections).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Section {
+    pub first_page: PageId,
+    /// As [`PageNumberField::style`]: 0 arabic, 1 upper roman, 2 lower
+    /// roman, 3 upper alpha, 4 lower alpha.
+    #[serde(default)]
+    pub style: u8,
+    #[serde(default = "one_i64")]
+    pub start_at: i64,
+    #[serde(default)]
+    pub title: String,
+}
+
+fn one_i64() -> i64 {
+    1
+}
+
+impl Document {
+    /// The section the page at `index` belongs to, and the index of the
+    /// section's first page.
+    pub fn section_at(&self, index: usize) -> Option<(&Section, usize)> {
+        self.sections
+            .iter()
+            .filter_map(|s| self.pages.iter().position(|p| p.id == s.first_page).map(|i| (s, i)))
+            .filter(|(_, i)| *i <= index)
+            .max_by_key(|(_, i)| *i)
+    }
+
+    /// What field `f` shows on the page at `index`: the number (in its
+    /// section's numbering when the drawing has sections) or the
+    /// section's title.
+    pub fn field_text(&self, f: &PageNumberField, index: usize) -> String {
+        let section = self.section_at(index);
+        if f.show == 1 {
+            return section.map(|(s, _)| s.title.clone()).unwrap_or_default();
+        }
+        match section {
+            Some((s, first)) => {
+                let g = PageNumberField {
+                    start_at: s.start_at - first as i64,
+                    style: s.style,
+                    ..f.clone()
+                };
+                g.label(index)
+            }
+            None => f.label(index),
+        }
+    }
 }
 
 impl PageNumberField {
@@ -3987,8 +4048,13 @@ impl Shape {
     /// Page number fields in this object show the number of the page at
     /// `index` (0-based).
     pub fn show_page_number(&mut self, index: usize) {
+        self.show_fields(&|f: &PageNumberField| f.label(index));
+    }
+
+    /// Page number fields in this object show what `label` gives them.
+    pub fn show_fields(&mut self, label: &dyn Fn(&PageNumberField) -> String) {
         if let (Some(f), ShapeKind::Text { spans, .. }) = (&self.page_number, &mut self.kind) {
-            let label = f.label(index);
+            let label = label(f);
             spans.truncate(1);
             if let Some(first) = spans.first_mut() {
                 first.text = label;
@@ -3996,7 +4062,7 @@ impl Shape {
         }
         if let ShapeKind::Group { children } = &mut self.kind {
             for c in children {
-                c.show_page_number(index);
+                c.show_fields(label);
             }
         }
     }
@@ -4348,6 +4414,9 @@ pub struct Document {
     /// Named paragraph and character styles (see [`crate::text_styles`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_styles: Vec<crate::text_styles::TextStyle>,
+    /// Sections with their own page numbering and title (see [`Section`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sections: Vec<Section>,
     /// The fill and outline new objects get.
     #[serde(default)]
     pub defaults: ObjectDefaults,
@@ -4650,6 +4719,7 @@ impl Document {
             master: Vec::new(),
             object_styles: Vec::new(),
             text_styles: Vec::new(),
+            sections: Vec::new(),
             defaults: ObjectDefaults::default(),
             color_styles: Vec::new(),
             symbols: Vec::new(),
@@ -4830,7 +4900,7 @@ impl Document {
                 if master && l.shapes.iter().any(Shape::holds_page_number) {
                     let mut l = l.clone();
                     for s in &mut l.shapes {
-                        s.show_page_number(idx);
+                        s.show_fields(&|f| self.field_text(f, idx));
                     }
                     Cow::Owned(l)
                 } else {

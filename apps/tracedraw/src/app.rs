@@ -75,6 +75,7 @@ impl PageNumberSettings {
             style: self.style,
             prefix: self.prefix.clone(),
             suffix: self.suffix.clone(),
+            show: 0,
         }
     }
 

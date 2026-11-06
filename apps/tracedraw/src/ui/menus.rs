@@ -2686,6 +2686,12 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.layout.page_number_settings", "", true) {
         app.dialog = Dialog::PageNumberSettings;
     }
+    if item(ui, "menu.layout.sections", "", true) {
+        app.dialog = Dialog::Sections;
+    }
+    if item(ui, "menu.layout.running_head", "", true) {
+        app.insert_running_head();
+    }
     sep(ui);
     if item(ui, "menu.layout.switch_orientation", "", true) {
         let s = app.page_size();
