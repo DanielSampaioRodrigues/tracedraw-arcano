@@ -67,16 +67,17 @@ pub fn welcome_screen(app: &mut App, ui: &mut Ui) {
 
 fn big_button(ui: &mut Ui, icon: icons::Action, title: String, subtitle: String) -> bool {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(240.0, 64.0), egui::Sense::click());
+    // A card a shade off the screen, rounded, lit on hover.
     let bg = if resp.hovered() {
         Tokens::tool_hover()
     } else {
-        Tokens::panel()
+        Tokens::panel_dark()
     };
     let painter = ui.painter();
-    painter.rect_filled(rect, 4.0, bg);
+    painter.rect_filled(rect, 10.0, bg);
     painter.rect_stroke(
         rect,
-        4.0,
+        10.0,
         egui::Stroke::new(1.0, Tokens::border()),
         egui::epaint::StrokeKind::Inside,
     );
