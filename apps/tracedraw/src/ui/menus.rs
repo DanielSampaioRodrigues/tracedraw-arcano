@@ -2753,11 +2753,6 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
         app.dialog = Dialog::Options;
         app.options_page = crate::ui::dialogs::OptionsPage::Layout;
     }
-    // Arcano edition: the pages as a book's spreads.
-    let facing = app.has_document() && app.doc().metadata.facing_pages;
-    if mark_item_if(ui, "menu.layout.facing_pages", "", Mark::Check(facing), app.has_document()) {
-        app.set_facing_pages(!facing);
-    }
     // The space between the pages of the Multipage View.
     sub(ui, "menu.layout.page_spacing", |ui| {
         let now = app.page_spacing();
@@ -2773,6 +2768,11 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
             };
         }
     });
+    // Arcano edition: the pages as a book's spreads.
+    let facing = app.has_document() && app.doc().metadata.facing_pages;
+    if mark_item_if(ui, "menu.layout.facing_pages", "", Mark::Check(facing), app.has_document()) {
+        app.set_facing_pages(!facing);
+    }
     if item(
         ui,
         "menu.layout.fit_page_selection",
