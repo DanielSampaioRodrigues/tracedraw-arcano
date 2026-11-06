@@ -61,8 +61,8 @@ the styles based on it what it set and its parent.
 
 Two lists, paragraph and character styles, each with New and [No style]
 first. A row applies its style on a click, is marked when it is the style
-at the caret, shows its parent after an arrow and how many paragraphs (or
-runs of characters) use it. Its triangle opens the name (kept when the
+at the caret, shows its parent after « and how many paragraphs (or
+runs of characters) use it. Its + opens the name (kept when the
 field is left), Based on, Redefine, Clear Overrides (apply again) and
 Delete.
 

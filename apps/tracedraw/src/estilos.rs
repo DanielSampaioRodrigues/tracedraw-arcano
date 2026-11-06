@@ -331,7 +331,7 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
     let open_id = egui::Id::new("tstyle_open");
     let open = ui.data(|d| d.get_temp::<Option<u32>>(open_id)).flatten() == Some(st.id);
     ui.horizontal(|ui| {
-        let arrow = if open { "\u{25BE}" } else { "\u{25B8}" };
+        let arrow = if open { "-" } else { "+" };
         if ui
             .add(egui::Button::new(arrow).small().frame(false))
             .rich_tip(pair("tstyle.settings", "tstyle.settings_desc"))
@@ -341,7 +341,7 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
         }
         let parent = st.based_on.and_then(|p| ts::find(&app.doc().text_styles, p)).map(|p| p.name.clone());
         let label = match &parent {
-            Some(p) => format!("{}  \u{2190} {p}", st.name),
+            Some(p) => format!("{}  \u{00AB} {p}", st.name),
             None => st.name.clone(),
         };
         if ui

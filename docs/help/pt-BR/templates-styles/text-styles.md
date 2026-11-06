@@ -31,7 +31,7 @@ texto com a aparência que tem.
 - [[tstyle.book_set]] cria um conjunto inicial para livros: texto corrido,
   primeiro parágrafo, título de capítulo, subtítulo, citação, ênfase, negrito
   e versalete. Eles não definem fonte, então o texto mantém a sua.
-- A seta ao lado de um estilo abre os ajustes dele: o nome, o estilo em que
+- O + ao lado de um estilo abre os ajustes dele: o nome, o estilo em que
   ele **se baseia** (o que ele não define, pega daquele e acompanha as
   mudanças), [[tstyle.redefine]] (o estilo pega a aparência do texto no
   cursor), [[tstyle.clear]] (aplica de novo, tirando o que foi mudado à mão)

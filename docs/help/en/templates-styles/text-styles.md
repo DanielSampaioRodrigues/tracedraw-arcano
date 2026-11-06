@@ -31,7 +31,7 @@ leaves the text as it looks.
 - [[tstyle.book_set]] adds a starting set for books: body text, first
   paragraph, chapter title, subtitle, quotation, emphasis, bold and small
   caps. They set no font, so the text keeps its own.
-- The arrow beside a style opens its settings: its name, the style it is
+- The + beside a style opens its settings: its name, the style it is
   **based on** (what it does not set, it takes from that one and follows its
   changes), [[tstyle.redefine]] (the style takes the look of the text at the
   caret), [[tstyle.clear]] (apply it again, taking off changes made by hand)
