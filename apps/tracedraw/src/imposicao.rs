@@ -294,7 +294,7 @@ pub fn dialog(app: &mut crate::app::App, ctx: &egui::Context, st: &mut ImposDial
                         Some((n, w, h)) => format!("{n} ({w} x {h} mm)"),
                         None => tr("impos.sheet_fit"),
                     };
-                    egui::ComboBox::from_id_salt("impos_sheet")
+                    crate::ui::combo::from_id_salt("impos_sheet")
                         .width(200.0)
                         .selected_text(shown)
                         .show_ui(ui, |ui| {

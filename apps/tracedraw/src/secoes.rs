@@ -55,7 +55,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, close: &mut bool) {
                 ui.add(egui::DragValue::new(&mut n).range(1..=pages.len()).speed(0.1))
                     .rich_tip(pair("section.first_page", "section.first_page_desc"));
                 s.first_page = pages[n.clamp(1, pages.len()) - 1];
-                egui::ComboBox::from_id_salt(("section_style", i))
+                crate::ui::combo::from_id_salt(("section_style", i))
                     .selected_text(tr(STYLES[s.style.min(4) as usize]))
                     .show_ui(ui, |ui| {
                         for (k, key) in STYLES.iter().enumerate() {

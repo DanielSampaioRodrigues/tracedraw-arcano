@@ -1071,7 +1071,7 @@ pub(crate) fn dim_labelled<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) 
 fn brush_strokes_bar(app: &mut App, ui: &mut Ui) {
     use crate::media::MediaMode;
     dim_labelled_as(ui, "toolbar.brush_mode", "toolbar.brush_mode_desc", |ui| {
-        egui::ComboBox::from_id_salt("brush_mode")
+        crate::ui::combo::from_id_salt("brush_mode")
             .selected_text(tr(app.media_mode.key()))
             .width(110.0)
             .show_ui(ui, |ui| {
@@ -1107,7 +1107,7 @@ fn brush_strokes_bar(app: &mut App, ui: &mut Ui) {
                     .or(shapes.first())
                     .map(|k| tr(k))
                     .unwrap_or_default();
-                egui::ComboBox::from_id_salt("brush_shape")
+                crate::ui::combo::from_id_salt("brush_shape")
                     .selected_text(current)
                     .width(120.0)
                     .show_ui(ui, |ui| {
@@ -2221,7 +2221,7 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
     let target_shown = !mixed.contains(&F::Target);
     let target_list =
         |ui: &mut Ui, set: &mut crate::effects_ui::TransparencySettings, field: &mut Option<F>| {
-            egui::ComboBox::from_id_salt("transparency_target")
+            crate::ui::combo::from_id_salt("transparency_target")
                 .selected_text(if target_shown {
                     targets[(set.target as usize).min(2)].clone()
                 } else {
@@ -2243,7 +2243,7 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                 .rich_tip(crate::ui::tips::keyed("toolbar.transparency_target"));
         };
     part_row(ui, stacked, |ui| {
-        egui::ComboBox::from_id_salt("transparency_kind")
+        crate::ui::combo::from_id_salt("transparency_kind")
             .selected_text(
                 current
                     .and_then(|c| kinds.get(c).cloned())
@@ -2325,7 +2325,7 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                     .find(|(k, _)| kind_shown && *k == f.kind)
                     .map(|(_, n)| tr(n))
                     .unwrap_or_default();
-                egui::ComboBox::from_id_salt("transparency_fountain_kind")
+                crate::ui::combo::from_id_salt("transparency_fountain_kind")
                     .selected_text(name)
                     .width(90.0)
                     .show_ui(ui, |ui| {
@@ -2357,7 +2357,7 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
             .extend(),
         );
         let merge_shown = !mixed.contains(&F::Merge);
-        egui::ComboBox::from_id_salt("transparency_merge")
+        crate::ui::combo::from_id_salt("transparency_merge")
             .selected_text(if merge_shown {
                 set.merge.name().to_string()
             } else {
@@ -2667,7 +2667,7 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
             tr("toolbar.rectangular")
         }
     };
-    egui::ComboBox::from_id_salt("node_selection_mode")
+    crate::ui::combo::from_id_salt("node_selection_mode")
         .selected_text(mode_text(app.node_lasso))
         .width(96.0)
         .show_ui(ui, |ui| {
@@ -3250,7 +3250,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
         app.set_shadow(Some(sh), false);
     }
     let mut preset = None;
-    egui::ComboBox::from_id_salt("shadow_presets")
+    crate::ui::combo::from_id_salt("shadow_presets")
         .selected_text(tr("shadow.presets"))
         .width(110.0)
         .show_ui(ui, |ui| {
@@ -3279,7 +3279,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
         Some(ShadowEdge::Right) => "shadow.edge_right",
     };
     let current = sh.perspective.map(|p| p.edge);
-    egui::ComboBox::from_id_salt("shadow_kind")
+    crate::ui::combo::from_id_salt("shadow_kind")
         .selected_text(tr(kind_key(current)))
         .width(110.0)
         .show_ui(ui, |ui| {
@@ -3337,7 +3337,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
         FeatherDirection::Outside => "shadow.feather_outside",
         FeatherDirection::Average => "shadow.feather_average",
     };
-    egui::ComboBox::from_id_salt("shadow_feather_dir")
+    crate::ui::combo::from_id_salt("shadow_feather_dir")
         .selected_text(tr(dir_key(sh.feather_direction)))
         .width(80.0)
         .show_ui(ui, |ui| {
@@ -3359,7 +3359,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
         FeatherEdges::InvertedSquared => "shadow.edges_inverted_squared",
         FeatherEdges::Flat => "shadow.edges_flat",
     };
-    egui::ComboBox::from_id_salt("shadow_feather_edges")
+    crate::ui::combo::from_id_salt("shadow_feather_edges")
         .selected_text(tr(edge_key(sh.feather_edges)))
         .width(96.0)
         .show_ui(ui, |ui| {
@@ -3376,7 +3376,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
         .response
         .rich_tip(tr("shadow.feather_edges"));
     dim_labelled(ui, "transparency.merge_mode", |ui| {
-        egui::ComboBox::from_id_salt("shadow_merge")
+        crate::ui::combo::from_id_salt("shadow_merge")
             .selected_text(sh.merge.name())
             .width(90.0)
             .show_ui(ui, |ui| {

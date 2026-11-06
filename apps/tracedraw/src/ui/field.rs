@@ -254,11 +254,13 @@ impl<N: Numeric> NumField<'_, N> {
         ui.spacing_mut().item_spacing = spacing;
         // The direction of a step and the modifiers held for it.
         let mut stepped: Option<(f64, egui::Modifiers)> = None;
-        if ui.is_rect_visible(spin) {
+        // The arrows show while the pointer is over the field or it is
+        // being typed in; otherwise their room stays empty (they still
+        // take clicks, drags and the wheel).
+        let lit = resp.hovered() || spin_resp.hovered() || spin_resp.dragged() || resp.has_focus();
+        if ui.is_rect_visible(spin) && lit {
             let p = ui.painter();
-            p.rect_filled(spin, 0.0, crate::theme::Tokens::field());
-            let line = egui::Stroke::new(1.0, crate::theme::Tokens::control_border());
-            p.line_segment([spin.left_top(), spin.left_bottom()], line);
+            p.rect_filled(spin.shrink2(egui::vec2(0.0, 1.0)), 4.0, crate::theme::Tokens::field());
             let hover = spin_resp.hover_pos();
             let halves = [
                 (
@@ -273,7 +275,7 @@ impl<N: Numeric> NumField<'_, N> {
             for (half, dir) in halves {
                 let over = hover.is_some_and(|h| half.contains(h));
                 if over {
-                    p.rect_filled(half.shrink(1.0), 0.0, crate::theme::Tokens::icon_off());
+                    p.rect_filled(half.shrink(1.0), 3.0, crate::theme::Tokens::tool_hover());
                 }
                 let c = half.center();
                 let col = if over {

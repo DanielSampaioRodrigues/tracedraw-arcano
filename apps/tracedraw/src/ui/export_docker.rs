@@ -22,7 +22,7 @@ fn raster(format: usize) -> bool {
 }
 
 fn format_combo(ui: &mut Ui, salt: impl std::hash::Hash + std::fmt::Debug, format: &mut usize) {
-    egui::ComboBox::from_id_salt(salt)
+    crate::ui::combo::from_id_salt(salt)
         .selected_text(EXPORT_FORMATS.get(*format).map(|(n, _)| *n).unwrap_or("?"))
         .width(70.0)
         .show_ui(ui, |ui| {

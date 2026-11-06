@@ -1589,7 +1589,7 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
         Vec2::new(200.0, BAR_H),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            egui::ComboBox::from_id_salt("page_size_bar")
+            crate::ui::combo::from_id_salt("page_size_bar")
                 .selected_text(current.clone())
                 .width(192.0)
                 .height(400.0)
@@ -1725,7 +1725,7 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
     sep(ui);
     ui.label(tr("toolbar.units_label"));
     let mut u = app.units;
-    egui::ComboBox::from_id_salt("units_bar")
+    crate::ui::combo::from_id_salt("units_bar")
         .selected_text(u.label())
         .width(120.0)
         .height(400.0)
@@ -2071,7 +2071,7 @@ pub fn outline_text(app: &App, width: Option<f64>) -> String {
 /// The outline unit picker (points, millimetres, ...), next to a width.
 pub(crate) fn outline_unit_combo(ui: &mut Ui, salt: &str, current: Units) -> Option<Units> {
     let mut picked = None;
-    egui::ComboBox::from_id_salt(salt)
+    crate::ui::combo::from_id_salt(salt)
         .selected_text(current.short())
         .width(44.0)
         .show_ui(ui, |ui| {
@@ -2307,7 +2307,7 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
     // Line style: solid or one of the dash presets.
     let dash = stroke.as_ref().map(|s| s.dash.clone()).unwrap_or_default();
     let dash_shown = !mix.has(StrokeField::Dash);
-    egui::ComboBox::from_id_salt("line_style_bar")
+    crate::ui::combo::from_id_salt("line_style_bar")
         .selected_text(if dash_shown {
             dash_label(&dash)
         } else {
@@ -2369,7 +2369,7 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
         } else {
             StrokeField::EndArrow
         });
-        egui::ComboBox::from_id_salt(if start {
+        crate::ui::combo::from_id_salt(if start {
             "arrow_start_bar"
         } else {
             "arrow_end_bar"

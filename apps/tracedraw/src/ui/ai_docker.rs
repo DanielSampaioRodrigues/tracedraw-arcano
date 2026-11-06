@@ -119,7 +119,7 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             .and_then(|i| crate::ai::PRESETS.get(i))
             .map(|(k, _, _)| tr(k))
             .unwrap_or_else(|| tr("aipreset.custom"));
-        egui::ComboBox::from_id_salt("ai_preset")
+        crate::ui::combo::from_id_salt("ai_preset")
             .width(FIELD_W)
             .selected_text(shown)
             .show_ui(ui, |ui| {
@@ -288,7 +288,7 @@ pub fn resolution_field(
     let model = image.model();
     let offered = resolutions(image.provider, &model);
     let shown = image.resolution();
-    egui::ComboBox::from_id_salt("ai_image_resolution")
+    crate::ui::combo::from_id_salt("ai_image_resolution")
         .width(FIELD_W)
         .selected_text(tr(shown.key()))
         .show_ui(ui, |ui| {

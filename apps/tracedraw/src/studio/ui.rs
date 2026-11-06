@@ -46,7 +46,7 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
         .unwrap_or_else(|| tr("studio.main_service"));
     ui.horizontal(|ui| {
         ui.label(tr("studio.service"));
-        egui::ComboBox::from_id_salt("studio_service")
+        crate::ui::combo::from_id_salt("studio_service")
             .width((ui.available_width() - 8.0).max(80.0))
             .selected_text(shown)
             .show_ui(ui, |ui| {
@@ -94,7 +94,7 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
     let res_now = model.fit_resolution(&app.settings.studio.resolution);
     ui.horizontal(|ui| {
         ui.label(tr("ai.model"));
-        egui::ComboBox::from_id_salt("studio_model")
+        crate::ui::combo::from_id_salt("studio_model")
             .width((ui.available_width() - 8.0).max(80.0))
             .selected_text(model.label.clone())
             .show_ui(ui, |ui| {
@@ -124,7 +124,7 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
     ui.horizontal(|ui| {
         ui.label(tr("aiimg.resolution"));
         ui.add_enabled_ui(model.resolutions.len() > 1, |ui| {
-            egui::ComboBox::from_id_salt("studio_resolution")
+            crate::ui::combo::from_id_salt("studio_resolution")
                 .selected_text(resolution_label(&res_now))
                 .show_ui(ui, |ui| {
                     for r in &model.resolutions {
@@ -138,7 +138,7 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
     let aspect_now = model.fit_aspect(&app.settings.studio.aspect);
     ui.horizontal(|ui| {
         ui.label(tr("aigen.aspect"));
-        egui::ComboBox::from_id_salt("studio_aspect")
+        crate::ui::combo::from_id_salt("studio_aspect")
             .selected_text(aspect_now.clone())
             .show_ui(ui, |ui| {
                 if app.ai_image.source.is_some() {
@@ -193,7 +193,7 @@ fn param_ui(app: &mut App, ui: &mut Ui, key: &str, p: &Param) {
                     .find(|(v, _)| *v == current)
                     .map(|(_, l)| text(l))
                     .unwrap_or_else(|| current.to_string());
-                egui::ComboBox::from_id_salt(key)
+                crate::ui::combo::from_id_salt(key)
                     .selected_text(shown)
                     .show_ui(ui, |ui| {
                         for (v, l) in &p.choices {
@@ -340,7 +340,7 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
         .unwrap_or_default();
     ui.horizontal(|ui| {
         ui.label(tr("studio.service"));
-        egui::ComboBox::from_id_salt("studio_op_service")
+        crate::ui::combo::from_id_salt("studio_op_service")
             .width((ui.available_width() - 8.0).max(80.0))
             .selected_text(shown)
             .show_ui(ui, |ui| {
@@ -371,7 +371,7 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
     if info.variants.len() > 1 {
         ui.horizontal(|ui| {
             ui.label(tr("studio.how"));
-            egui::ComboBox::from_id_salt("studio_variant")
+            crate::ui::combo::from_id_salt("studio_variant")
                 .width((ui.available_width() - 8.0).max(80.0))
                 .selected_text(text(&variant.label))
                 .show_ui(ui, |ui| {
@@ -440,7 +440,7 @@ fn expand_to_shape(app: &mut App, ui: &mut Ui, provider: &str, variant: &str) {
     };
     ui.horizontal(|ui| {
         ui.label(tr("studio.expand_to"));
-        egui::ComboBox::from_id_salt("studio_expand_to")
+        crate::ui::combo::from_id_salt("studio_expand_to")
             .selected_text(tr("studio.expand_pick"))
             .show_ui(ui, |ui| {
                 for a in ["1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9", "21:9"] {

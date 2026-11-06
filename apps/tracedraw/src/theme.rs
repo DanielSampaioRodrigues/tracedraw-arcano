@@ -303,7 +303,7 @@ const LIGHT: Palette = Palette {
     button: rgb(0xEDEEF0),
     control_border: rgb(0xD4D6DA),
     slider_rail: rgb(0xD4D6DA),
-    field: rgb(0xFFFFFF),
+    field: rgb(0xEEEFF1),
     menu: rgb(0xFFFFFF),
     menu_gutter: rgb(0xFFFFFF),
     menu_hover: rgb(0xE5F1FC),
@@ -341,7 +341,7 @@ const MEDIUM_LIGHT: Palette = Palette {
     button: rgb(0xDCDDE1),
     control_border: rgb(0xC2C5CA),
     slider_rail: rgb(0xC2C5CA),
-    field: rgb(0xF7F7F8),
+    field: rgb(0xD8DADE),
     menu: rgb(0xF4F5F6),
     menu_gutter: rgb(0xF4F5F6),
     menu_hover: rgb(0xD9E9FA),
@@ -682,9 +682,11 @@ pub fn visuals() -> Visuals {
     // a shade darker than the panel.
     v.widgets.inactive.bg_fill = Tokens::field();
     v.widgets.inactive.weak_bg_fill = Tokens::button();
-    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, Tokens::control_border());
+    // Fields and buttons without frames at rest: a fill a shade off the
+    // panel; a light frame on hover, the accent while pressed or typed in.
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, Color32::TRANSPARENT);
     v.widgets.inactive.fg_stroke.color = Tokens::text();
-    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, Tokens::ACCENT);
+    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, Tokens::control_border());
     v.widgets.active.bg_stroke = egui::Stroke::new(1.0, Tokens::ACCENT);
     v.widgets.hovered.bg_fill = Tokens::tool_hover();
     v.widgets.hovered.weak_bg_fill = Tokens::tool_hover();

@@ -612,7 +612,7 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
             Some((c, modelo)) => {
                 let mut servico = c.id.clone();
                 ui.add_enabled_ui(!busy, |ui| {
-                    egui::ComboBox::from_id_salt("assist_service")
+                    crate::ui::combo::from_id_salt("assist_service")
                         .width(150.0)
                         .selected_text(&c.nome)
                         .show_ui(ui, |ui| {
@@ -629,7 +629,7 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                 } else {
                     let mut m = modelo.clone();
                     ui.add_enabled_ui(!busy, |ui| {
-                        egui::ComboBox::from_id_salt("assist_model")
+                        crate::ui::combo::from_id_salt("assist_model")
                             .width(150.0)
                             .selected_text(&m)
                             .show_ui(ui, |ui| {

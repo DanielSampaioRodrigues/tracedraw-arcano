@@ -549,7 +549,7 @@ fn combo(ui: &mut egui::Ui, id: &str, value: &mut String, items: &[(String, Stri
         .or(items.first())
         .map(|(_, n)| n.clone())
         .unwrap_or_default();
-    egui::ComboBox::from_id_salt(id)
+    crate::ui::combo::from_id_salt(id)
         .width(200.0)
         .selected_text(shown)
         .show_ui(ui, |ui| {

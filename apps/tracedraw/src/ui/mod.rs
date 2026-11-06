@@ -5,6 +5,7 @@
 
 pub mod about;
 pub mod panel_stack;
+pub mod combo;
 pub mod ai_bar;
 pub mod ai_docker;
 pub mod ai_generate_docker;

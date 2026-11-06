@@ -391,7 +391,7 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
             .unwrap_or_else(|| tr("tstyle.based_none"));
         ui.horizontal(|ui| {
             ui.label(tr("tstyle.based_on"));
-            egui::ComboBox::from_id_salt(("tstyle_based", st.id))
+            crate::ui::combo::from_id_salt(("tstyle_based", st.id))
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut parent, None, tr("tstyle.based_none"));

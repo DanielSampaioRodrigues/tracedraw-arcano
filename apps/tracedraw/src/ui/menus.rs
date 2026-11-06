@@ -906,6 +906,29 @@ pub(crate) mod access {
         hit && egui::containers::menu::MenuState::from_ui(ui, |state, _| state.open_item.is_none())
     }
 
+    /// Whether access keys are shown: while Alt is held, and in menus
+    /// opened with Alt held, as current systems do (always in tests).
+    static CUES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static STICKY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// Work out this frame's [`cues`].
+    pub fn update_cues(ctx: &egui::Context) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let alt = ctx.input(|i| i.modifiers.alt);
+        let open = egui::Popup::is_any_open(ctx);
+        if alt {
+            STICKY.store(true, Relaxed);
+        } else if !open {
+            STICKY.store(false, Relaxed);
+        }
+        CUES.store(alt || (open && STICKY.load(Relaxed)), Relaxed);
+    }
+
+    /// Access keys are drawn underlined now.
+    pub fn cues() -> bool {
+        cfg!(test) || CUES.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Underline the char at `at` of `label` drawn left-centred at `pos`.
     pub fn underline(
         painter: &egui::Painter,
@@ -915,6 +938,9 @@ pub(crate) mod access {
         size: f32,
         color: egui::Color32,
     ) {
+        if !cues() {
+            return;
+        }
         let font = egui::FontId::proportional(size);
         let before: String = label.chars().take(at).collect();
         let this: String = label.chars().skip(at).take(1).collect();
@@ -948,7 +974,7 @@ pub(crate) mod access {
                 egui::TextFormat {
                     font_id: egui::FontId::proportional(size),
                     color,
-                    underline: if Some(i) == at {
+                    underline: if Some(i) == at && cues() {
                         egui::Stroke::new(1.0, color)
                     } else {
                         egui::Stroke::NONE
@@ -2069,6 +2095,7 @@ fn menu_bar_style(style: &mut egui::Style) {
 
 pub fn menu_bar(app: &mut App, ui: &mut Ui) {
     set_highlight_new(app.highlight_whats_new);
+    access::update_cues(ui.ctx());
     // Alt and a letter the user gave a command keeps running that command
     // instead of opening a menu; while Options waits for a shortcut's keys
     // no menu opens either.
