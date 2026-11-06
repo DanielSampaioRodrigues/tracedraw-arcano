@@ -460,13 +460,13 @@ mod tests {
         let placed = layout_spreads(&pages, PageId(1), 10.0);
         let r = |i: usize| placed[i].1;
         // Page 1 on the right of the spine (x = 0 for it).
-        assert_eq!((r(0).x0, r(0).y1), (0.0, 0.0));
+        assert_eq!((r(0).x0, r(0).y0), (0.0, 0.0));
         // Pages 2 and 3: the second spread, 2 ending where 3 begins.
         assert!((r(1).x1 - r(2).x0).abs() < 1e-9);
         assert!((r(1).x0 - (148.0 + 10.0)).abs() < 1e-9, "{:?}", r(1));
-        assert_eq!(r(1).y1, r(0).y1);
+        assert_eq!(r(1).y0, r(0).y0);
         // Pages 4 and 5 start the next row; 6 is the left of the fourth spread.
-        assert!((r(3).y1 - (-(210.0 + 10.0))).abs() < 1e-9, "{:?}", r(3));
+        assert!((r(3).y0 - (-(210.0 + 10.0))).abs() < 1e-9, "{:?}", r(3));
         assert!((r(3).x1 - r(4).x0).abs() < 1e-9);
         assert!(r(5).x1 > r(4).x1);
         let mut app = App::headless();
