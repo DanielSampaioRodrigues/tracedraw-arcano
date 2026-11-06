@@ -297,6 +297,10 @@ pub struct Settings {
     /// column with the tabs down its side.
     #[serde(default = "default_true")]
     pub stacked_panels: bool,
+    /// Appearance: the contextual bar next to the selection, with the
+    /// actions that suit it (`ui::context_bar`).
+    #[serde(default = "default_true")]
+    pub context_bar: bool,
     /// Customization > Appearance > Theme: "light", "medium_light",
     /// "medium_dark" or "dark".
     #[serde(default)]
@@ -1831,6 +1835,7 @@ impl Default for Settings {
             colored_icons: false,
             // Tests check the panels as they were; the program starts stacked.
             stacked_panels: !cfg!(test),
+            context_bar: !cfg!(test),
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             bar_items: Default::default(),

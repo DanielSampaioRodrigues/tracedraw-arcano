@@ -58,24 +58,13 @@ fn model_note(model: &str) -> String {
 }
 
 pub fn ai_generate(app: &mut App, ui: &mut Ui) {
-    // The modes as picture buttons, and the information page at the right.
+    // Arcano edition: the page of actions, or one action's page under a
+    // header that goes back to them; the information page at the right.
     ui.horizontal(|ui| {
-        for (mode, glyph, key) in [
-            (Mode::Create, "\u{1F5BC}", "aigen.mode_create"),
-            (Mode::Remix, "\u{1F504}", "aigen.mode_remix"),
-            (Mode::Vector, "\u{2712}", "aigen.mode_vector"),
-            (Mode::Draw, "\u{270F}", "aigen.mode_draw"),
-            (Mode::Edit, "\u{2728}", "studio.mode_edit"),
-        ] {
-            let on = app.ai_image.mode == mode && !app.ai_image.info;
-            if ui
-                .selectable_label(on, RichText::new(glyph).size(16.0))
-                .rich_tip(tr(key))
-                .clicked()
-            {
-                app.ai_image.mode = mode;
-                app.ai_image.info = false;
-            }
+        if !app.ai_image.home && !app.ai_image.info {
+            crate::ui::ai_actions::header(app, ui);
+        } else {
+            ui.label(RichText::new(tr("aiact.title")).strong());
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
@@ -87,6 +76,16 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
             }
         });
     });
+    if app.ai_image.home && !app.ai_image.info {
+        egui::ScrollArea::vertical()
+            .id_salt("aigen_home")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width() - 10.0);
+                crate::ui::ai_actions::home(app, ui)
+            });
+        return;
+    }
     if app.ai_image.info {
         egui::ScrollArea::vertical()
             .id_salt("aigen_info")
@@ -158,6 +157,18 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
                     .color(Tokens::text_dim())
                     .size(11.0),
             );
+            // Arcano edition: the company and model, usable even while the
+            // service chosen is not ready (to choose another).
+            if !svg {
+                let op = if mode == Mode::Remix {
+                    crate::studio::Op::Remix
+                } else {
+                    crate::studio::Op::Generate
+                };
+                ui.add_enabled_ui(!app.ai_image.busy() && !app.studio.busy(), |ui| {
+                    crate::studio::ui::model_picker(app, ui, op)
+                });
+            }
             ui.add_enabled_ui(ready && !app.ai_image.busy() && !app.studio.busy(), |ui| {
                 body(app, ui, mode, svg)
             });

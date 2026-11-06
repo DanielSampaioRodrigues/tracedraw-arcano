@@ -1052,6 +1052,8 @@ pub struct ImageSession {
     pub folded: bool,
     /// The information page shows instead of the settings.
     pub info: bool,
+    /// Arcano edition: the page of actions shows instead of one action.
+    pub home: bool,
     pub status: ImageStatus,
     /// Newest first.
     pub results: Vec<GenImage>,
@@ -1082,6 +1084,7 @@ impl Default for ImageSession {
             auto_place: true,
             folded: false,
             info: false,
+            home: true,
             status: ImageStatus::default(),
             results: Vec::new(),
             models: Vec::new(),

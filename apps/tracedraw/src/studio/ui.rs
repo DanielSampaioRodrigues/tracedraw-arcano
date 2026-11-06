@@ -6,7 +6,7 @@
 use egui::{RichText, Ui};
 
 use super::app::{model_param_key, op_param_key, KeyTest};
-use super::catalog::{text, ModelInfo, Param};
+use super::catalog::{text, ModelInfo, Param, ProviderInfo};
 use super::Op;
 use crate::app::App;
 use crate::i18n::{tr, trf};
@@ -43,45 +43,9 @@ const TEXT_ONLY: [(&str, &str, &str); 3] = [
 /// and choices. True when the studio draws the rows (the docker then
 /// leaves out its own model and shape rows).
 pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
-    let services: Vec<(String, String)> = app
-        .studio
-        .catalog
-        .services_for(op)
-        .iter()
-        .map(|p| (p.id.clone(), p.name.clone()))
-        .collect();
-    let current = app.settings.studio.image_provider.clone();
-    let shown = services
-        .iter()
-        .find(|(id, _)| *id == current)
-        .map(|(_, n)| n.clone())
-        .unwrap_or_else(|| tr("studio.main_service"));
-    ui.horizontal(|ui| {
-        ui.label(tr("studio.service"));
-        crate::ui::combo::from_id_salt("studio_service")
-            .width((ui.available_width() - 8.0).max(80.0))
-            .selected_text(shown)
-            .show_ui(ui, |ui| {
-                if ui
-                    .selectable_label(current.is_empty(), tr("studio.main_service"))
-                    .on_hover_text(tr("studio.main_service_tip"))
-                    .clicked()
-                {
-                    app.settings.studio.image_provider.clear();
-                }
-                for (id, name) in &services {
-                    let has_key = !app.studio_key(id).trim().is_empty();
-                    let label = if has_key {
-                        name.clone()
-                    } else {
-                        trf("studio.no_key_suffix", &[("name", name)])
-                    };
-                    if ui.selectable_label(*id == current, label).clicked() {
-                        app.settings.studio.image_provider = id.clone();
-                    }
-                }
-            });
-    });
+    // The company and model list is drawn above, where it stays usable
+    // while the chosen service is not ready (`model_picker`).
+    let _ = op;
     if !app.studio_active() {
         return false;
     }
@@ -97,44 +61,11 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
     let Some(p) = app.studio.catalog.provider(&provider).cloned() else {
         return false;
     };
-    let models: Vec<ModelInfo> = p.models_for(op).into_iter().cloned().collect();
     let Some((_, model)) = app.studio_model(op) else {
         dim(ui, tr("studio.no_model"));
         return true;
     };
-    // The model, each with what it is good at and its price.
     let res_now = model.fit_resolution(&app.settings.studio.resolution);
-    ui.horizontal(|ui| {
-        ui.label(tr("ai.model"));
-        crate::ui::combo::from_id_salt("studio_model")
-            .width((ui.available_width() - 8.0).max(80.0))
-            .selected_text(model.label.clone())
-            .show_ui(ui, |ui| {
-                ui.set_min_width(270.0);
-                ui.set_max_width(300.0);
-                for m in &models {
-                    let on = m.id == model.id;
-                    let r = ui
-                        .vertical(|ui| {
-                            let r = ui.radio(on, RichText::new(&m.label).strong());
-                            dim(ui, text(&m.note));
-                            if let Some(price) = m.price_caption(&m.fit_resolution(&res_now)) {
-                                dim(ui, price);
-                            }
-                            r
-                        })
-                        .inner;
-                    if r.clicked() {
-                        app.settings
-                            .studio
-                            .models
-                            .insert(provider.clone(), m.id.clone());
-                        ui.close();
-                    }
-                    ui.add_space(3.0);
-                }
-            });
-    });
     // Size and shape, as the model makes them.
     ui.horizontal(|ui| {
         ui.label(tr("aiimg.resolution"));
@@ -192,6 +123,195 @@ pub fn picture_rows(app: &mut App, ui: &mut Ui, op: Op) -> bool {
         dim(ui, tr("studio.translated_note"));
     }
     true
+}
+
+/// A service's name as the pickers show it.
+fn service_name(app: &App, id: &str) -> String {
+    app.studio
+        .catalog
+        .provider(id)
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| id.to_string())
+}
+
+/// A group title in a model list: the company.
+fn group_title(ui: &mut Ui, name: &str) {
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(name.to_uppercase())
+            .size(10.5)
+            .strong()
+            .color(crate::theme::Tokens::text_dim()),
+    );
+}
+
+/// The services without a key, at the foot of a model list: a click
+/// opens the keys page.
+fn services_without_key(app: &mut App, ui: &mut Ui, ids: &[String]) {
+    if ids.is_empty() {
+        return;
+    }
+    ui.separator();
+    group_title(ui, &tr("studio.picker_no_key"));
+    for id in ids {
+        let name = service_name(app, id);
+        if ui
+            .selectable_label(false, trf("studio.no_key_suffix", &[("name", &name)]))
+            .clicked()
+        {
+            crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiKeys);
+            ui.close();
+        }
+    }
+}
+
+/// One list to choose the company and the model together for Create,
+/// Remix and Create vectors: the models of each service with a key,
+/// under its name, each with what it is good at and its price; the main
+/// AI service of Tools > Options > AI first; the services without a key
+/// at the foot.
+pub fn model_picker(app: &mut App, ui: &mut Ui, op: Op) {
+    let vector = app.ai_image.mode == crate::ai_image::Mode::Vector;
+    let services: Vec<ProviderInfo> = app
+        .studio
+        .catalog
+        .services_for(op)
+        .into_iter()
+        .cloned()
+        .collect();
+    let (with_key, without): (Vec<_>, Vec<_>) = services
+        .into_iter()
+        .partition(|p| !app.studio_key(&p.id).trim().is_empty());
+    let shown = if app.studio_active() {
+        match app.studio_model(op) {
+            Some((pid, m)) => format!("{} · {}", service_name(app, &pid), m.label),
+            None => service_name(app, &app.settings.studio.image_provider),
+        }
+    } else {
+        tr("studio.main_service")
+    };
+    let res_now = app.settings.studio.resolution.clone();
+    ui.horizontal(|ui| {
+        ui.label(tr("ai.model"));
+        crate::ui::combo::from_id_salt("studio_model_all")
+            .width((ui.available_width() - 8.0).max(80.0))
+            .selected_text(shown)
+            .height(420.0)
+            .show_ui(ui, |ui| {
+                ui.set_min_width(280.0);
+                ui.set_max_width(310.0);
+                group_title(ui, &tr("studio.picker_main"));
+                if ui
+                    .radio(
+                        !app.studio_active(),
+                        RichText::new(tr("studio.main_service")).strong(),
+                    )
+                    .on_hover_text(tr("studio.main_service_tip"))
+                    .clicked()
+                {
+                    app.settings.studio.image_provider.clear();
+                    ui.close();
+                }
+                for p in &with_key {
+                    group_title(ui, &p.name);
+                    let mut models: Vec<&ModelInfo> = p.models_for(op);
+                    // Vectors on Create vectors, pictures elsewhere, when
+                    // the service has both.
+                    if models.iter().any(|m| m.vector == vector) {
+                        models.retain(|m| m.vector == vector);
+                    }
+                    let current = app
+                        .studio_model(op)
+                        .filter(|(pid, _)| app.studio_active() && *pid == p.id)
+                        .map(|(_, m)| m.id);
+                    for m in models {
+                        let on = current.as_deref() == Some(m.id.as_str());
+                        let r = ui
+                            .vertical(|ui| {
+                                let r = ui.radio(on, RichText::new(&m.label).strong());
+                                dim(ui, text(&m.note));
+                                if let Some(price) = m.price_caption(&m.fit_resolution(&res_now)) {
+                                    dim(ui, price);
+                                }
+                                r
+                            })
+                            .inner;
+                        if r.clicked() {
+                            app.settings.studio.image_provider = p.id.clone();
+                            app.settings
+                                .studio
+                                .models
+                                .insert(p.id.clone(), m.id.clone());
+                            ui.close();
+                        }
+                        ui.add_space(2.0);
+                    }
+                }
+                let ids: Vec<String> = without.iter().map(|p| p.id.clone()).collect();
+                services_without_key(app, ui, &ids);
+            });
+    });
+}
+
+/// One list to choose the company and the way together for an edit
+/// operation: each service with a key that does it, under its name, with
+/// its ways of doing it and their prices; the services without a key at
+/// the foot.
+fn op_picker(app: &mut App, ui: &mut Ui, op: Op, provider: &str, variant: &crate::studio::Variant) {
+    let services: Vec<ProviderInfo> = app
+        .studio
+        .catalog
+        .services_for(op)
+        .into_iter()
+        .cloned()
+        .collect();
+    let (with_key, without): (Vec<_>, Vec<_>) = services
+        .into_iter()
+        .partition(|p| !app.studio_key(&p.id).trim().is_empty());
+    let shown = format!("{} · {}", service_name(app, provider), text(&variant.label));
+    ui.horizontal(|ui| {
+        ui.label(tr("ai.model"));
+        crate::ui::combo::from_id_salt("studio_op_all")
+            .width((ui.available_width() - 8.0).max(80.0))
+            .selected_text(shown)
+            .height(420.0)
+            .show_ui(ui, |ui| {
+                ui.set_min_width(280.0);
+                ui.set_max_width(310.0);
+                for p in &with_key {
+                    let Some(info) = p.op(op) else { continue };
+                    group_title(ui, &p.name);
+                    let current = app.studio_variant(&p.id, op).map(|v| v.id);
+                    for v in &info.variants {
+                        let on = p.id == provider && current.as_deref() == Some(v.id.as_str());
+                        let r = ui
+                            .vertical(|ui| {
+                                let r = ui.radio(on, RichText::new(text(&v.label)).strong());
+                                dim(ui, text(&v.note));
+                                if let Some(price) = v.price_caption() {
+                                    dim(ui, price);
+                                }
+                                r
+                            })
+                            .inner;
+                        if r.clicked() {
+                            app.settings
+                                .studio
+                                .op_providers
+                                .insert(op.id().to_string(), p.id.clone());
+                            app.settings
+                                .studio
+                                .variants
+                                .insert(format!("{}/{}", p.id, op.id()), v.id.clone());
+                            ui.close();
+                        }
+                        ui.add_space(2.0);
+                    }
+                }
+                let ids: Vec<String> = without.iter().map(|p| p.id.clone()).collect();
+                services_without_key(app, ui, &ids);
+            });
+    });
 }
 
 fn resolution_label(r: &str) -> String {
@@ -353,114 +473,23 @@ fn edit_body(app: &mut App, ui: &mut Ui) {
         }
     }
     ui.add_space(4.0);
-    // The operations.
-    ui.horizontal_wrapped(|ui| {
-        for op in Op::EDITS {
-            if app.studio.catalog.services_for(op).is_empty() {
-                continue;
-            }
-            if ui
-                .selectable_label(app.studio.op == op, tr(op.key()))
-                .clicked()
-            {
-                app.studio.op = op;
-            }
-        }
-    });
     let op = app.studio.op;
     dim(ui, tr(op.about_key()));
     ui.add_space(4.0);
-    // The service.
-    let services: Vec<(String, String)> = app
-        .studio
-        .catalog
-        .services_for(op)
-        .iter()
-        .map(|p| (p.id.clone(), p.name.clone()))
-        .collect();
     let Some(provider) = app.studio_op_service(op) else {
         dim(ui, tr("studio.no_service"));
         return;
     };
-    let shown = services
-        .iter()
-        .find(|(id, _)| *id == provider)
-        .map(|(_, n)| n.clone())
-        .unwrap_or_default();
-    ui.horizontal(|ui| {
-        ui.label(tr("studio.service"));
-        crate::ui::combo::from_id_salt("studio_op_service")
-            .width((ui.available_width() - 8.0).max(80.0))
-            .selected_text(shown)
-            .show_ui(ui, |ui| {
-                for (id, name) in &services {
-                    let has_key = !app.studio_key(id).trim().is_empty();
-                    let label = if has_key {
-                        name.clone()
-                    } else {
-                        trf("studio.no_key_suffix", &[("name", name)])
-                    };
-                    if ui.selectable_label(*id == provider, label).clicked() {
-                        app.settings
-                            .studio
-                            .op_providers
-                            .insert(op.id().to_string(), id.clone());
-                    }
-                }
-            });
-    });
+    let Some(variant) = app.studio_variant(&provider, op) else {
+        return;
+    };
+    op_picker(app, ui, op, &provider, &variant);
     if app.studio_key(&provider).trim().is_empty() {
         ui.horizontal(|ui| {
             ui.label(RichText::new(tr("studio.key_missing")).color(ERROR));
             if ui.small_button(tr("studio.set_keys")).clicked() {
                 crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiKeys);
             }
-        });
-    }
-    // How: the variants of the operation at this service.
-    let Some(info) = app
-        .studio
-        .catalog
-        .provider(&provider)
-        .and_then(|p| p.op(op))
-        .cloned()
-    else {
-        return;
-    };
-    let Some(variant) = app.studio_variant(&provider, op) else {
-        return;
-    };
-    if info.variants.len() > 1 {
-        ui.horizontal(|ui| {
-            ui.label(tr("studio.how"));
-            crate::ui::combo::from_id_salt("studio_variant")
-                .width((ui.available_width() - 8.0).max(80.0))
-                .selected_text(text(&variant.label))
-                .show_ui(ui, |ui| {
-                    ui.set_min_width(260.0);
-                    for v in &info.variants {
-                        let r = ui
-                            .vertical(|ui| {
-                                let r = ui.radio(
-                                    v.id == variant.id,
-                                    RichText::new(text(&v.label)).strong(),
-                                );
-                                dim(ui, text(&v.note));
-                                if let Some(p) = v.price_caption() {
-                                    dim(ui, p);
-                                }
-                                r
-                            })
-                            .inner;
-                        if r.clicked() {
-                            app.settings
-                                .studio
-                                .variants
-                                .insert(format!("{provider}/{}", op.id()), v.id.clone());
-                            ui.close();
-                        }
-                    }
-                });
         });
     }
     dim(ui, text(&variant.note));
@@ -678,6 +707,7 @@ mod tests {
             app.settings.studio.image_provider = id.into();
             app.studio_set_key(id, "k".into());
             run(&mut app, &|a, ui| {
+                model_picker(a, ui, Op::Generate);
                 assert!(picture_rows(a, ui, Op::Generate));
                 picture_rows(a, ui, Op::Remix);
             });

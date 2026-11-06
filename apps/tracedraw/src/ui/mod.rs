@@ -4,6 +4,7 @@
 //! palette under the canvas, status bar at the bottom.
 
 pub mod about;
+pub mod ai_actions;
 pub mod ai_bar;
 pub mod ai_docker;
 pub mod ai_generate_docker;
@@ -27,6 +28,7 @@ pub mod combo;
 pub mod comments_docker;
 pub mod connector_bar;
 pub mod context;
+pub mod context_bar;
 pub mod contour_bar;
 pub mod convert_colors;
 pub mod coords_docker;
@@ -998,6 +1000,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);
     context::context_menu(app, ui, &response);
+    context_bar::context_bar(app, ui, canvas_rect);
     crate::drop_menu::drop_menu_ui(app, ui);
     crate::fill_tool::node_bar(app, ui);
 

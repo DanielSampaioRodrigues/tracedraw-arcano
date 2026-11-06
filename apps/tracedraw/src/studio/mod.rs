@@ -72,6 +72,7 @@ impl Op {
     ];
 
     /// The operations done to a selected bitmap.
+    #[cfg(test)]
     pub const EDITS: [Op; 6] = [
         Op::Upscale,
         Op::Expand,
