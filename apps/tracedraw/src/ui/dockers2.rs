@@ -36,6 +36,8 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::ObjectStyles => object_styles(app, ui),
         DockerTab::TextStyles => crate::estilos::docker(app, ui),
         DockerTab::HousePress => crate::prelo_casa::docker(app, ui),
+        DockerTab::Character => crate::ui::text_docker::one_part(app, ui, 0),
+        DockerTab::Paragraph => crate::ui::text_docker::one_part(app, ui, 1),
         DockerTab::FindReplace => find_replace(app, ui),
         DockerTab::Scripts => scripts(app, ui),
         DockerTab::Palettes => palettes(app, ui),

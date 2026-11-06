@@ -140,6 +140,7 @@ mod painterly_tool;
 mod palette;
 mod pen;
 mod pen_look;
+mod personas;
 mod perspective_draw;
 #[cfg(test)]
 mod pick_drag_tests;

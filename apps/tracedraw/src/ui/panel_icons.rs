@@ -411,6 +411,19 @@ pub fn draw(p: &Painter, r: Rect, tab: DockerTab) {
         DockerTab::TextStyles => {
             g.text(8.0, 8.3, "¶", 14.0, a, true);
         }
+        // A letter over an accent baseline.
+        DockerTab::Character => {
+            g.text(8.0, 7.5, "A", 13.0, i, true);
+            g.line(&[(2.0, 14.0), (14.0, 14.0)], a);
+        }
+        // Lines of a justified paragraph, its first line indented.
+        DockerTab::Paragraph => {
+            g.line(&[(5.0, 2.5), (14.5, 2.5)], a);
+            for y in [6.5, 10.5] {
+                g.line(&[(1.5, y), (14.5, y)], i);
+            }
+            g.line(&[(1.5, 14.5), (9.0, 14.5)], i);
+        }
         // An open book with a check: the house's own pass over the text.
         DockerTab::HousePress => {
             g.curve((8.0, 4.0), (4.5, 2.0), (1.0, 3.0), i);

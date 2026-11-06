@@ -2161,6 +2161,13 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             }
             switch_on_hover(ui.ctx(), &titles);
             open_with_alt(ui.ctx(), &titles, &keys, &blocked);
+            // Arcano edition: the workspaces, at the right.
+            if has_document {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(6.0);
+                    crate::personas::switch(app, ui);
+                });
+            }
         });
 }
 
@@ -3972,6 +3979,9 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         }
         sep(ui);
         // Every part, whatever the options chose.
+        if item(ui, "persona.reset", "", true) {
+            app.reset_persona();
+        }
         if item(ui, "menu.window.workspace_export", "", true) {
             app.export_workspace_dialog(crate::workspace_file::WorkspaceParts::ALL);
         }

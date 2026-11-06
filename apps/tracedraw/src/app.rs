@@ -2011,10 +2011,14 @@ pub enum DockerTab {
     Assistente,
     TextStyles,
     HousePress,
+    /// Arcano edition: the Text panel's Character part alone.
+    Character,
+    /// Arcano edition: the Text panel's Paragraph part alone.
+    Paragraph,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 47] = [
+    pub const ALL: [DockerTab; 49] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -2062,6 +2066,8 @@ impl DockerTab {
         DockerTab::Assistente,
         DockerTab::TextStyles,
         DockerTab::HousePress,
+        DockerTab::Character,
+        DockerTab::Paragraph,
     ];
 
     /// Window > Panels, in groups divided by separators (the object
@@ -2097,6 +2103,8 @@ impl DockerTab {
         ],
         &[
             DockerTab::Text,
+            DockerTab::Character,
+            DockerTab::Paragraph,
             DockerTab::TextStyles,
             DockerTab::FontSampler,
             DockerTab::Glyphs,
@@ -2178,6 +2186,8 @@ impl DockerTab {
             DockerTab::Assistente => "docker.assistant",
             DockerTab::TextStyles => "docker.text_styles",
             DockerTab::HousePress => "docker.house_press",
+            DockerTab::Character => "docker.character",
+            DockerTab::Paragraph => "docker.paragraph",
             DockerTab::Macros => "docker.macros",
             DockerTab::Effects => "docker.effects",
             DockerTab::PrintMerge => "docker.print_merge",

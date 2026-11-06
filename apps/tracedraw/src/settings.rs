@@ -604,6 +604,12 @@ pub struct Settings {
     /// (kept with the house library when one is chosen).
     #[serde(default)]
     pub arcano_house: crate::prelo_casa::HousePrefs,
+    /// Arcano edition: the workspace (persona) in use, `drawing` or
+    /// `page`, and the panels each was left with.
+    #[serde(default)]
+    pub arcano_persona: String,
+    #[serde(default)]
+    pub arcano_persona_layouts: std::collections::BTreeMap<String, DockerSetup>,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -1882,6 +1888,8 @@ impl Default for Settings {
             imposicao: Default::default(),
             arcano_assist: Default::default(),
             arcano_house: Default::default(),
+            arcano_persona: String::new(),
+            arcano_persona_layouts: Default::default(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),

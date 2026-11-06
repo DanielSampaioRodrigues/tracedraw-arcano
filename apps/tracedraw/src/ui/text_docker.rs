@@ -620,6 +620,39 @@ pub fn text_docker(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Arcano edition: one part of the panel on its own (0 Character,
+/// 1 Paragraph), for the Character and Paragraph panels of the Page
+/// workspace.
+pub fn one_part(app: &mut App, ui: &mut Ui, part: usize) {
+    let first = app.active_cell_text_shape().or_else(|| {
+        app.selected_shapes()
+            .into_iter()
+            .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
+    });
+    if let Some(t) = first.as_ref().filter(|_| app.chosen_chars_active()) {
+        app.sync_text_defaults_from(t.id);
+    }
+    egui::ScrollArea::vertical()
+        .id_salt(("text_part", part))
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width() - 10.0);
+            if part == 0 {
+                character(app, ui, first.as_ref());
+            } else {
+                paragraph(app, ui, first.as_ref());
+            }
+            if first.is_none() {
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(tr("docker.text_hint"))
+                        .color(Tokens::text_dim())
+                        .size(11.0),
+                );
+            }
+        });
+}
+
 /// A fill row: an icon, the kind (none or uniform), the colour and "...".
 /// Returns the fill chosen, when changed.
 fn fill_row(

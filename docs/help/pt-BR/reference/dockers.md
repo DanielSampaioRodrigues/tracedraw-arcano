@@ -23,6 +23,8 @@ página lista cada painel e a página que o explica.
 | [[docker.object_styles]] |  | [→](../templates-styles/object-styles.md) |
 | [[docker.text_styles]] |  | [→](../templates-styles/text-styles.md) |
 | [[docker.house_press]] |  | [→](../templates-styles/house-press.md) |
+| [[docker.character]] |  | [→](../text/adding-text.md#text-docker) |
+| [[docker.paragraph]] |  | [→](../text/adding-text.md#text-docker) |
 | [[docker.find_replace]] | <kbd>Ctrl+F</kbd> | [→](../objects/find-replace.md) |
 | [[docker.ai_generate]] |  | [→](../customize/ai.md#generate) |
 | [[docker.export]] |  | [→](../web-graphics/export-docker.md) |
