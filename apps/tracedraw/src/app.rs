@@ -1719,6 +1719,9 @@ pub struct App {
     pub floating_dockers: Vec<FloatingDocker>,
     /// A docker being moved by its tab or its title (see ui/dockers.rs).
     pub docker_drag: Option<DockerDrag>,
+    /// A panel shown beside its column folded to pictures (stacked
+    /// panels), the column staying folded: its place and the panel.
+    pub stack_flyout: Option<(DockerPlace, DockerTab)>,
     /// The groups of the stacked panel columns (`ui::panel_stack`).
     pub stacks: crate::ui::panel_stack::Stacks,
     /// The default column's front tab and whether it was open, as the
@@ -2857,6 +2860,7 @@ impl App {
             left_inner_dockers: DockerColumn::default(),
             floating_dockers: Vec::new(),
             docker_drag: None,
+            stack_flyout: None,
             stacks: Default::default(),
             docker_last: (DockerTab::Hints, true),
             free_transform_last: Point::ZERO,

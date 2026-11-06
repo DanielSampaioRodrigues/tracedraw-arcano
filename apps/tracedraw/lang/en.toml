@@ -7722,3 +7722,5 @@ impos.grid_manual_desc = "Off: as many as fit the sheet. On: the columns and row
 impos.overlap = "Overlap:"
 impos.overlap_desc = "How far neighbouring pieces cover each other, to glue or tape them together."
 impos.tile_grid = "Each page in {cols} x {rows} pieces"
+docker.expand = "Expand panels"
+docker.flyout_hide = "Hide panel"

@@ -261,13 +261,13 @@ pub fn more_menu_id(place: DockerPlace) -> egui::Id {
 /// A column's tab strip as last drawn: the part of it on screen and its
 /// tabs' rectangles.
 #[derive(Clone)]
-struct StripLayout {
-    frame: u64,
-    strip: egui::Rect,
-    tabs: Vec<(DockerTab, egui::Rect)>,
+pub(crate) struct StripLayout {
+    pub frame: u64,
+    pub strip: egui::Rect,
+    pub tabs: Vec<(DockerTab, egui::Rect)>,
 }
 
-fn strip_id(place: DockerPlace) -> egui::Id {
+pub(crate) fn strip_id(place: DockerPlace) -> egui::Id {
     egui::Id::new(("docker_tab_strip", place as u8))
 }
 
@@ -496,7 +496,15 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
         painter.rect_filled(line, 0.0, edge.color);
         if !down {
             app.docker_drag = None;
+            // A column folded to its pictures stays folded: the panel
+            // joins the pictures where it was dropped.
+            let folded = app.settings.stacked_panels && !app.docker_column(place).2;
             app.insert_docker(drag.tab, place, index);
+            if folded {
+                if let Some(dest) = app.docker_place(drag.tab) {
+                    app.set_docker_column(dest, false, None);
+                }
+            }
         }
         return;
     }

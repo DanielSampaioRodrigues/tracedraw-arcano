@@ -10,9 +10,19 @@ side tabs). The work is in `apps/tracedraw/src/ui/panel_stack.rs`.
   tab closes it), the panel list (three dots) at the right and, on the
   first group, collapse. A divider under each group but the last shares
   the height between two groups (each keeps at least 90 px).
-- A collapsed column is a strip 40 px wide of its panels' pictures (the
-  first letters of the name where a panel has none) and the panel list;
-  a click opens the column with that panel in front.
+- A collapsed column is a strip 40 px wide: at its top a button that
+  opens the whole column, then a picture for each of its panels (every
+  panel has its own, `ui/panel_icons.rs`, with a detail in the icons'
+  green) and the panel list.
+- A click on a picture shows that panel beside the strip, over the
+  drawing (300 px wide, as tall as the column up to 640 px), and the
+  column stays collapsed. Its title has a button that opens the column
+  with that panel in front, and one that hides it. A second click on the
+  picture, Esc, or a click anywhere outside it and the strip hides it
+  (not while a menu or picker it opened is up).
+- A picture can be dragged: along the strip to put the panels in another
+  order, onto another strip or column, or away to float. A panel dropped
+  on a collapsed strip joins its pictures and the column stays collapsed.
 - Dragging a tab over a stacked column shows a band: over a group's tabs
   or the upper half of its page the tab joins that group, over the lower
   half it starts a new group under it. Elsewhere the panel goes where it

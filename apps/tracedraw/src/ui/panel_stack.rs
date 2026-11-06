@@ -464,16 +464,67 @@ fn divider(
     }
 }
 
-/// A collapsed stacked column: the pictures of its panels, one under the
-/// other; a click opens the column with that panel in front.
+/// Width of a panel shown beside a folded column.
+pub const FLYOUT_W: f32 = 300.0;
+
+/// A collapsed stacked column: at its top a button that opens the whole
+/// column, then the pictures of its panels, one under the other. A click
+/// on a picture shows that panel beside the column, which stays folded
+/// (a second click, Esc or a click elsewhere hides it); a picture
+/// dragged moves its panel: along the column, to another column or out
+/// to float.
 pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     let full = ui.max_rect();
     ui.painter().rect_filled(full, 0.0, Tokens::tab_strip());
     let (tabs, _, _) = app.docker_column(place);
     let tabs = tabs.to_vec();
-    let mut y = full.top() + 8.0;
+    // A flyout whose panel left the column goes.
+    if app
+        .stack_flyout
+        .is_some_and(|(q, t)| q == place && !tabs.contains(&t))
+    {
+        app.stack_flyout = None;
+    }
+    let at_left = crate::ui::dockers::strip_at_left(place);
+    // Open the whole column.
+    let open = Rect::from_center_size(pos2(full.center().x, full.top() + 14.0), vec2(28.0, 20.0));
+    let resp = ui
+        .interact(
+            open,
+            egui::Id::new(("stack_strip_open", place as u8)),
+            Sense::click(),
+        )
+        .rich_tip(tr("docker.expand"));
+    if resp.hovered() {
+        ui.painter().rect_filled(open, 5.0, Tokens::tool_hover());
+    }
+    let col = if resp.hovered() {
+        Tokens::text()
+    } else {
+        Tokens::text_dim()
+    };
+    for pts in crate::ui::dockers::fold_arrows(open.shrink2(vec2(8.0, 4.0)), !at_left) {
+        ui.painter().add(egui::epaint::PathShape::convex_polygon(
+            pts.to_vec(),
+            col,
+            egui::Stroke::NONE,
+        ));
+    }
+    if resp.clicked() {
+        app.stack_flyout = None;
+        let front = app.docker_column(place).1;
+        app.set_docker_column(place, true, Some(front));
+    }
+    ui.painter().hline(
+        full.shrink2(vec2(6.0, 0.0)).x_range(),
+        full.top() + 28.5,
+        egui::Stroke::new(1.0, Tokens::border()),
+    );
+    let mut y = full.top() + 34.0;
+    let mut laid = Vec::new();
     for tab in tabs {
         let r = Rect::from_center_size(pos2(full.center().x, y + 16.0), vec2(32.0, 32.0));
+        laid.push((tab, r));
         let resp = ui
             .interact(
                 r,
@@ -481,7 +532,10 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
                 Sense::click_and_drag(),
             )
             .rich_tip(format!("{}\n{}", tr(tab.key()), tr("docker.tab_desc")));
-        if resp.hovered() {
+        let shown = app.stack_flyout == Some((place, tab));
+        if shown {
+            ui.painter().rect_filled(r, 6.0, Tokens::tool_active());
+        } else if resp.hovered() {
             ui.painter().rect_filled(r, 6.0, Tokens::tool_hover());
         }
         crate::ui::panel_icons::draw(
@@ -490,6 +544,7 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
             tab,
         );
         if resp.drag_started_by(egui::PointerButton::Primary) {
+            app.stack_flyout = None;
             app.docker_drag = Some(DockerDrag {
                 tab,
                 grab: vec2(12.0, 12.0),
@@ -497,13 +552,22 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
             });
         }
         if resp.clicked() {
-            app.set_docker_column(place, true, Some(tab));
+            app.stack_flyout = if shown { None } else { Some((place, tab)) };
         }
         y += 38.0;
         if y > full.bottom() - 40.0 {
             break;
         }
     }
+    // The pictures as a strip of tabs: a dragged panel can be put among
+    // them, in any order.
+    let layout = crate::ui::dockers::StripLayout {
+        frame: ui.ctx().cumulative_frame_nr(),
+        strip: full,
+        tabs: laid,
+    };
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(crate::ui::dockers::strip_id(place), layout));
     let more = Rect::from_center_size(pos2(full.center().x, y + 12.0), vec2(28.0, 22.0));
     let resp = ui.interact(
         more,
@@ -519,7 +583,135 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     }
     let resp = resp.rich_tip(tr("docker.add_docker"));
     crate::ui::dockers::panels_menu(app, &resp, place);
+    if let Some((q, tab)) = app.stack_flyout {
+        if q == place {
+            flyout(app, ui.ctx(), place, tab, full, at_left);
+        }
+    }
     ui.advance_cursor_after_rect(full);
+}
+
+/// The panel `tab` beside the folded column at `place` (whose strip is
+/// `strip`), over the drawing: a title with buttons to dock it open and
+/// to hide it, then its page.
+fn flyout(
+    app: &mut App,
+    ctx: &egui::Context,
+    place: DockerPlace,
+    tab: DockerTab,
+    strip: Rect,
+    at_left: bool,
+) {
+    let h = strip.height().clamp(160.0, 640.0);
+    let x = if at_left {
+        strip.right()
+    } else {
+        strip.left() - FLYOUT_W
+    };
+    let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(FLYOUT_W, h));
+    let id = egui::Id::new(("stack_flyout", place as u8));
+    let mut hide = false;
+    egui::Area::new(id)
+        .order(egui::Order::Foreground)
+        .fixed_pos(rect.min)
+        .show(ctx, |ui| {
+            ui.set_min_size(rect.size());
+            ui.set_max_size(rect.size());
+            let p = ui.painter();
+            p.rect(
+                rect,
+                8.0,
+                Tokens::panel(),
+                egui::Stroke::new(1.0, Tokens::window_border()),
+                egui::StrokeKind::Inside,
+            );
+            let head = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + HEAD_H));
+            p.text(
+                pos2(head.left() + 12.0, head.center().y),
+                egui::Align2::LEFT_CENTER,
+                tr(tab.key()),
+                crate::theme::bold(12.0),
+                Tokens::text(),
+            );
+            p.hline(
+                head.shrink2(vec2(1.0, 0.0)).x_range(),
+                head.bottom() - 0.5,
+                egui::Stroke::new(1.0, Tokens::border()),
+            );
+            // Hide.
+            let close = Rect::from_center_size(
+                pos2(head.right() - 15.0, head.center().y),
+                vec2(22.0, 22.0),
+            );
+            let resp = ui
+                .interact(close, id.with("close"), Sense::click())
+                .rich_tip(tr("docker.flyout_hide"));
+            if resp.hovered() {
+                ui.painter().rect_filled(close, 5.0, Tokens::tool_hover());
+            }
+            let c = close.center();
+            let s = egui::Stroke::new(1.3, Tokens::text_dim());
+            ui.painter()
+                .line_segment([c + vec2(-3.5, -3.5), c + vec2(3.5, 3.5)], s);
+            ui.painter()
+                .line_segment([c + vec2(3.5, -3.5), c + vec2(-3.5, 3.5)], s);
+            if resp.clicked() {
+                hide = true;
+            }
+            // Dock the column open with this panel in front.
+            let dock = Rect::from_center_size(
+                pos2(head.right() - 39.0, head.center().y),
+                vec2(22.0, 22.0),
+            );
+            let resp = ui
+                .interact(dock, id.with("dock"), Sense::click())
+                .rich_tip(tr("docker.expand"));
+            if resp.hovered() {
+                ui.painter().rect_filled(dock, 5.0, Tokens::tool_hover());
+            }
+            for pts in crate::ui::dockers::fold_arrows(dock.shrink(5.0), !at_left) {
+                ui.painter().add(egui::epaint::PathShape::convex_polygon(
+                    pts.to_vec(),
+                    Tokens::text_dim(),
+                    egui::Stroke::NONE,
+                ));
+            }
+            if resp.clicked() {
+                hide = true;
+                app.set_docker_column(place, true, Some(tab));
+            }
+            let body = Rect::from_min_max(pos2(rect.left(), head.bottom()), rect.max);
+            let inner = body.shrink2(vec2(8.0, 8.0));
+            let mut page = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(inner)
+                    .id_salt(("stack_flyout_body", tab.key())),
+            );
+            page.set_clip_rect(body.shrink(1.0));
+            if !app.drawing_shown() && tab != DockerTab::Hints {
+                page.label(egui::RichText::new(tr("docker.no_drawing")).color(Tokens::text_dim()));
+            } else {
+                egui::ScrollArea::vertical()
+                    .id_salt(("stack_flyout_scroll", tab.key()))
+                    .show(&mut page, |ui| {
+                        crate::ui::dockers::docker_page(app, ui, tab);
+                    });
+            }
+        });
+    // A click elsewhere or Esc hides it; a popup it opened (a menu, a
+    // colour picker) keeps it.
+    let (clicked, esc, at) = ctx.input(|i| {
+        (
+            i.pointer.any_pressed(),
+            i.key_pressed(egui::Key::Escape),
+            i.pointer.interact_pos(),
+        )
+    });
+    let outside = at.is_some_and(|q| !rect.contains(q) && !strip.contains(q));
+    let popup = egui::Popup::is_any_open(ctx);
+    if hide || esc || (clicked && outside && !popup) {
+        app.stack_flyout = None;
+    }
 }
 
 #[cfg(test)]

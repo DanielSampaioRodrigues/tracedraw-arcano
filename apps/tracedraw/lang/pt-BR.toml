@@ -7723,3 +7723,5 @@ impos.grid_manual_desc = "Desligado: quantas couberem na folha. Ligado: as colun
 impos.overlap = "Sobreposição:"
 impos.overlap_desc = "Quanto cada pedaço cobre o vizinho, para colar ou prender com fita."
 impos.tile_grid = "Cada página em {cols} x {rows} pedaços"
+docker.expand = "Expandir painéis"
+docker.flyout_hide = "Esconder painel"
