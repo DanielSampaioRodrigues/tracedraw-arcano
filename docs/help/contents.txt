@@ -86,6 +86,7 @@ text/index
 templates-styles/index
   templates-styles/templates
   templates-styles/object-styles
+  templates-styles/text-styles
 pages-layout/index
   pages-layout/pages
   pages-layout/multipage-view

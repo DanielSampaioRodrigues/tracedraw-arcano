@@ -2000,10 +2000,11 @@ pub enum DockerTab {
     Macros,
     PrintMerge,
     Assistente,
+    TextStyles,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 45] = [
+    pub const ALL: [DockerTab; 46] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -2049,6 +2050,7 @@ impl DockerTab {
         DockerTab::Macros,
         DockerTab::PrintMerge,
         DockerTab::Assistente,
+        DockerTab::TextStyles,
     ];
 
     /// Window > Panels, in groups divided by separators (the object
@@ -2083,6 +2085,7 @@ impl DockerTab {
         ],
         &[
             DockerTab::Text,
+            DockerTab::TextStyles,
             DockerTab::FontSampler,
             DockerTab::Glyphs,
             DockerTab::Fonts,
@@ -2161,6 +2164,7 @@ impl DockerTab {
             DockerTab::Comments => "docker.comments",
             DockerTab::AiGenerate => "docker.ai_generate",
             DockerTab::Assistente => "docker.assistant",
+            DockerTab::TextStyles => "docker.text_styles",
             DockerTab::Macros => "docker.macros",
             DockerTab::Effects => "docker.effects",
             DockerTab::PrintMerge => "docker.print_merge",
