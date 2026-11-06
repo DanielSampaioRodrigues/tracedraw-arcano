@@ -87,6 +87,7 @@ templates-styles/index
   templates-styles/templates
   templates-styles/object-styles
   templates-styles/text-styles
+  templates-styles/house-press
 pages-layout/index
   pages-layout/pages
   pages-layout/multipage-view

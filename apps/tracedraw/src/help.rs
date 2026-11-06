@@ -196,6 +196,7 @@ pub fn docker_topic(t: DockerTab) -> &'static str {
         DockerTab::ColorStyles => "color/color-styles",
         DockerTab::ObjectStyles => "templates-styles/object-styles",
         DockerTab::TextStyles => "templates-styles/text-styles",
+        DockerTab::HousePress => "templates-styles/house-press",
         DockerTab::FindReplace => "objects/find-replace",
         DockerTab::Scripts => "customize/scripts",
         DockerTab::Macros => "customize/scripts#macros",

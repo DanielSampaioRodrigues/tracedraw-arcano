@@ -596,6 +596,10 @@ pub struct Settings {
     /// Arcano edition: the Assistant panel's service and model.
     #[serde(default)]
     pub arcano_assist: crate::assistente::AssistPrefs,
+    /// Arcano edition: the house standard's margins, bleed and safety
+    /// (kept with the house library when one is chosen).
+    #[serde(default)]
+    pub arcano_house: crate::prelo_casa::HousePrefs,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -1869,6 +1873,7 @@ impl Default for Settings {
             arcano_library: String::new(),
             imposicao: Default::default(),
             arcano_assist: Default::default(),
+            arcano_house: Default::default(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),

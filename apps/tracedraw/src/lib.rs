@@ -24,6 +24,7 @@ mod biblioteca;
 mod imposicao;
 mod assistente;
 mod estilos;
+mod prelo_casa;
 mod ai_image;
 mod anchors;
 #[cfg(target_os = "android")]
