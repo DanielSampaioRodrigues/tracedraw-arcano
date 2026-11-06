@@ -36,6 +36,18 @@ pub struct ParagraphFormat {
     pub drop_cap_lines: u32,
     pub tabs: Vec<f64>,
     pub hyphenate: bool,
+    /// The least lines of the paragraph left at the foot of a frame
+    /// (orphans); 1: no rule.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub orphans: u8,
+    /// The least lines of the paragraph carried to the top of the next
+    /// frame (widows); 1: no rule.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub widows: u8,
+    /// The paragraph stays in the frame of the paragraph after it
+    /// (titles); see [`keep_split`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_with_next: bool,
     /// The paragraph style the paragraph is linked to (see
     /// [`crate::text_styles`]).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -68,6 +80,9 @@ impl ParagraphFormat {
             drop_cap_lines: p.drop_cap_lines,
             tabs: p.tabs.clone(),
             hyphenate: p.hyphenate,
+            orphans: 1,
+            widows: 1,
+            keep_with_next: false,
             style: None,
         }
     }
@@ -120,7 +135,10 @@ impl ParagraphFormat {
             bullet_indent,
             drop_cap_lines,
             tabs,
-            hyphenate
+            hyphenate,
+            orphans,
+            widows,
+            keep_with_next
         );
     }
 }
@@ -257,6 +275,16 @@ pub fn edit_paragraph_formats(
     else {
         return;
     };
+    // What an object's own paragraph settings cannot hold (the rules
+    // between frames, a style's link) goes to every paragraph.
+    if range.is_none() {
+        let mut probe = ParagraphFormat::of(*align, para);
+        f(&mut probe);
+        if probe.orphans != 1 || probe.widows != 1 || probe.keep_with_next || probe.style.is_some() {
+            let total: usize = spans.iter().map(|s| s.text.chars().count()).sum();
+            return edit_paragraph_formats(kind, Some((0, total)), f);
+        }
+    }
     match range {
         None => {
             let mut own = ParagraphFormat::of(*align, para);
@@ -431,5 +459,133 @@ mod tests {
         assert!(st
             .iter()
             .all(|(a, p)| *a == TextAlign::Center && p.space_after == 2.0));
+    }
+}
+
+fn one() -> u8 {
+    1
+}
+
+fn is_one(v: &u8) -> bool {
+    *v == 1
+}
+
+/// Where text that overflows a frame should be split so the paragraphs'
+/// rules hold: `fitted` is how many characters fit (the layout's), `lines`
+/// the (first, end) characters of the lines laid out in the frame.
+///
+/// - Orphans: a paragraph that starts in the frame leaves at least
+///   `orphans` lines there, else it goes whole to the next frame.
+/// - Widows: a paragraph split by the frame carries at least `widows`
+///   lines to the next one (counted from the lines laid out, at the
+///   frame's width), else lines go with them, as long as the orphans rule
+///   still holds, else the paragraph goes whole.
+/// - Keep with next: a paragraph (a title) that would end the frame goes
+///   on with the paragraph after it, and so does one before it with the
+///   same rule.
+///
+/// The frame never gives up all its text: a paragraph that starts the
+/// frame stays, whatever its rules.
+pub fn keep_split(
+    spans: &[TextSpan],
+    align: TextAlign,
+    para: &ParagraphStyle,
+    lines: &[(usize, usize)],
+    fitted: usize,
+) -> usize {
+    let ranges = paragraph_ranges(spans);
+    let total: usize = spans.iter().map(|s| s.text.chars().count()).sum();
+    if fitted >= total || fitted == 0 || ranges.is_empty() {
+        return fitted;
+    }
+    let fmt = |i: usize| paragraph_format(spans, align, para, i);
+    let in_frame = |a: usize, b: usize| lines.iter().filter(|l| l.0 >= a && l.0 < b && l.1 <= fitted).count();
+    let mut split = fitted;
+    // The paragraph the split falls in.
+    let i = ranges.iter().position(|&(a, e)| split >= a && split <= e).unwrap_or(ranges.len() - 1);
+    let (a, e) = ranges[i];
+    if split > a && split <= e {
+        let f = fmt(i);
+        let here = in_frame(a, split).max(1);
+        // The lines carried on, at the width of the lines here.
+        let done: usize = lines.iter().filter(|l| l.0 >= a && l.1 <= split).map(|l| l.1 - l.0).sum();
+        let per_line = (done as f64 / here as f64).max(1.0);
+        let after = ((e - split) as f64 / per_line).ceil() as usize;
+        let starts: Vec<usize> = lines.iter().filter(|l| l.0 >= a && l.1 <= split).map(|l| l.0).collect();
+        if here < f.orphans as usize && a > 0 {
+            split = a;
+        } else if after < f.widows as usize {
+            let need = f.widows as usize - after;
+            if here > need && here - need >= f.orphans as usize {
+                split = starts[here - need];
+            } else if a > 0 {
+                split = a;
+            }
+        }
+    }
+    // Titles go on with what follows them.
+    let mut j = ranges.iter().position(|&(a, _)| a == split).unwrap_or(usize::MAX);
+    while j != usize::MAX && j > 0 && fmt(j - 1).keep_with_next {
+        let prev = ranges[j - 1].0;
+        if prev == 0 {
+            break;
+        }
+        split = prev;
+        j -= 1;
+    }
+    // Never empty the frame.
+    if split == 0 {
+        fitted
+    } else {
+        split
+    }
+}
+
+#[cfg(test)]
+mod keep_tests {
+    use super::*;
+
+    fn spans(t: &str) -> Vec<TextSpan> {
+        vec![TextSpan::new(t, "Sans", 10.0)]
+    }
+
+    #[test]
+    fn keep_split_moves_orphans_widows_and_titles() {
+        // Paragraph 0: 0..10 ("aaaaaaaaaa"), newline at 10; paragraph 1: 11..41 (30 chars, 3 lines of 10).
+        let t = format!("{}\n{}", "a".repeat(10), "b".repeat(30));
+        let mut sp = spans(&t);
+        let none = ParagraphStyle::default();
+        let mut set = |sp: &mut Vec<TextSpan>, f: &dyn Fn(&mut ParagraphFormat)| {
+            let mut k = ShapeKind::Text {
+                spans: std::mem::take(sp),
+                origin: crate::geometry::Point::ZERO,
+                frame: None,
+                align: TextAlign::Left,
+                para: none.clone(),
+                on_path: None,
+            };
+            edit_paragraph_formats(&mut k, None, |x| f(x));
+            if let ShapeKind::Text { spans, .. } = k {
+                *sp = spans;
+            }
+        };
+        // One line of paragraph 1 fits (11..21): an orphan.
+        let lines = [(0, 10), (11, 21)];
+        assert_eq!(keep_split(&sp, TextAlign::Left, &none, &lines, 21), 21, "no rule");
+        set(&mut sp, &|f| f.orphans = 2);
+        assert_eq!(keep_split(&sp, TextAlign::Left, &none, &lines, 21), 11, "the paragraph goes whole");
+        // Two lines fit, one would be carried: a widow; one line goes with it.
+        set(&mut sp, &|f| {
+            f.orphans = 1;
+            f.widows = 2;
+        });
+        let lines = [(0, 10), (11, 21), (21, 31)];
+        assert_eq!(keep_split(&sp, TextAlign::Left, &none, &lines, 31), 21);
+        // The first paragraph kept with the next: the split at 11 moves... not past the frame's start.
+        set(&mut sp, &|f| {
+            f.widows = 1;
+            f.keep_with_next = true;
+        });
+        assert_eq!(keep_split(&sp, TextAlign::Left, &none, &[(0, 10)], 11), 11, "a frame never gives up all its text");
     }
 }

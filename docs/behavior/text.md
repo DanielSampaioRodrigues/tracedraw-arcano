@@ -1216,3 +1216,29 @@ in each chosen font, one under the other, on white cards.
 - A font that is not installed shows in its stand-in, and says which.
 - A click on a sample gives the selected text that font (or makes it the
   text font when nothing is selected); the text font is ticked.
+
+## Widows, orphans and keep with next
+
+A paragraph's format carries three rules for text that flows from one
+linked frame (or page) to the next (`ParagraphFormat::orphans`,
+`widows`, `keep_with_next`; set in the Text panel's paragraph part under
+Hyphenate, and by paragraph styles). When a chain flows
+(`App::reflow_chain`), the split the layout finds is moved
+(`paragraphs::keep_split`):
+
+- a paragraph that starts in the frame with fewer lines there than its
+  orphans goes on whole;
+- a paragraph split by the frame that would carry fewer lines than its
+  widows (counted at the width of its lines in the frame) carries lines
+  with them, as long as the orphans still hold, else it goes on whole;
+- a paragraph kept with the next that would end the frame goes on with
+  the paragraph after it (and one before it with the same rule);
+- a frame never gives up all its text: the paragraph that starts it
+  stays.
+
+Set on a whole text object the rules go to each paragraph (the object's
+own paragraph settings do not hold them). The book styles set orphans and
+widows 2 in Body text and keep the chapter title and the subtitle with the
+next paragraph. Tests: `paragraphs::keep_tests`,
+`textflow::tests::widows_orphans_and_titles_kept_with_the_next_paragraph`
+(52 frame heights).

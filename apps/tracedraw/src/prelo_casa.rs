@@ -340,7 +340,7 @@ pub fn docker(app: &mut App, ui: &mut egui::Ui) {
     let scope = if app.selection.is_empty() { tr("prelo.scope_all") } else { tr("prelo.scope_selection") };
     ui.label(egui::RichText::new(scope).color(crate::theme::Tokens::text_dim()));
     let result_id = egui::Id::new("prelo_result");
-    let mut job = |ui: &mut egui::Ui, app: &mut App, title: &str, desc: &str, key: &str, run: &dyn Fn(&mut App, bool) -> Found| {
+    let job = |ui: &mut egui::Ui, app: &mut App, title: &str, desc: &str, key: &str, run: &dyn Fn(&mut App, bool) -> Found| {
         ui.add_space(6.0);
         ui.strong(tr(title)).rich_tip(pair(title, desc));
         ui.horizontal(|ui| {
@@ -371,7 +371,7 @@ pub fn docker(app: &mut App, ui: &mut egui::Ui) {
     let mut h = house_prefs(app);
     let before = h.clone();
     egui::Grid::new("prelo_standard").num_columns(4).spacing([6.0, 4.0]).show(ui, |ui| {
-        let mut field = |ui: &mut egui::Ui, key: &str, v: &mut f64| {
+        let field = |ui: &mut egui::Ui, key: &str, v: &mut f64| {
             ui.label(tr(key));
             ui.add(egui::DragValue::new(v).range(0.0..=100.0).speed(0.5).suffix(" mm"))
                 .rich_tip(pair(key, "prelo.margin_desc"));

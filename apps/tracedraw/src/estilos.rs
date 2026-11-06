@@ -178,6 +178,8 @@ impl App {
             align: TextAlign::Justify,
             first_line_indent: 5.0,
             hyphenate: true,
+            orphans: 2,
+            widows: 2,
             ..Default::default()
         };
         let body = add(
@@ -207,6 +209,7 @@ impl App {
                 space_before: 20.0,
                 space_after: 12.0,
                 hyphenate: false,
+                keep_with_next: true,
                 ..Default::default()
             }),
             CharFormat { size_pt: Some(20.0), bold: Some(true), ..Default::default() },
@@ -221,6 +224,7 @@ impl App {
                 first_line_indent: 0.0,
                 space_after: 8.0,
                 hyphenate: false,
+                keep_with_next: true,
                 ..Default::default()
             }),
             CharFormat { size_pt: Some(14.0), italic: Some(true), ..Default::default() },

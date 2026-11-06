@@ -1450,9 +1450,34 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
         pc |= ui
             .checkbox(&mut p.hyphenate, tr("docker.hyphenate"))
             .changed();
+        keep_rules(app, ui, id);
     }
     if pc {
         app.set_paragraph_style(id, p);
+    }
+}
+
+/// The rules between linked frames and pages for the paragraphs at the
+/// caret: the least lines left at a frame's foot (orphans) and carried to
+/// the next (widows), and kept with the next paragraph.
+fn keep_rules(app: &mut App, ui: &mut Ui, id: tracedraw_core::ShapeId) {
+    use crate::ui::tips::{pair, RichTip as _};
+    let Some(f) = app.keep_rules_at(id) else {
+        return;
+    };
+    let (mut orphans, mut widows, mut keep) = (f.orphans, f.widows, f.keep_with_next);
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.orphans"));
+        ui.add(egui::DragValue::new(&mut orphans).range(1..=5).speed(0.05))
+            .rich_tip(pair("docker.orphans", "docker.orphans_desc"));
+        ui.label(tr("docker.widows"));
+        ui.add(egui::DragValue::new(&mut widows).range(1..=5).speed(0.05))
+            .rich_tip(pair("docker.widows", "docker.widows_desc"));
+    });
+    ui.checkbox(&mut keep, tr("docker.keep_with_next"))
+        .rich_tip(pair("docker.keep_with_next", "docker.keep_with_next_desc"));
+    if (orphans, widows, keep) != (f.orphans, f.widows, f.keep_with_next) {
+        app.set_keep_rules(id, orphans, widows, keep);
     }
 }
 

@@ -442,7 +442,10 @@ impl App {
                     para: &para,
                     on_path: on_path.as_ref(),
                 });
-                let (head, tail) = tracedraw_core::split_spans_at(&rest, layout.fitted_chars);
+                // Widows, orphans and titles kept with what follows.
+                let lines: Vec<(usize, usize)> = layout.lines.iter().map(|l| (l.start_char, l.end_char)).collect();
+                let at = tracedraw_core::paragraphs::keep_split(&rest, align, &para, &lines, layout.fitted_chars);
+                let (head, tail) = tracedraw_core::split_spans_at(&rest, at);
                 rest = tail;
                 head
             };
@@ -463,6 +466,36 @@ impl App {
         }
         if !cmds.is_empty() {
             let _ = self.engine.run_batch("Text Flow", &cmds);
+        }
+    }
+
+    /// The paragraph format at the caret (else the first paragraph) of
+    /// text `id`, for its rules between frames.
+    pub fn keep_rules_at(&self, id: ShapeId) -> Option<tracedraw_core::paragraphs::ParagraphFormat> {
+        let s = self.doc().find_shape(id)?;
+        let ShapeKind::Text { spans, align, para, .. } = &s.kind else {
+            return None;
+        };
+        let at = self.paragraph_range(id).map_or(0, |r| r.0);
+        let i = tracedraw_core::paragraphs::paragraph_of(spans, at);
+        Some(tracedraw_core::paragraphs::paragraph_format(spans, *align, para, i))
+    }
+
+    /// Give the paragraphs at the caret (else all of text `id`) these
+    /// rules, then flow its chain again.
+    pub fn set_keep_rules(&mut self, id: ShapeId, orphans: u8, widows: u8, keep: bool) {
+        let Some(s) = self.doc().find_shape(id) else {
+            return;
+        };
+        let mut kind = s.kind.clone();
+        tracedraw_core::paragraphs::edit_paragraph_formats(&mut kind, self.paragraph_range(id), |f| {
+            f.orphans = orphans;
+            f.widows = widows;
+            f.keep_with_next = keep;
+        });
+        if kind != s.kind {
+            self.run(Command::SetShapeKind { shape: id, kind });
+            self.reflow_chain(id);
         }
     }
 
@@ -629,5 +662,73 @@ mod tests {
         app.select(vec![a3]);
         app.duplicate();
         assert!(!app.is_linked_frame(app.selection[0]));
+    }
+
+    /// Orphans and widows: a paragraph keeps two lines at the foot of the
+    /// first frame and carries two to the next, and a title stays with
+    /// the paragraph after it.
+    #[test]
+    fn widows_orphans_and_titles_kept_with_the_next_paragraph() {
+        tracedraw_text::install();
+        let text_of = |app: &App, id: ShapeId| -> String {
+            match &app.doc().find_shape(id).unwrap().kind {
+                ShapeKind::Text { spans, .. } => spans.iter().map(|s| s.text.as_str()).collect(),
+                _ => String::new(),
+            }
+        };
+        let para2 = "Era uma vez um livro com muitas linhas que precisavam ser divididas entre duas caixas de texto ligadas, sem deixar linha sozinha no pé nem no topo da página seguinte.";
+        let text = format!("Um parágrafo curto.\nTítulo\n{para2}");
+        let run = |height: f64, rules: bool| -> (String, String) {
+            let mut app = App::headless();
+            let a = frame(&mut app, "", 40.0, height);
+            let b = frame(&mut app, "", 40.0, 200.0);
+            let mut k = app.doc().find_shape(a).unwrap().kind.clone();
+            if let ShapeKind::Text { spans, .. } = &mut k {
+                *spans = vec![TextSpan::new(&text, "DejaVu Sans", 12.0)];
+            }
+            if rules {
+                tracedraw_core::paragraphs::edit_paragraph_formats(&mut k, None, |f| {
+                    f.widows = 2;
+                    f.orphans = 2;
+                });
+                let t0 = "Um parágrafo curto.\n".chars().count();
+                tracedraw_core::paragraphs::edit_paragraph_formats(&mut k, Some((t0, t0)), |f| f.keep_with_next = true);
+            }
+            app.run(Command::SetShapeKind { shape: a, kind: k });
+            app.select(vec![a, b]);
+            app.link_text_frames();
+            (text_of(&app, a), text_of(&app, b))
+        };
+        let lines_in = |s: &str| -> usize {
+            let spans = vec![TextSpan::new(s, "DejaVu Sans", 12.0)];
+            tracedraw_text::fonts()
+                .layout(&TextRequest {
+                    spans: &spans,
+                    frame: Some(tracedraw_core::geometry::Size::new(40.0, 500.0)),
+                    align: TextAlign::Left,
+                    para: &Default::default(),
+                    on_path: None,
+                })
+                .lines
+                .len()
+        };
+        let mut title_alone_without_rules = false;
+        for h in (8..60).map(|h| h as f64) {
+            let (pa, _) = run(h, false);
+            title_alone_without_rules |= pa.ends_with("Título\n");
+            let (ra, rb) = run(h, true);
+            assert_eq!(format!("{ra}{rb}"), text);
+            // The title never ends the frame alone.
+            assert!(!ra.ends_with("Título\n"), "h={h}: {ra:?}");
+            // A split paragraph leaves two lines on each side.
+            if let Some(cut) = ra.find("Era") {
+                let here = &ra[cut..];
+                if !here.is_empty() && !rb.is_empty() {
+                    assert!(lines_in(here) >= 2, "h={h}: orphan {here:?}");
+                    assert!(lines_in(rb.trim_start_matches("Título\n")) >= 2 || rb.is_empty(), "h={h}: widow {rb:?}");
+                }
+            }
+        }
+        assert!(title_alone_without_rules, "some height leaves the title alone without the rules");
     }
 }
