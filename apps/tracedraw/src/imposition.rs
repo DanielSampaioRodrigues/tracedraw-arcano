@@ -858,6 +858,181 @@ pub fn impose(doc: &Document, o: &Options) -> Document {
     out
 }
 
+/// One page cut into pieces that each fit a sheet: a poster or banner
+/// printed on several sheets and put together (tiling). The pieces
+/// share `overlap` mm along their joins, for gluing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tiling {
+    /// The sheet each piece is printed on (mm).
+    pub sheet: Size,
+    /// The paper's margin kept clear on every side (mm).
+    pub margin: f64,
+    /// How far neighbouring pieces cover each other (mm).
+    pub overlap: f64,
+    /// Corner marks at each piece's edges.
+    pub marks: bool,
+}
+
+impl Tiling {
+    /// The room for a piece on a sheet (width, height), the marks' band
+    /// kept clear too.
+    fn room(&self, sheet: Size) -> (f64, f64) {
+        let edge = self.margin.max(0.0) + if self.marks { MARK_MARGIN } else { 0.0 };
+        (sheet.width - 2.0 * edge, sheet.height - 2.0 * edge)
+    }
+
+    /// The pieces across and down for `page`, and the sheet turned the
+    /// way that needs fewer of them; `None` when a sheet holds no room.
+    pub fn grid(&self, page: Size) -> Option<(u32, u32, Size)> {
+        let count = |sheet: Size| -> Option<(u32, u32, Size)> {
+            let (rw, rh) = self.room(sheet);
+            let ov = self.overlap.max(0.0);
+            if rw <= ov + 1.0 || rh <= ov + 1.0 {
+                return None;
+            }
+            let n = |len: f64, room: f64| -> u32 {
+                if len <= room {
+                    1
+                } else {
+                    (((len - ov) / (room - ov)).ceil() as u32).clamp(1, 50)
+                }
+            };
+            Some((n(page.width, rw), n(page.height, rh), sheet))
+        };
+        let a = count(self.sheet);
+        let b = count(Size::new(self.sheet.height, self.sheet.width));
+        match (a, b) {
+            (Some(a), Some(b)) => Some(if b.0 * b.1 < a.0 * a.1 { b } else { a }),
+            (a, b) => a.or(b),
+        }
+    }
+}
+
+/// Every page of `doc` cut into pieces as `t` says, a sheet for each
+/// piece, left to right and top to bottom.
+pub fn tile(doc: &Document, t: &Tiling) -> Document {
+    let mut out = Document::new(doc.title.clone(), t.sheet);
+    out.metadata = doc.metadata.clone();
+    out.metadata.bleed = 0.0;
+    out.symbols = doc.symbols.clone();
+    out.inks = doc.inks.clone();
+    out.pages.clear();
+    out.master.clear();
+    let ov = t.overlap.max(0.0);
+    let mut n = 0;
+    for page in &doc.pages {
+        let Some((cols, rows, sheet)) = t.grid(page.size) else {
+            continue;
+        };
+        let (rw, rh) = t.room(sheet);
+        // Each piece's size: the page shared out evenly, overlaps added.
+        let pw = (page.size.width + ov * (cols - 1) as f64) / cols as f64;
+        let ph = (page.size.height + ov * (rows - 1) as f64) / rows as f64;
+        let (pw, ph) = (
+            pw.min(rw).min(page.size.width),
+            ph.min(rh).min(page.size.height),
+        );
+        let mut contents = Vec::new();
+        if let Some(bg) = &page.background {
+            contents.push(rect_shape_fill(
+                Rect::new(0.0, 0.0, page.size.width, page.size.height),
+                bg.clone(),
+            ));
+        }
+        for l in doc.layers_drawn_for_page(page.id).unwrap_or_default() {
+            if l.visible && l.printable {
+                contents.extend(l.shapes.iter().filter(|s| s.visible).cloned());
+            }
+        }
+        for row in 0..rows {
+            for col in 0..cols {
+                // y grows upwards: the first row is the page's top.
+                let x0 = col as f64 * (pw - ov);
+                let y1 = page.size.height - row as f64 * (ph - ov);
+                let piece = Rect::new(x0, y1 - ph, x0 + pw, y1);
+                // The piece in the middle of the sheet.
+                let at = Point::new((sheet.width - pw) / 2.0, (sheet.height - ph) / 2.0);
+                let mut clip = mark_shape(
+                    ShapeKind::ClipFrame {
+                        frame: Box::new(mark_shape(
+                            ShapeKind::Rect {
+                                rect: piece,
+                                radius: 0.0,
+                                corners: None,
+                            },
+                            Fill::None,
+                            None,
+                        )),
+                        contents: contents.clone(),
+                    },
+                    Fill::None,
+                    None,
+                );
+                clip.transform = Affine::translate((at.x - piece.x0, at.y - piece.y0));
+                let mut layer = Layer::new(out.ids_mut().layer(), "Sheet");
+                layer.shapes.push(clip);
+                if t.marks {
+                    let placed = Rect::new(at.x, at.y, at.x + pw, at.y + ph);
+                    let mut p = BezPath::new();
+                    let (gap, len) = (1.5, 5.0);
+                    for x in [placed.x0, placed.x1] {
+                        p.move_to((x, placed.y1 + gap));
+                        p.line_to((x, placed.y1 + gap + len));
+                        p.move_to((x, placed.y0 - gap));
+                        p.line_to((x, placed.y0 - gap - len));
+                    }
+                    for y in [placed.y0, placed.y1] {
+                        p.move_to((placed.x0 - gap, y));
+                        p.line_to((placed.x0 - gap - len, y));
+                        p.move_to((placed.x1 + gap, y));
+                        p.line_to((placed.x1 + gap + len, y));
+                    }
+                    layer.shapes.push(mark_shape(
+                        ShapeKind::Path {
+                            path: p,
+                            closed: false,
+                        },
+                        Fill::None,
+                        Some(Stroke::new(Color::Registration, 0.1)),
+                    ));
+                }
+                n += 1;
+                let id = out.ids_mut().page();
+                out.pages.push(Page {
+                    id,
+                    name: format!("{n}"),
+                    size: sheet,
+                    layers: vec![layer],
+                    guides: Vec::new(),
+                    background: None,
+                });
+            }
+        }
+    }
+    let mut ids = out.ids().clone();
+    for page in out.pages.iter_mut() {
+        for layer in page.layers.iter_mut() {
+            for s in layer.shapes.iter_mut() {
+                renumber(s, &mut ids);
+            }
+        }
+    }
+    out.set_ids(ids);
+    out
+}
+
+fn rect_shape_fill(r: Rect, fill: Fill) -> Shape {
+    mark_shape(
+        ShapeKind::Rect {
+            rect: r,
+            radius: 0.0,
+            corners: None,
+        },
+        fill,
+        None,
+    )
+}
+
 fn renumber(s: &mut Shape, ids: &mut tracedraw_core::id::IdSource) {
     s.id = ids.shape();
     match &mut s.kind {
