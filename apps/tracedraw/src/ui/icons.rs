@@ -61,11 +61,11 @@ pub fn tool_color(tool: Tool, plain: Color32) -> Color32 {
 /// The accent of the icons: the green of the program's own icon, a
 /// shade deeper on light panels so that it keeps its contrast.
 pub fn accent() -> Color32 {
-    if crate::theme::theme().is_dark() {
+    crate::theme::rehue(if crate::theme::theme().is_dark() {
         Color32::from_rgb(0x27, 0xCB, 0x5D)
     } else {
         Color32::from_rgb(0x17, 0x9A, 0x44)
-    }
+    })
 }
 
 /// Draw `tool`'s icon in `r` with `color` as its ink, on the panel.

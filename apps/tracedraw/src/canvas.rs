@@ -565,6 +565,31 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         draw_baseline_grid(app, painter, rect, paper);
     }
 
+    // While the last picture is moved or scaled into place, the whole
+    // page drawn small under it, so no part goes missing (a zoom out, a
+    // pan) before the new picture comes.
+    if !app.multipage && preview.is_none() && app.render_focus().is_none() && main.is_some() {
+        let stale = app.raster.borrow().stale();
+        let overview = app.raster.borrow_mut().overview(
+            painter.ctx(),
+            doc,
+            app.page,
+            revision,
+            app.wireframe,
+            app.simulate_overprints,
+            app.rasterize_complex_effects,
+            app.proof_colors,
+            stale,
+        );
+        if let (true, Some((tex, r))) = (stale, overview) {
+            painter.with_clip_rect(rect).image(
+                tex,
+                view.rect_to_screen(r),
+                ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        }
+    }
     if let Some((tex, at)) = main {
         painter.image(
             tex,
@@ -887,7 +912,7 @@ fn draw_drop_frame(app: &App, painter: &Painter) {
     let Some(s) = app.doc().find_shape(frame) else {
         return;
     };
-    let accent = Tokens::ACCENT;
+    let accent = Tokens::accent();
     for (pts, closed) in flatten(&s.page_path(), &app.view) {
         if pts.len() < 2 {
             continue;

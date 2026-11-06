@@ -651,7 +651,7 @@ fn bolha(ui: &mut egui::Ui, text: &str, mine: bool) {
     };
     ui.with_layout(layout, |ui| {
         let (fill, color) = if mine {
-            (Tokens::ACCENT, egui::Color32::WHITE)
+            (Tokens::accent(), egui::Color32::WHITE)
         } else {
             (Tokens::field(), Tokens::text())
         };
@@ -847,7 +847,7 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
         .stroke(egui::Stroke::new(
             1.0,
             if focused {
-                Tokens::ACCENT
+                Tokens::accent()
             } else {
                 Tokens::control_border()
             },
@@ -884,7 +884,7 @@ pub fn docker(app: &mut crate::app::App, ui: &mut egui::Ui) {
                         let send = egui::Button::new(
                             egui::RichText::new(tr("assist.send")).color(egui::Color32::WHITE),
                         )
-                        .fill(Tokens::ACCENT)
+                        .fill(Tokens::accent())
                         .corner_radius(6);
                         if ui
                             .add_enabled(ready, send)

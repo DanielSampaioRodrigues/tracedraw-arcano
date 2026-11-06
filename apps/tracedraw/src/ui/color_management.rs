@@ -185,7 +185,7 @@ fn profile_combo(
         .width(360.0)
         .selected_text(label)
         .show_ui(ui, |ui| {
-            ui.label(RichText::new(tr("color_mgmt.default_profiles")).color(Tokens::ACCENT));
+            ui.label(RichText::new(tr("color_mgmt.default_profiles")).color(Tokens::accent()));
             let def = found
                 .iter()
                 .find(|p| p.space == space && p.name == default_name)
@@ -201,7 +201,7 @@ fn profile_combo(
             {
                 *choice = Some(def);
             }
-            ui.label(RichText::new(tr("color_mgmt.other_profiles")).color(Tokens::ACCENT));
+            ui.label(RichText::new(tr("color_mgmt.other_profiles")).color(Tokens::accent()));
             if ui
                 .selectable_label(false, tr("color_mgmt.load_profiles"))
                 .clicked()

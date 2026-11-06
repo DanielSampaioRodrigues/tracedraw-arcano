@@ -50,7 +50,8 @@ pub use document::{
     DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc,
     FollowBlack, FontVariation, Layer, LeadingUnit, MasterScope, Metadata, ObjectDefaults,
     ObjectStyle, Page, ParagraphStyle, PathTextOrientation, PathTextVertical, QrCode, QrKind,
-    Shadow, Shape, ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath,
+    Shadow, Shape, ShapeKind, StyleParts, Symbol, TabAlign, TabDetail, Table, TableCell,
+    TextAlign, TextOnPath,
     TextSpan, TimeTracker, TrackedTask, VerticalAlign,
 };
 pub use engine::Engine;

@@ -347,7 +347,7 @@ pub(crate) fn length(ui: &mut Ui, app: &App, mm: &mut f64) -> bool {
 
 /// A number field 90 points wide with a suffix, kept in `range`; true when
 /// changed.
-fn number(
+pub(crate) fn number(
     ui: &mut Ui,
     value: &mut f64,
     range: std::ops::RangeInclusive<f64>,
@@ -498,7 +498,7 @@ pub(crate) fn edit_paragraphs(app: &mut App, f: impl Fn(&mut ParagraphStyle)) {
 }
 
 /// Set the alignment of the selected text, and of new text.
-fn set_align(app: &mut App, a: TextAlign) {
+pub(crate) fn set_align(app: &mut App, a: TextAlign) {
     app.apply_text_align(a);
 }
 
@@ -638,9 +638,9 @@ pub fn one_part(app: &mut App, ui: &mut Ui, part: usize) {
         .show(ui, |ui| {
             ui.set_width(ui.available_width() - 10.0);
             if part == 0 {
-                character(app, ui, first.as_ref());
+                crate::ui::painel_tipo::character_panel(app, ui);
             } else {
-                paragraph(app, ui, first.as_ref());
+                crate::ui::painel_tipo::paragraph_panel(app, ui);
             }
             if first.is_none() {
                 ui.add_space(6.0);
@@ -702,7 +702,7 @@ fn fill_row(
 /// between is the family named with its weight, so the list shows
 /// "SemiBold" for "Titillium Web SemiBold", never Bold (#892). True when
 /// the style changed.
-fn style_list(app: &mut App, ui: &mut Ui) -> bool {
+pub(crate) fn style_list(app: &mut App, ui: &mut Ui) -> bool {
     let font = app.text_font.clone();
     let base = tracedraw_text::split_weight(&font).map_or(font.as_str(), |(b, _)| b);
     let faces = app
@@ -832,10 +832,65 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         }
         row_check(app, ui, "underline");
     });
+    character_colours(app, ui, first, span.as_ref());
+    if !expander(ui, "character") {
+        return;
+    }
+    let Some(mut sp) = span else {
+        return;
+    };
+    let mut sc = false;
+    // Character offsets and angle: the selected characters while editing,
+    // else every character.
+    ui.horizontal_wrapped(|ui| {
+        crate::ui::propbar::char_offset_part(app, ui);
+    });
+    sc |= ui
+        .checkbox(&mut sp.strikethrough, tr("docker.strikethrough"))
+        .changed();
+    // Wrapped, so the feature buttons never widen the docker.
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("docker.opentype"));
+        for (tag, k) in [
+            ("liga", "docker.ligatures"),
+            ("smcp", "docker.small_caps"),
+            ("onum", "docker.oldstyle_nums"),
+            ("frac", "docker.fractions"),
+            ("swsh", "docker.swash"),
+        ] {
+            let on = sp.features.iter().any(|f| f == tag);
+            if ui.selectable_label(on, tr(k)).clicked() {
+                if on {
+                    sp.features.retain(|f| f != tag);
+                } else {
+                    sp.features.push(tag.to_string());
+                }
+                sc = true;
+            }
+        }
+    });
+    font_axes(app, ui, &sp);
+    if sc {
+        let (strike, features) = (sp.strikethrough, sp.features.clone());
+        edit_spans(app, move |s| {
+            s.strikethrough = strike;
+            s.features = features.clone();
+        });
+    }
+}
+
+/// The text fill, the characters' background and the text outline rows of
+/// the Character section (and of the Arcano edition's Character panel).
+pub(crate) fn character_colours(
+    app: &mut App,
+    ui: &mut Ui,
+    first: Option<&tracedraw_core::Shape>,
+    span: Option<&TextSpan>,
+) {
     // Text fill, background and outline.
     let mut more_fill = false;
     let text_fill = first.map(|t| {
-        span.as_ref()
+        span
             .and_then(|s| s.fill.clone())
             .unwrap_or_else(|| t.fill.clone())
     });
@@ -853,7 +908,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         row_check(app, ui, "fill");
     });
     let mut more_bg = false;
-    let bg = span.as_ref().and_then(|s| s.background.clone());
+    let bg = span.and_then(|s| s.background.clone());
     ui.horizontal(|ui| {
         if let Some(f) = fill_row(
             ui,
@@ -916,50 +971,6 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         }
         row_check(app, ui, "outline");
     });
-    if !expander(ui, "character") {
-        return;
-    }
-    let Some(mut sp) = span else {
-        return;
-    };
-    let mut sc = false;
-    // Character offsets and angle: the selected characters while editing,
-    // else every character.
-    ui.horizontal_wrapped(|ui| {
-        crate::ui::propbar::char_offset_part(app, ui);
-    });
-    sc |= ui
-        .checkbox(&mut sp.strikethrough, tr("docker.strikethrough"))
-        .changed();
-    // Wrapped, so the feature buttons never widen the docker.
-    ui.horizontal_wrapped(|ui| {
-        ui.label(tr("docker.opentype"));
-        for (tag, k) in [
-            ("liga", "docker.ligatures"),
-            ("smcp", "docker.small_caps"),
-            ("onum", "docker.oldstyle_nums"),
-            ("frac", "docker.fractions"),
-            ("swsh", "docker.swash"),
-        ] {
-            let on = sp.features.iter().any(|f| f == tag);
-            if ui.selectable_label(on, tr(k)).clicked() {
-                if on {
-                    sp.features.retain(|f| f != tag);
-                } else {
-                    sp.features.push(tag.to_string());
-                }
-                sc = true;
-            }
-        }
-    });
-    font_axes(app, ui, &sp);
-    if sc {
-        let (strike, features) = (sp.strikethrough, sp.features.clone());
-        edit_spans(app, move |s| {
-            s.strikethrough = strike;
-            s.features = features.clone();
-        });
-    }
 }
 
 /// The axes of a variable font (cached for the fonts as they are now).
@@ -1004,7 +1015,7 @@ fn axis_name(axis: &tracedraw_text::VariationAxis) -> String {
 /// releasing it (or typing a value) sets the value on the selected
 /// characters, one undo step; Default axes takes every value off again.
 /// Nothing shows for a static font.
-fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
+pub(crate) fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
     let axes = axes_of(ui.ctx(), sp);
     if axes.is_empty() {
         return;
@@ -1339,7 +1350,7 @@ fn paragraph(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
 }
 
 /// The largest font size of a text, points.
-fn t_size_pt(t: &tracedraw_core::Shape) -> f64 {
+pub(crate) fn t_size_pt(t: &tracedraw_core::Shape) -> f64 {
     match &t.kind {
         ShapeKind::Text { spans, .. } => {
             spans.iter().map(|s| s.size_pt).fold(0.0, f64::max).max(1.0)
@@ -1493,7 +1504,7 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
 /// The rules between linked frames and pages for the paragraphs at the
 /// caret: the least lines left at a frame's foot (orphans) and carried to
 /// the next (widows), and kept with the next paragraph.
-fn keep_rules(app: &mut App, ui: &mut Ui, id: tracedraw_core::ShapeId) {
+pub(crate) fn keep_rules(app: &mut App, ui: &mut Ui, id: tracedraw_core::ShapeId) {
     use crate::ui::tips::{pair, RichTip as _};
     let Some(f) = app.keep_rules_at(id) else {
         return;
@@ -1516,7 +1527,7 @@ fn keep_rules(app: &mut App, ui: &mut Ui, id: tracedraw_core::ShapeId) {
 
 /// The small pictures beside the paragraph spacing and indent fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ParaIcon {
+pub(crate) enum ParaIcon {
     Leading,
     LeftIndent,
     RightIndent,
@@ -1528,7 +1539,7 @@ enum ParaIcon {
 /// The lines of a paragraph icon in `r`: lines of text with an arrow or a
 /// bar showing what the field sets. Drawn rather than taken from a font,
 /// whose arrows the interface fonts of some systems lack (#863).
-fn para_icon_shapes(icon: ParaIcon, r: egui::Rect, color: egui::Color32) -> Vec<egui::Shape> {
+pub(crate) fn para_icon_shapes(icon: ParaIcon, r: egui::Rect, color: egui::Color32) -> Vec<egui::Shape> {
     let st = egui::Stroke::new(1.0, color);
     let c = r.center();
     let (l, rt) = (c.x - 7.0, c.x + 7.0);

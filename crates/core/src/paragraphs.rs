@@ -35,6 +35,8 @@ pub struct ParagraphFormat {
     pub bullet_indent: f64,
     pub drop_cap_lines: u32,
     pub tabs: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tab_details: Vec<crate::document::TabDetail>,
     pub hyphenate: bool,
     /// The least lines of the paragraph left at the foot of a frame
     /// (orphans); 1: no rule.
@@ -79,6 +81,7 @@ impl ParagraphFormat {
             bullet_indent: p.bullet_indent,
             drop_cap_lines: p.drop_cap_lines,
             tabs: p.tabs.clone(),
+            tab_details: p.tab_details.clone(),
             hyphenate: p.hyphenate,
             orphans: 1,
             widows: 1,
@@ -104,6 +107,7 @@ impl ParagraphFormat {
         p.bullet_indent = self.bullet_indent;
         p.drop_cap_lines = self.drop_cap_lines;
         p.tabs = self.tabs.clone();
+        p.tab_details = self.tab_details.clone();
         p.hyphenate = self.hyphenate;
         self.align
     }
@@ -134,12 +138,16 @@ impl ParagraphFormat {
             bullet_char,
             bullet_indent,
             drop_cap_lines,
-            tabs,
             hyphenate,
             orphans,
             widows,
             keep_with_next
         );
+        // The stops and what each does go together.
+        if old.tabs != new.tabs || old.tab_details != new.tab_details {
+            self.tabs = new.tabs.clone();
+            self.tab_details = new.tab_details.clone();
+        }
     }
 }
 
@@ -347,6 +355,30 @@ pub fn first_paragraph_style(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A change of a stop's alignment or leader reaches the paragraphs
+    /// with the stops.
+    #[test]
+    fn tab_details_go_with_the_stops() {
+        let old = ParagraphFormat {
+            tabs: vec![50.0],
+            ..Default::default()
+        };
+        let mut new = old.clone();
+        new.tab_details = vec![crate::document::TabDetail {
+            align: crate::document::TabAlign::Right,
+            leader: ".".into(),
+            ..Default::default()
+        }];
+        let mut other = ParagraphFormat {
+            tabs: vec![50.0],
+            space_after: 3.0,
+            ..Default::default()
+        };
+        other.take_changes(&old, &new);
+        assert_eq!(other.tab_details, new.tab_details);
+        assert_eq!(other.space_after, 3.0);
+    }
     use crate::geometry::Point;
 
     fn text(s: &str) -> ShapeKind {

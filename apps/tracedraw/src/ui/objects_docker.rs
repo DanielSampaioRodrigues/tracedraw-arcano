@@ -433,7 +433,7 @@ fn row_of(ui: &mut Ui, look: Look, height: f32) -> (Rect, egui::Response) {
             p.rect_filled(
                 Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height())),
                 0.0,
-                Tokens::ACCENT,
+                Tokens::accent(),
             );
         }
         _ if resp.hovered() => {

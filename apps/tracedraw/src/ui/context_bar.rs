@@ -116,13 +116,16 @@ fn shown(app: &App, ui: &Ui) -> bool {
     let bar = ui
         .ctx()
         .memory(|m| m.area_rect(egui::Id::new("arcano_context_bar")));
-    let busy = ui.input(|i| {
-        i.pointer.any_down()
-            && !i
-                .pointer
-                .press_origin()
-                .is_some_and(|p| bar.is_some_and(|r| r.contains(p)))
-    });
+    // The bar moving under its grip has left the place pressed.
+    let moving = ui.ctx().is_being_dragged(grip_id());
+    let busy = !moving
+        && ui.input(|i| {
+            i.pointer.any_down()
+                && !i
+                    .pointer
+                    .press_origin()
+                    .is_some_and(|p| bar.is_some_and(|r| r.contains(p)))
+        });
     app.settings.context_bar
         && app.drawing_shown()
         && app.tool == Tool::Pick
@@ -159,19 +162,23 @@ pub fn context_bar(app: &mut App, ui: &mut Ui, canvas: Rect) {
         .ctx()
         .memory(|m| m.area_rect(id))
         .map_or(360.0, |r| r.width());
-    let x = (at.x - width / 2.0).clamp(
-        canvas.left() + 8.0,
-        (canvas.right() - width - 8.0).max(canvas.left() + 8.0),
-    );
-    let y = at.y.clamp(
-        canvas.top() + 8.0,
-        (canvas.bottom() - 44.0).max(canvas.top() + 8.0),
-    );
+    let height = ui
+        .ctx()
+        .memory(|m| m.area_rect(id))
+        .map_or(36.0, |r| r.height());
+    // Dragged by its grip: where it was left, else under the selection.
+    let wanted = match app.settings.context_bar_at {
+        Some([dx, dy]) => egui::pos2(canvas.left() + dx, canvas.top() + dy),
+        None => egui::pos2(at.x - width / 2.0, at.y),
+    };
+    let top_left = keep_inside(wanted, vec2(width, height), canvas);
     let mut chosen = None;
     let mut hide = false;
+    let mut moved = None;
+    let mut back = false;
     egui::Area::new(id)
         .order(egui::Order::Middle)
-        .fixed_pos(egui::pos2(x, y))
+        .fixed_pos(top_left)
         .show(ui.ctx(), |ui| {
             egui::Frame::new()
                 .fill(Tokens::panel())
@@ -187,6 +194,13 @@ pub fn context_bar(app: &mut App, ui: &mut Ui, canvas: Rect) {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
+                        let g = grip(ui);
+                        if g.dragged() {
+                            moved = Some(g.drag_delta());
+                        }
+                        if g.double_clicked() {
+                            back = true;
+                        }
                         for item in &list {
                             if button(ui, *item).clicked() {
                                 chosen = Some(*item);
@@ -208,6 +222,13 @@ pub fn context_bar(app: &mut App, ui: &mut Ui, canvas: Rect) {
                     });
                 });
         });
+    if let Some(d) = moved {
+        let p = keep_inside(top_left + d, vec2(width, height), canvas);
+        app.settings.context_bar_at = Some([p.x - canvas.left(), p.y - canvas.top()]);
+    }
+    if back {
+        app.settings.context_bar_at = None;
+    }
     if let Some(item) = chosen {
         run(app, item);
     }
@@ -215,6 +236,50 @@ pub fn context_bar(app: &mut App, ui: &mut Ui, canvas: Rect) {
         app.settings.context_bar = false;
         app.status = tr("ctx.hidden");
     }
+}
+
+/// The bar's top left corner for `wanted`, kept inside the drawing area
+/// `canvas` (8 points in from its edges) for a bar of `size`.
+fn keep_inside(wanted: egui::Pos2, size: egui::Vec2, canvas: Rect) -> egui::Pos2 {
+    let x = wanted.x.clamp(
+        canvas.left() + 8.0,
+        (canvas.right() - size.x - 8.0).max(canvas.left() + 8.0),
+    );
+    let y = wanted.y.clamp(
+        canvas.top() + 8.0,
+        (canvas.bottom() - size.y - 8.0).max(canvas.top() + 8.0),
+    );
+    egui::pos2(x, y)
+}
+
+/// The grip's id, the same each frame wherever the bar is.
+fn grip_id() -> egui::Id {
+    egui::Id::new("arcano_context_bar_grip")
+}
+
+/// The grip at the bar's start: drag it to move the bar, double click it
+/// to put the bar back under the selection.
+fn grip(ui: &mut Ui) -> egui::Response {
+    let (rect, _) = ui.allocate_exact_size(vec2(12.0, 28.0), egui::Sense::hover());
+    let resp = ui.interact(rect, grip_id(), egui::Sense::click_and_drag());
+    let colour = if resp.hovered() || resp.dragged() {
+        Tokens::text()
+    } else {
+        Tokens::text_dim()
+    };
+    // Two columns of three dots.
+    for col in [-2.0, 2.0] {
+        for row in [-5.0, 0.0, 5.0] {
+            ui.painter()
+                .circle_filled(rect.center() + vec2(col, row), 1.2, colour);
+        }
+    }
+    let resp = if resp.dragged() {
+        resp.on_hover_cursor(egui::CursorIcon::Grabbing)
+    } else {
+        resp.on_hover_cursor(egui::CursorIcon::Grab)
+    };
+    resp.rich_tip(crate::ui::tips::pair("ctx.grip", "ctx.grip_desc"))
 }
 
 /// A button: the AI actions with their picture, the others plain.
@@ -300,5 +365,78 @@ mod tests {
         assert!(app.docker_open(DockerTab::AiGenerate));
         run(&mut app, Item::MoreAi);
         assert!(app.ai_image.home);
+    }
+
+    #[test]
+    fn a_dragged_bar_stays_inside_the_drawing() {
+        let canvas = Rect::from_min_size(egui::pos2(100.0, 50.0), vec2(800.0, 600.0));
+        let size = vec2(300.0, 36.0);
+        // Where it is wanted, when that is inside.
+        let p = keep_inside(egui::pos2(400.0, 300.0), size, canvas);
+        assert_eq!(p, egui::pos2(400.0, 300.0));
+        // Dragged past the edges: held 8 points in.
+        let p = keep_inside(egui::pos2(-500.0, 9000.0), size, canvas);
+        assert_eq!(p, egui::pos2(108.0, 650.0 - 36.0 - 8.0));
+        let p = keep_inside(egui::pos2(9000.0, -9000.0), size, canvas);
+        assert_eq!(p, egui::pos2(900.0 - 300.0 - 8.0, 58.0));
+    }
+
+    #[test]
+    fn the_grip_moves_the_bar_and_a_double_click_brings_it_back() {
+        let mut app = App::headless();
+        app.settings.context_bar = true;
+        let ctx = crate::theme::ui_context();
+        App::setup_context(&ctx);
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, vec2(1200.0, 800.0));
+        let mut time = 0.0;
+        let mut frame = |app: &mut App, events: Vec<egui::Event>| {
+            time += 0.05;
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| context_bar(app, ui, screen));
+            out.textures_delta.clear();
+            ctx.memory(|m| m.area_rect(egui::Id::new("arcano_context_bar")))
+                .expect("the bar shows")
+        };
+        frame(&mut app, vec![]);
+        let bar = frame(&mut app, vec![]);
+        let at = egui::pos2(bar.left() + 12.0, bar.center().y);
+        let press = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&mut app, vec![egui::Event::PointerMoved(at)]);
+        frame(&mut app, vec![press(at, true)]);
+        let to = at + vec2(-200.0, -300.0);
+        // Shown all along the drag, though it leaves the place pressed.
+        for k in 1..=10 {
+            let p = at + vec2(-20.0, -30.0) * k as f32;
+            frame(&mut app, vec![egui::Event::PointerMoved(p)]);
+        }
+        frame(&mut app, vec![press(to, false)]);
+        let moved = frame(&mut app, vec![]);
+        assert!(app.settings.context_bar_at.is_some());
+        assert!((moved.left() - (bar.left() - 200.0)).abs() < 1.0, "{bar:?} -> {moved:?}");
+        assert!((moved.top() - (bar.top() - 300.0)).abs() < 1.0, "{bar:?} -> {moved:?}");
+        // It stays there on the next frames.
+        assert_eq!(frame(&mut app, vec![]).min, moved.min);
+        // A double click on the grip: back under the selection (here the
+        // foot of the drawing, nothing being selected).
+        let g = egui::pos2(moved.left() + 12.0, moved.center().y);
+        frame(&mut app, vec![egui::Event::PointerMoved(g)]);
+        for _ in 0..2 {
+            frame(&mut app, vec![press(g, true)]);
+            frame(&mut app, vec![press(g, false)]);
+        }
+        frame(&mut app, vec![]);
+        assert_eq!(app.settings.context_bar_at, None);
+        let home = frame(&mut app, vec![]);
+        assert!((home.top() - bar.top()).abs() < 1.0, "{bar:?} / {home:?}");
     }
 }

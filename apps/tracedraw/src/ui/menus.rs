@@ -398,7 +398,7 @@ pub fn marked_new(key: &str) -> bool {
 /// The mark of a new row: a small accent disc at the row's right end.
 fn paint_new_mark(ui: &Ui, row: egui::Rect) {
     let c = egui::pos2(row.right() - 8.0, row.center().y);
-    ui.painter().circle_filled(c, 3.5, Tokens::ACCENT);
+    ui.painter().circle_filled(c, 3.5, Tokens::accent());
 }
 
 fn item_text(
@@ -2144,7 +2144,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     ui.painter().circle_filled(
                         egui::pos2(r.rect.right() - 3.0, r.rect.top() + 4.0),
                         3.0,
-                        Tokens::ACCENT,
+                        Tokens::accent(),
                     );
                 }
                 r
@@ -2752,6 +2752,11 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.layout.page_layout", "", true) {
         app.dialog = Dialog::Options;
         app.options_page = crate::ui::dialogs::OptionsPage::Layout;
+    }
+    // Arcano edition: the pages as a book's spreads.
+    let facing = app.has_document() && app.doc().metadata.facing_pages;
+    if mark_item_if(ui, "menu.layout.facing_pages", "", Mark::Check(facing), app.has_document()) {
+        app.set_facing_pages(!facing);
     }
     // The space between the pages of the Multipage View.
     sub(ui, "menu.layout.page_spacing", |ui| {
@@ -3565,6 +3570,19 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         let linked = app.selection.iter().any(|id| app.is_linked_frame(*id));
         if item(ui, "menu.text.frame_unlink", "", linked) {
             app.unlink_text_frames();
+        }
+        // Arcano edition: pages added until the text fits.
+        let one_frame = app.selection.len() == 1
+            && app.selection.first().is_some_and(|id| {
+                matches!(
+                    app.doc().find_shape(*id).map(|s| &s.kind),
+                    Some(ShapeKind::Text { frame: Some(_), .. })
+                )
+            });
+        if item(ui, "menu.text.autoflow", "", one_frame) {
+            if let Some(id) = app.selection.first().copied() {
+                app.autoflow(id);
+            }
         }
     });
     // Tables: a submenu of Text (its keys keep the `menu.table` prefix).

@@ -119,7 +119,7 @@ fn paint_tab(painter: &egui::Painter, rect: Rect, active: bool, hovered: bool) {
                 Pos2::new(r.right() - 8.0, r.bottom()),
             ),
             1.0,
-            crate::theme::Tokens::ACCENT,
+            crate::theme::Tokens::accent(),
         );
     }
 }

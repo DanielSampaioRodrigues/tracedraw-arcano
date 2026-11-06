@@ -222,7 +222,7 @@ pub fn draw_bar(app: &mut App, ui: &mut Ui, bar: ItemBar, draw: fn(&mut App, &mu
                 ui.painter().rect_stroke(
                     rect.shrink(0.5),
                     0.0,
-                    Stroke::new(1.0, crate::theme::Tokens::ACCENT),
+                    Stroke::new(1.0, crate::theme::Tokens::accent()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -338,7 +338,7 @@ fn drag_frame(app: &mut App, ctx: &egui::Context, slots: &[Slot], drag: &ItemDra
                     Pos2::new(x, s.rect.top() + 2.0),
                     Pos2::new(x, s.rect.bottom() - 2.0),
                 ],
-                Stroke::new(2.0, crate::theme::Tokens::ACCENT),
+                Stroke::new(2.0, crate::theme::Tokens::accent()),
             );
         }
     }

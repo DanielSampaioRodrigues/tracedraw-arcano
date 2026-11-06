@@ -72,6 +72,73 @@ pub fn layout(pages: &[(PageId, Size)], active: PageId, gap: f64) -> Vec<(PageId
         .collect()
 }
 
+/// Spreads in a row of the facing pages layout.
+pub const SPREADS_PER_ROW: usize = 2;
+
+/// The pages' places as facing pages, in the current page's coordinates
+/// (mm, Y up): the first page alone on the right of the first spread,
+/// then each left-hand page (2, 4, 6...) against the right-hand page
+/// after it, the spine between them; [`SPREADS_PER_ROW`] spreads to a
+/// row, spreads and rows `gap` mm apart. Left-hand pages are aligned to
+/// the spine, so pages of other widths still meet it.
+pub fn layout_spreads(pages: &[(PageId, Size)], active: PageId, gap: f64) -> Vec<(PageId, Rect)> {
+    let gap = if gap.is_finite() { gap.max(0.0) } else { 0.0 };
+    if pages.is_empty() {
+        return Vec::new();
+    }
+    // Spread and side of page `i`: true for the left-hand side.
+    let place = |i: usize| -> (usize, bool) {
+        if i == 0 {
+            (0, false)
+        } else if i % 2 == 1 {
+            (i.div_ceil(2), true)
+        } else {
+            (i / 2, false)
+        }
+    };
+    let (mut left_w, mut right_w) = (0.0f64, 0.0f64);
+    let spreads = place(pages.len() - 1).0 + 1;
+    let rows = spreads.div_ceil(SPREADS_PER_ROW);
+    let mut row_h = vec![0.0f64; rows];
+    for (i, (_, size)) in pages.iter().enumerate() {
+        let (sp, left) = place(i);
+        if left {
+            left_w = left_w.max(size.width.max(0.0));
+        } else {
+            right_w = right_w.max(size.width.max(0.0));
+        }
+        if let Some(h) = row_h.get_mut(sp / SPREADS_PER_ROW) {
+            *h = h.max(size.height.max(0.0));
+        }
+    }
+    // A drawing of one page still leaves room for the left-hand side.
+    if left_w <= 0.0 {
+        left_w = right_w;
+    }
+    let spread_w = left_w + right_w;
+    let mut placed: Vec<(PageId, Rect)> = Vec::with_capacity(pages.len());
+    for (i, (id, size)) in pages.iter().enumerate() {
+        let (sp, left) = place(i);
+        let (r, c) = (sp / SPREADS_PER_ROW, sp % SPREADS_PER_ROW);
+        let spine = c as f64 * (spread_w + gap) + left_w;
+        let top: f64 = -(row_h.iter().take(r).sum::<f64>() + r as f64 * gap);
+        let w = size.width.max(0.0);
+        let h = size.height.max(0.0);
+        let x0 = if left { spine - w } else { spine };
+        placed.push((*id, Rect::new(x0, top - h, x0 + w, top)));
+    }
+    let (dx, dy) = placed
+        .iter()
+        .find(|(id, _)| *id == active)
+        .or(placed.first())
+        .map(|(_, r)| (r.x0, r.y0))
+        .unwrap_or((0.0, 0.0));
+    placed
+        .into_iter()
+        .map(|(id, r)| (id, Rect::new(r.x0 - dx, r.y0 - dy, r.x1 - dx, r.y1 - dy)))
+        .collect()
+}
+
 /// The page under a page-space point, if any.
 pub fn page_at(placed: &[(PageId, Rect)], p: tracedraw_core::geometry::Point) -> Option<PageId> {
     placed
@@ -92,7 +159,27 @@ impl App {
     pub fn multipage_layout(&self) -> Vec<(PageId, Rect)> {
         let doc = self.doc();
         let pages: Vec<(PageId, Size)> = doc.pages.iter().map(|p| (p.id, p.size)).collect();
-        layout(&pages, self.page, doc.metadata.page_spacing())
+        if doc.metadata.facing_pages {
+            layout_spreads(&pages, self.page, doc.metadata.page_spacing())
+        } else {
+            layout(&pages, self.page, doc.metadata.page_spacing())
+        }
+    }
+
+    /// Page > Facing Pages: the drawing's pages as a book's spreads, one
+    /// undo step (a document property); turning it on shows the
+    /// Multipage View. False when nothing changed.
+    pub fn set_facing_pages(&mut self, on: bool) -> bool {
+        if !self.has_document() || self.doc().metadata.facing_pages == on {
+            return false;
+        }
+        let mut metadata = self.doc().metadata.clone();
+        metadata.facing_pages = on;
+        self.run(tracedraw_core::Command::SetMetadata { metadata });
+        if on {
+            self.set_multipage(true);
+        }
+        true
     }
 
     /// The space between the pages of the Multipage View, mm.
@@ -362,6 +449,36 @@ pub fn draw_other_pages(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Facing pages: the first page alone on the right, then left-hand
+    /// pages against the right-hand page after them at the spine, two
+    /// spreads a row; turning it on is one undo step and shows the pages.
+    #[test]
+    fn facing_pages_lay_the_pages_out_in_spreads() {
+        let a5 = Size::new(148.0, 210.0);
+        let pages: Vec<(PageId, Size)> = (1..=6).map(|i| (PageId(i), a5)).collect();
+        let placed = layout_spreads(&pages, PageId(1), 10.0);
+        let r = |i: usize| placed[i].1;
+        // Page 1 on the right of the spine (x = 0 for it).
+        assert_eq!((r(0).x0, r(0).y1), (0.0, 0.0));
+        // Pages 2 and 3: the second spread, 2 ending where 3 begins.
+        assert!((r(1).x1 - r(2).x0).abs() < 1e-9);
+        assert!((r(1).x0 - (148.0 + 10.0)).abs() < 1e-9, "{:?}", r(1));
+        assert_eq!(r(1).y1, r(0).y1);
+        // Pages 4 and 5 start the next row; 6 is the left of the fourth spread.
+        assert!((r(3).y1 - (-(210.0 + 10.0))).abs() < 1e-9, "{:?}", r(3));
+        assert!((r(3).x1 - r(4).x0).abs() < 1e-9);
+        assert!(r(5).x1 > r(4).x1);
+        let mut app = App::headless();
+        app.add_page();
+        let steps = app.engine.history_labels().0.len();
+        assert!(app.set_facing_pages(true));
+        assert!(!app.set_facing_pages(true));
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        assert!(app.multipage);
+        let placed = app.multipage_layout();
+        assert!(placed[1].1.x0 > placed[0].1.x1, "page 2 is the next spread's left-hand page");
+    }
 
     /// The space between pages of a drawing that sets none.
     const GAP_MM: f64 = tracedraw_core::document::DEFAULT_PAGE_SPACING;

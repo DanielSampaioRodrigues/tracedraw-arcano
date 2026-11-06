@@ -188,7 +188,44 @@ pub struct Raster {
     /// Every render counts as slow, for tests.
     #[cfg(test)]
     always_slow: bool,
+    /// The last picture shown was not the one asked for (moved or scaled
+    /// into place while the view moves, or while the new one is drawn).
+    stale: bool,
+    /// The whole page drawn small (Arcano edition): shown under a picture
+    /// moved or scaled into place, so no part of the page is missing
+    /// while the view moves (a zoom out, a pan) before the new picture.
+    overview: Option<Overview>,
+    /// The overview wanted while the view rests, and since when (egui
+    /// time): made once the drawing has stayed the same a moment.
+    overview_wanted: Option<(OverviewKey, f64)>,
 }
+
+/// How long the drawing must stay the same, seconds, before the overview
+/// is made while the view rests (at once while it moves).
+const OVERVIEW_REST: f64 = 0.6;
+
+/// The whole page drawn small, for the drawing it was made from.
+struct Overview {
+    key: OverviewKey,
+    texture: Option<TextureHandle>,
+    /// The part of the page it shows, page mm.
+    page_rect: tracedraw_core::geometry::Rect,
+    #[cfg(not(target_arch = "wasm32"))]
+    rx: Option<std::sync::mpsc::Receiver<Option<ColorImage>>>,
+}
+
+#[derive(PartialEq, Clone, Debug)]
+struct OverviewKey {
+    revision: u64,
+    page: PageId,
+    wireframe: bool,
+    simulate_overprints: bool,
+    complex_effects: bool,
+    proof: bool,
+}
+
+/// The longest side of the page overview, pixels.
+const OVERVIEW_SIDE: f64 = 1400.0;
 
 /// Screen colours as they would print, on a `N` x `N` x `N` grid of the
 /// screen's red, green and blue; colours between are interpolated.
@@ -445,9 +482,11 @@ impl Raster {
                 return self.shown_meanwhile(view, screen);
             }
         }
+        self.stale = true;
         if self.key.as_ref() == Some(&key) {
             if let Some(t) = &self.texture {
                 self.settle = None;
+                self.stale = false;
                 return Some((t.id(), screen));
             }
         }
@@ -561,6 +600,7 @@ impl Raster {
         }
         let t = web_time::Instant::now();
         self.renders += 1;
+        self.stale = false;
         let pixmap = render_page(doc, page, &opts)?;
         let image = to_image(&pixmap, lut.as_deref());
         self.last_seconds = t.elapsed().as_secs_f64();
@@ -577,6 +617,156 @@ impl Raster {
         self.key = Some(key);
         self.page_rect = page_rect;
         self.texture.as_ref().map(|t| (t.id(), screen))
+    }
+
+    /// True when the picture last given is not the one asked for: the
+    /// last render moved or scaled into place.
+    pub fn stale(&self) -> bool {
+        self.stale
+    }
+
+    /// The whole page drawn small, and the part of the page it shows,
+    /// for the drawing at `revision`: made (on a thread of its own) when
+    /// the drawing or the page changed, `None` until it is ready.
+    #[allow(clippy::too_many_arguments)]
+    pub fn overview(
+        &mut self,
+        ctx: &Context,
+        doc: &Document,
+        page: PageId,
+        revision: u64,
+        wireframe: bool,
+        simulate_overprints: bool,
+        complex_effects: bool,
+        proof: bool,
+        urgent: bool,
+    ) -> Option<(TextureId, tracedraw_core::geometry::Rect)> {
+        let key = OverviewKey {
+            revision,
+            page,
+            wireframe,
+            simulate_overprints,
+            complex_effects,
+            proof,
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(o) = self.overview.as_mut() {
+            if let Some(rx) = &o.rx {
+                match rx.try_recv() {
+                    Ok(Some(image)) => {
+                        match &mut o.texture {
+                            Some(t) => t.set(image, TextureOptions::LINEAR),
+                            None => o.texture = Some(ctx.load_texture("page_overview", image, TextureOptions::LINEAR)),
+                        }
+                        o.rx = None;
+                    }
+                    Ok(None) | Err(std::sync::mpsc::TryRecvError::Disconnected) => o.rx = None,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                }
+            }
+        }
+        if let Some(o) = &self.overview {
+            if o.key == key {
+                #[cfg(not(target_arch = "wasm32"))]
+                if o.rx.is_some() {
+                    return None;
+                }
+                return o.texture.as_ref().map(|t| (t.id(), o.page_rect));
+            }
+        }
+        // While the view rests: once the drawing stays the same a moment
+        // (not at every step of an edit).
+        if !urgent {
+            let now = ctx.input(|i| i.time);
+            match &self.overview_wanted {
+                Some((k, since)) if *k == key && now - since >= OVERVIEW_REST => {}
+                Some((k, since)) if *k == key => {
+                    let wait = (OVERVIEW_REST - (now - since)).max(0.05);
+                    ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
+                    return None;
+                }
+                _ => {
+                    self.overview_wanted = Some((key, now));
+                    ctx.request_repaint_after(std::time::Duration::from_secs_f64(OVERVIEW_REST));
+                    return None;
+                }
+            }
+        }
+        self.overview_wanted = None;
+        // The page with a margin as wide as a fifth of it all round.
+        let pg = doc.pages.iter().find(|p| p.id == page)?;
+        let r = pg.rect();
+        let (mx, my) = (r.width() * 0.2, r.height() * 0.2);
+        let page_rect = tracedraw_core::geometry::Rect::new(r.x0 - mx, r.y0 - my, r.x1 + mx, r.y1 + my);
+        let zoom = OVERVIEW_SIDE / page_rect.width().max(page_rect.height()).max(1e-3);
+        if !zoom.is_finite() || zoom <= 0.0 {
+            return None;
+        }
+        let w = (page_rect.width() * zoom).round().max(1.0) as u32;
+        let h = (page_rect.height() * zoom).round().max(1.0) as u32;
+        let opts = RenderOptions {
+            width: w,
+            height: h,
+            view: ViewTransform {
+                zoom,
+                origin_x: -page_rect.x0 * zoom,
+                origin_y: page_rect.y1 * zoom,
+            },
+            preview: None,
+            wireframe,
+            simulate_overprints,
+            complex_effects,
+            anti_alias: true,
+            draft: true,
+            focus: None,
+        };
+        let lut = proof.then(|| {
+            self.proof
+                .get_or_insert_with(|| std::sync::Arc::new(ProofLut::new()))
+                .clone()
+        });
+        // The old picture stays until the new one is in, but is not shown
+        // for another drawing.
+        let texture = self.overview.take().and_then(|o| o.texture);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let doc = self
+                .snapshot
+                .clone()
+                .unwrap_or_else(|| std::sync::Arc::new(doc.clone()));
+            let (tx, rx) = std::sync::mpsc::channel();
+            let wake = ctx.clone();
+            std::thread::spawn(move || {
+                let image = render_page(&doc, page, &opts).map(|pm| to_image(&pm, lut.as_deref()));
+                let _ = tx.send(image);
+                wake.request_repaint();
+            });
+            self.overview = Some(Overview {
+                key,
+                texture,
+                page_rect,
+                rx: Some(rx),
+            });
+            None
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let image = render_page(doc, page, &opts).map(|pm| to_image(&pm, lut.as_deref()))?;
+            let texture = match texture {
+                Some(mut t) => {
+                    t.set(image, TextureOptions::LINEAR);
+                    t
+                }
+                None => ctx.load_texture("page_overview", image, TextureOptions::LINEAR),
+            };
+            let id = texture.id();
+            self.overview = Some(Overview {
+                key,
+                texture: Some(texture),
+                page_rect,
+            });
+            Some((id, page_rect))
+        }
     }
 
     /// The last picture, where its part of the page now is on screen

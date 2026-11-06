@@ -154,7 +154,7 @@ fn buttons(ui: &mut Ui, labels: &[String], default: usize) -> Option<usize> {
                     .scope(|ui| {
                         if i == default {
                             let w = &mut ui.visuals_mut().widgets;
-                            w.inactive.bg_stroke = Stroke::new(1.0, Tokens::ACCENT);
+                            w.inactive.bg_stroke = Stroke::new(1.0, Tokens::accent());
                         }
                         ui.add_sized([88.0, 26.0], egui::Button::new(&labels[i]))
                     })
@@ -841,7 +841,7 @@ fn draw_controls(ui: &mut Ui, form: &LiveForm, origin: Pos2, acts: &mut FormActi
                             ui.painter().rect_stroke(
                                 rect,
                                 2.0,
-                                Stroke::new(1.0, Tokens::ACCENT),
+                                Stroke::new(1.0, Tokens::accent()),
                                 egui::StrokeKind::Inside,
                             );
                         }

@@ -395,7 +395,32 @@ pub fn name_of(app: &App, c: Color) -> String {
 }
 
 /// Tooltip of a swatch: the colour's name, then its values.
+/// A colour's name as the interface shows it: the stock palette's names
+/// in the interface's language (the drawing and its files keep their
+/// own), any other name as it is.
+pub fn shown_color_name(name: &str) -> String {
+    let mut slug = String::from("colorname.");
+    let mut gap = false;
+    for ch in name.replace('%', "pct").to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            if gap && !slug.ends_with('.') {
+                slug.push('_');
+            }
+            gap = false;
+            slug.push(ch);
+        } else {
+            gap = true;
+        }
+    }
+    if crate::i18n::has_english(&slug) {
+        crate::i18n::tr(&slug)
+    } else {
+        name.to_string()
+    }
+}
+
 pub fn swatch_tip(name: &str, c: Color) -> String {
+    let name = &shown_color_name(name);
     let values = color_values(c);
     if name.is_empty() {
         values
@@ -410,7 +435,7 @@ pub fn swatch_tip_ui(ui: &mut Ui, name: &str, c: Color) {
     ui.spacing_mut().item_spacing.y = 1.0;
     let size = ui.style().text_styles[&egui::TextStyle::Body].size;
     if !name.is_empty() {
-        ui.label(egui::RichText::new(name).font(crate::theme::bold(size)));
+        ui.label(egui::RichText::new(shown_color_name(name)).font(crate::theme::bold(size)));
     }
     ui.label(color_lines(c));
 }
@@ -1487,6 +1512,18 @@ pub fn mix(a: Color, b: Color, share: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The stock palette's names show in the interface's language; other
+    /// names as they are.
+    #[test]
+    fn stock_colour_names_show_in_the_interface_language() {
+        crate::i18n::with_thread_language("pt-BR", || {
+            assert_eq!(shown_color_name("Green"), "Verde");
+            assert_eq!(shown_color_name("90% Black"), "Preto 90%");
+            assert_eq!(shown_color_name("Dark Navy Blue"), "Azul-marinho escuro");
+            assert_eq!(shown_color_name("Pantone 123"), "Pantone 123");
+        });
+    }
 
     #[test]
     fn tooltips_name_the_colour_and_its_values() {

@@ -4589,7 +4589,7 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                         cell,
                         0.0,
                         fill,
-                        egui::Stroke::new(1.0, Tokens::ACCENT),
+                        egui::Stroke::new(1.0, Tokens::accent()),
                         egui::StrokeKind::Inside,
                     );
                     if let Some(n) = c.page {
@@ -4704,14 +4704,14 @@ fn binding_choice(ui: &mut Ui, on: bool, perfect: bool, label: &str) -> egui::Re
     let (r, resp) = ui.allocate_exact_size(egui::vec2(96.0, 62.0), egui::Sense::click());
     let p = ui.painter();
     let fill = if on {
-        Tokens::ACCENT.gamma_multiply(0.18)
+        Tokens::accent().gamma_multiply(0.18)
     } else if resp.hovered() {
         Tokens::control_fill()
     } else {
         egui::Color32::TRANSPARENT
     };
     let border = if on {
-        Tokens::ACCENT
+        Tokens::accent()
     } else {
         Tokens::control_border()
     };
@@ -6026,6 +6026,105 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
     });
 }
 
+/// The rows of the Tabs dialog: each stop's position, how it aligns the
+/// text after it, the leader before it and, for a decimal stop, the
+/// character it lines up on. True when a stop changed.
+pub(crate) fn tab_stop_rows(ui: &mut Ui, p: &mut tracedraw_core::ParagraphStyle, u: Units) -> bool {
+    use tracedraw_core::TabAlign;
+    let mut changed = false;
+    let mut remove = None;
+    let align_name = |a: TabAlign| {
+        tr(match a {
+            TabAlign::Left => "dialog.tab_left",
+            TabAlign::Center => "dialog.tab_center",
+            TabAlign::Right => "dialog.tab_right",
+            TabAlign::Decimal => "dialog.tab_decimal",
+        })
+    };
+    for i in 0..p.tabs.len() {
+        let mut d = p.tab_detail(i);
+        let before = d.clone();
+        ui.horizontal(|ui| {
+            let tip = crate::ui::tips::pair("dialog.tab_stop", "dialog.tab_stop_desc");
+            if let Some(t) = p.tabs.get_mut(i) {
+                changed |= unit_value(ui, &format!("{}", i + 1), &tip, t, u);
+            }
+            crate::ui::combo::from_id_salt(("tab_align", i))
+                .width(86.0)
+                .selected_text(align_name(d.align))
+                .show_ui(ui, |ui| {
+                    for a in TabAlign::ALL {
+                        if ui.selectable_label(d.align == a, align_name(a)).clicked() {
+                            d.align = a;
+                        }
+                    }
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("dialog.tab_align"));
+            ui.label(tr("dialog.tab_leader"));
+            ui.add(
+                egui::TextEdit::singleline(&mut d.leader)
+                    .desired_width(34.0)
+                    .char_limit(4),
+            )
+            .rich_tip(crate::ui::tips::pair("dialog.tab_leader", "dialog.tab_leader_desc"));
+            if d.align == TabAlign::Decimal {
+                ui.label(tr("dialog.tab_align_on"));
+                let mut on = d.align_on.to_string();
+                if ui
+                    .add(egui::TextEdit::singleline(&mut on).desired_width(18.0).char_limit(1))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.tab_align_on",
+                        "dialog.tab_align_on_desc",
+                    ))
+                    .changed()
+                {
+                    if let Some(c) = on.chars().next() {
+                        d.align_on = c;
+                    }
+                }
+            }
+            if ui
+                .small_button("x")
+                .rich_tip(crate::ui::tips::keyed("dialog.remove_tab"))
+                .clicked()
+            {
+                remove = Some(i);
+            }
+        });
+        if d != before {
+            p.set_tab_detail(i, d);
+            changed = true;
+        }
+    }
+    if let Some(i) = remove {
+        p.remove_tab(i);
+        changed = true;
+    }
+    // Ready-made leaders for the last stop.
+    if p.tabs.is_empty() {
+        return changed;
+    }
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(tr("dialog.tab_leaders_ready")).color(Tokens::text_dim()));
+        for l in [". ", ".", "-", "_"] {
+            if ui
+                .small_button(format!("{l}{l}{l}").trim_end().to_string())
+                .rich_tip(crate::ui::tips::keyed("dialog.tab_leaders_ready"))
+                .clicked()
+            {
+                if let Some(i) = p.tabs.len().checked_sub(1) {
+                    let mut d = p.tab_detail(i);
+                    d.leader = l.to_string();
+                    p.set_tab_detail(i, d);
+                    changed = true;
+                }
+            }
+        }
+    });
+    changed
+}
+
 fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bool) {
     let title = match which {
         Dialog::TextTabs => tr("menu.text.tabs"),
@@ -6047,30 +6146,13 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
         match which {
             Dialog::TextTabs => {
                 ui.label(tr("dialog.tab_stops"));
-                let mut remove = None;
-                for (i, t) in p.tabs.iter_mut().enumerate() {
-                    ui.horizontal(|ui| {
-                        let tip = crate::ui::tips::pair("dialog.tab_stop", "dialog.tab_stop_desc");
-                        changed |= unit_value(ui, &format!("{}", i + 1), &tip, t, u);
-                        if ui
-                            .small_button("x")
-                            .rich_tip(crate::ui::tips::keyed("dialog.remove_tab"))
-                            .clicked()
-                        {
-                            remove = Some(i);
-                        }
-                    });
-                }
-                if let Some(i) = remove {
-                    p.tabs.remove(i);
-                    changed = true;
-                }
+                changed |= tab_stop_rows(ui, &mut p, u);
                 if ui
                     .button(tr("dialog.add_tab"))
                     .rich_tip(crate::ui::tips::keyed("dialog.add_tab"))
                     .clicked()
                 {
-                    let last = p.tabs.last().copied().unwrap_or(0.0);
+                    let last = p.tabs.iter().copied().fold(0.0, f64::max);
                     p.tabs.push(last + 12.7);
                     changed = true;
                 }
@@ -6456,7 +6538,7 @@ fn placement_button(ui: &mut Ui, which: usize, on: bool) -> egui::Response {
         egui::Color32::TRANSPARENT
     };
     let edge = if on || resp.hovered() {
-        Tokens::ACCENT
+        Tokens::accent()
     } else {
         egui::Color32::from_gray(0xB0)
     };

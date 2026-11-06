@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
         text_outline::TextRequest, DocumentFont, ParagraphStyle, PathTextOrientation,
-        PathTextVertical, TextAlign, TextOnPath, TextSpan, VerticalAlign,
+        PathTextVertical, TabAlign, TextAlign, TextOnPath, TextSpan, VerticalAlign,
     },
     geometry::{Affine, BezPath, Point, Rect, Shape as _, Size},
     text_flow::{free_segments, WrapRegion},
@@ -4379,9 +4379,31 @@ impl FontSystem {
                 .max(g.char_idx + 1);
                 if g.ch == '\t' {
                     let rel = pen - col_start;
-                    let next = next_tab(rel, &ps.tabs);
+                    let after = glyphs.get(gi + 1..).unwrap_or(&[]);
+                    let (next, stop) = tab_target(rel, after, ps);
                     let before = pen;
                     pen = col_start + next;
+                    // The leader: whole copies on a grid from the column's
+                    // edge, so the dots of lines one under the other line
+                    // up, inside the space the tab opened.
+                    let leader = stop.map(|i| ps.tab_detail(i).leader).unwrap_or_default();
+                    if !leader.is_empty() && span_drawn(g.span) {
+                        if let Some(span) = spans.get(g.span) {
+                            let lg = self.shape_run(span, 0, &leader, size_scale, 0, ps, &[]);
+                            let lw: f64 = lg.iter().map(|l| l.advance).sum();
+                            for x in leader_starts(before - col_start, pen - col_start, lw) {
+                                let mut lx = col_start + x;
+                                for l in &lg {
+                                    let a = Affine::translate((lx + l.x_offset, y + l.y_offset));
+                                    let a = orient(a, l, m.ascent);
+                                    place_glyph(collect, a, l, &mut line_glyphs);
+                                    let gp = a * l.path.as_ref().clone();
+                                    line_path.extend(gp.elements().iter().copied());
+                                    lx += l.advance;
+                                }
+                            }
+                        }
+                    }
                     record(g.char_idx, next_idx, before, pen, false);
                     continue;
                 }
@@ -4654,14 +4676,63 @@ fn drop_cap_placement(
 /// Width of a line's glyphs with tab expansion; returns (width, spaces).
 fn line_width(glyphs: &[Glyph], para: &ParagraphStyle, start: f64) -> f64 {
     let mut x = start;
-    for g in glyphs {
+    for (i, g) in glyphs.iter().enumerate() {
         if g.ch == '\t' {
-            x = next_tab(x, &para.tabs);
+            x = tab_target(x, glyphs.get(i + 1..).unwrap_or(&[]), para).0;
         } else {
             x += g.advance;
         }
     }
     x - start
+}
+
+/// Where the text after a tab starts, from the column's left edge, and
+/// the index of the stop of `para.tabs` it went to (`None` for the
+/// default stops every 12.7 mm). `x` is the pen before the tab, `after`
+/// the line's glyphs after it in text order: a centre, right or decimal
+/// stop places the text up to the next tab by its width, never back
+/// over what is already written.
+fn tab_target(x: f64, after: &[Glyph], para: &ParagraphStyle) -> (f64, Option<usize>) {
+    // The nearest stop after the pen, whatever order the stops are in.
+    let Some(i) = para
+        .tabs
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| **t > x + 1e-6)
+        .min_by(|a, b| a.1.total_cmp(b.1))
+        .map(|(i, _)| i)
+    else {
+        return (next_tab(x, &para.tabs), None);
+    };
+    let stop = para.tabs.get(i).copied().unwrap_or(x);
+    let d = para.tab_detail(i);
+    let segment = || after.iter().take_while(|g| g.ch != '\t');
+    let width: f64 = segment().map(|g| g.advance).sum();
+    let back = match d.align {
+        TabAlign::Left => 0.0,
+        TabAlign::Center => width / 2.0,
+        TabAlign::Right => width,
+        TabAlign::Decimal => {
+            let before: Vec<&Glyph> = segment().take_while(|g| g.ch != d.align_on).collect();
+            before.iter().map(|g| g.advance).sum()
+        }
+    };
+    ((stop - back).max(x), Some(i))
+}
+
+/// The starts of the whole copies of a leader `width` wide that fit
+/// between `from` and `to`, on a grid of `width` from 0.
+fn leader_starts(from: f64, to: f64, width: f64) -> Vec<f64> {
+    if !width.is_finite() || width <= 1e-6 || !from.is_finite() || !to.is_finite() || to - from < width {
+        return Vec::new();
+    }
+    let mut x = (from / width).ceil() * width;
+    let mut out = Vec::new();
+    while x + width <= to + 1e-9 && out.len() < 10_000 {
+        out.push(x);
+        x += width;
+    }
+    out
 }
 
 /// The width added after each glyph of a justified line (indexed like
@@ -5195,6 +5266,7 @@ fn wound_like(line: BezPath, glyph_area: f64) -> BezPath {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracedraw_core::document::TabDetail;
 
     /// Lines of `text` broken to `chars` full-width cells (every glyph is
     /// 1 mm wide), as strings.
@@ -6007,6 +6079,100 @@ mod tests {
                 src: None,
             })
             .collect()
+    }
+
+    /// A centre, right or decimal stop places the text after the tab by
+    /// its width, never over what is before it; a left stop, or past the
+    /// stops, the text starts at the stop.
+    #[test]
+    fn tab_stops_align_the_text_after_them() {
+        let mut p = ParagraphStyle {
+            tabs: vec![10.0, 20.0, 30.0, 40.0],
+            ..Default::default()
+        };
+        let d = |align| TabDetail {
+            align,
+            ..Default::default()
+        };
+        p.set_tab_detail(1, d(TabAlign::Center));
+        p.set_tab_detail(2, d(TabAlign::Right));
+        p.set_tab_detail(3, d(TabAlign::Decimal));
+        let after = cells("12,50\tx");
+        assert_eq!(tab_target(2.0, &after, &p), (10.0, Some(0)));
+        assert_eq!(tab_target(12.0, &after, &p), (17.5, Some(1)));
+        assert_eq!(tab_target(22.0, &after, &p), (25.0, Some(2)));
+        assert_eq!(tab_target(32.0, &after, &p), (38.0, Some(3)));
+        // No room to go back: the text starts where the pen is.
+        assert_eq!(tab_target(28.0, &after, &p), (28.0, Some(2)));
+        // A decimal stop with no comma ends the text there.
+        assert_eq!(tab_target(32.0, &cells("125"), &p), (37.0, Some(3)));
+        // Past the last stop: the default stops, no leader.
+        assert_eq!(tab_target(41.0, &after, &p).1, None);
+        // Stops out of order still go to the nearest one.
+        let mut q = p.clone();
+        q.tabs.swap(0, 3);
+        q.tab_details.clear();
+        assert_eq!(tab_target(2.0, &after, &q), (10.0, Some(3)));
+        // A line: "a" to 1, the left stop at 10, "12,50" to 15, then "x"
+        // centred on 20 (the width counted is up to the next tab only).
+        let w = line_width(&cells("a\t12,50\tx"), &p, 0.0);
+        assert!((w - 20.5).abs() < 1e-9, "{w}");
+    }
+
+    /// Leader copies sit on a grid from the column edge, whole, inside
+    /// the space the tab opened.
+    #[test]
+    fn leaders_fill_the_tab_space_on_a_grid() {
+        assert_eq!(leader_starts(0.5, 4.0, 1.0), vec![1.0, 2.0, 3.0]);
+        assert_eq!(leader_starts(2.0, 4.0, 1.0), vec![2.0, 3.0]);
+        assert!(leader_starts(3.2, 4.0, 1.0).is_empty());
+        assert!(leader_starts(0.0, 4.0, 0.0).is_empty());
+        assert!(leader_starts(0.0, f64::INFINITY, 1.0).is_empty());
+    }
+
+    /// A right stop at the frame's width ends a page number there, a
+    /// dotted leader before it.
+    #[test]
+    fn a_right_tab_with_dots_ends_the_number_at_the_stop() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut para = ParagraphStyle {
+            tabs: vec![60.0],
+            ..Default::default()
+        };
+        para.set_tab_detail(
+            0,
+            TabDetail {
+                align: TabAlign::Right,
+                leader: ".".into(),
+                ..Default::default()
+            },
+        );
+        let lay = |para: &ParagraphStyle| {
+            f.layout(&TextRequest {
+                spans: &[span("Chapter one\t15")],
+                frame: Some(Size::new(80.0, 100.0)),
+                align: TextAlign::Left,
+                para,
+                on_path: None,
+            })
+        };
+        // The ink of the letters, not the frame.
+        let ink = |l: &TextLayout| l.path.bounding_box();
+        let l = lay(&para);
+        assert!((ink(&l).x1 - 60.0).abs() < 0.6, "{:?}", ink(&l));
+        let plain = lay(&ParagraphStyle {
+            tabs: vec![60.0],
+            ..Default::default()
+        });
+        assert!(ink(&plain).x1 > 61.0, "{:?}", ink(&plain));
+        // The dots fill the gap: more outline than without a leader.
+        let mut plain_right = para.clone();
+        plain_right.tab_details[0].leader.clear();
+        let dots = lay(&para).path.elements().len();
+        assert!(dots > lay(&plain_right).path.elements().len() + 20, "{dots}");
     }
 
     /// Chinese text has no spaces: justification spreads the room between

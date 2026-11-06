@@ -508,6 +508,16 @@ on its own line, which is why the lines are joined first.
   flow into the original's next frame. Frames of a chain copied together
   (duplicated, pasted or imported as a set) are a chain of the copies
   (`textflow::relink_copies`).
+- Text > Text Frame > Flow Into New Pages (Arcano edition): with one
+  paragraph frame picked, while the last frame of its chain still
+  overflows a page is inserted after that frame's page with a frame of
+  the same size, place and transform, linked to it, until all the text
+  fits (at most 500 pages per run). With facing pages on, each new page
+  faces the other way, so an unturned frame is mirrored across the page
+  (its distance from the spine kept;
+  `autoflow_mirrors_the_frames_on_facing_pages`). The whole run is one undo step; the
+  status bar says how many pages were added, or that the text already
+  fits (`autoflow_adds_pages_until_the_text_fits`).
 
 ## Paragraph formatting
 
@@ -1216,6 +1226,43 @@ in each chosen font, one under the other, on white cards.
 - A font that is not installed shows in its stand-in, and says which.
 - A click on a sample gives the selected text that font (or makes it the
   text font when nothing is selected); the text font is ticked.
+
+## Tab stops: alignment and leaders
+
+Text > Tabs lists the paragraph's stops. Each row has the stop's
+position, its alignment, the leader and, for a decimal stop, the
+character it lines up on (`ParagraphStyle::tab_details`, by index with
+`tabs`; a stop with none is a plain left stop, so files and imports that
+know only positions read as before, and plain stops are not written).
+
+| Alignment | The text after the tab |
+|---|---|
+| Left | starts at the stop |
+| Center | is centred on the stop |
+| Right | ends at the stop (page numbers of a contents page) |
+| Decimal | has its first `align_on` character at the stop (`,` at first); with none, ends there |
+
+- The text measured is the run up to the next tab or the end of the line.
+  It never moves back over what is already written: when there is no
+  room, it starts where the pen is.
+- The stop used is the nearest one after the pen, whatever order the
+  stops are listed in; past the last one the default stops (every
+  12.7 mm) apply, with no leader.
+- A leader (up to four characters, ". " for spaced dots) is repeated in
+  the space the tab opens, in the font of the tab's character, as whole
+  copies on a grid from the column's left edge, so the dots of lines one
+  under the other line up. It is part of the text's outline: drawn,
+  printed and exported with it.
+- "Leader for the last stop" puts one of four ready leaders on the last
+  stop.
+- A change in the dialog reaches the paragraphs of the selection with the
+  stops and their details together (`ParagraphFormat::take_changes`).
+
+Tests: `tests::tab_stops_align_the_text_after_them`,
+`tests::leaders_fill_the_tab_space_on_a_grid`,
+`tests::a_right_tab_with_dots_ends_the_number_at_the_stop` (text),
+`document::tests::tab_details_follow_their_stops_and_plain_ones_are_not_written`,
+`paragraphs::tests::tab_details_go_with_the_stops` (core).
 
 ## Widows, orphans and keep with next
 

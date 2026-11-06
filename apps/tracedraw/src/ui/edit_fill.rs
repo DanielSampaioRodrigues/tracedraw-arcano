@@ -720,7 +720,7 @@ fn fountain_preview(
     };
     let ring = |h: FountainHandle| {
         if drag.is_some_and(|(d, _)| d == h) {
-            EStroke::new(2.0, Tokens::ACCENT)
+            EStroke::new(2.0, Tokens::accent())
         } else {
             EStroke::new(1.0, Color32::from_gray(40))
         }
@@ -754,7 +754,7 @@ fn picker(ui: &mut Ui, f: &mut Fountain) {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(36.0, 22.0), Sense::click());
                     crate::ui::dockers::gradient_swatch(ui.painter(), r, &stops);
                     let line = if resp.hovered() {
-                        Tokens::ACCENT
+                        Tokens::accent()
                     } else {
                         Tokens::border()
                     };
@@ -810,7 +810,7 @@ fn band(ui: &mut Ui, f: &mut Fountain, node: &mut usize) {
         let [cr, cg, cb] = s.color.to_rgb8();
         p.rect_filled(r, 0.0, Color32::from_rgb(cr, cg, cb));
         let stroke = if i == *node {
-            EStroke::new(2.0, Tokens::ACCENT)
+            EStroke::new(2.0, Tokens::accent())
         } else {
             EStroke::new(1.0, Tokens::text_dim())
         };

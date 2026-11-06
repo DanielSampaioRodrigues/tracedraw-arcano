@@ -735,7 +735,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     p.rect_stroke(
                         r,
                         0.0,
-                        egui::Stroke::new(1.0, Tokens::ACCENT),
+                        egui::Stroke::new(1.0, Tokens::accent()),
                         egui::StrokeKind::Middle,
                     );
                     for (k, h) in &handles {
@@ -744,7 +744,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                             hr,
                             0.0,
                             if handle == Some(*k) {
-                                Tokens::ACCENT
+                                Tokens::accent()
                             } else {
                                 egui::Color32::WHITE
                             },
@@ -752,7 +752,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         p.rect_stroke(
                             hr,
                             0.0,
-                            egui::Stroke::new(1.0, Tokens::ACCENT),
+                            egui::Stroke::new(1.0, Tokens::accent()),
                             egui::StrokeKind::Inside,
                         );
                     }
@@ -783,7 +783,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     let width = if edge == Some(i) { 2.0 } else { 1.0 };
                     p.extend(egui::Shape::dashed_line(
                         &[a, b],
-                        egui::Stroke::new(width, Tokens::ACCENT),
+                        egui::Stroke::new(width, Tokens::accent()),
                         5.0,
                         4.0,
                     ));

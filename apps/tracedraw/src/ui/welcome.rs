@@ -85,7 +85,7 @@ fn big_button(ui: &mut Ui, icon: icons::Action, title: String, subtitle: String)
         egui::pos2(rect.left() + 32.0, rect.center().y),
         egui::vec2(28.0, 28.0),
     );
-    icons::draw_action(painter, icon_rect, icon, Tokens::ACCENT);
+    icons::draw_action(painter, icon_rect, icon, Tokens::accent());
     let text_x = rect.left() + 64.0;
     painter.text(
         egui::pos2(

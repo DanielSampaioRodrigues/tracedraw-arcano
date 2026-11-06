@@ -221,7 +221,7 @@ impl App {
         } else {
             ctx.content_rect()
         };
-        let accent = crate::theme::Tokens::ACCENT;
+        let accent = crate::theme::Tokens::accent();
         painter.rect(
             area.shrink(2.0),
             4.0,

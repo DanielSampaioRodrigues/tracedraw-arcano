@@ -79,6 +79,7 @@ pub mod options_global;
 pub mod outline_pen;
 pub mod overflow;
 pub mod package_dialog;
+pub mod painel_tipo;
 pub mod palette;
 pub mod palette_bars;
 pub mod palette_manager;
@@ -324,6 +325,11 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     apply_ui_scale(&ctx, crate::settings::effective_ui_size(&app.settings));
     crate::theme::set_button_sizes(app.settings.button_size, app.settings.toolbox_button_size);
     apply_theme(&ctx, &crate::settings::effective_theme(&app.settings));
+    // Arcano edition: the accent is the workspace's colour.
+    if crate::theme::set_accent(app.workspace_color()) {
+        ctx.set_visuals_of(egui::Theme::Dark, crate::theme::visuals());
+        ctx.set_visuals(crate::theme::visuals());
+    }
     apply_shadows(&ctx, app.settings.ui_shadows && !software_renderer());
     // Said once in the status bar: a software adapter draws the window.
     #[cfg(not(target_arch = "wasm32"))]
@@ -965,13 +971,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     // A guideline or the ruler origin dragged out of the rulers
     // follows the pointer until release.
     if app.multipage && two_fingers.is_none() {
-        let press = ui.input(|i| {
-            i.pointer
-                .primary_pressed()
-                .then(|| i.pointer.interact_pos())
-                .flatten()
-        });
-        if let Some(s) = press.filter(|s| canvas_rect.contains(*s)) {
+        if let Some(s) = press_on_drawing(ui, canvas_rect) {
             app.multipage_press(s);
         }
     }
@@ -1167,8 +1167,74 @@ pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, can
         });
 }
 
+/// Where the primary button was pressed this frame, when that was on the
+/// drawing area `canvas` itself: a press on a menu, a submenu, the
+/// contextual bar or any other window over it is theirs (in the Multipage
+/// View such a press went on to make the page under it the current one,
+/// and a submenu's item over the pages lost its selection).
+fn press_on_drawing(ui: &Ui, canvas: egui::Rect) -> Option<egui::Pos2> {
+    let s = ui.input(|i| {
+        i.pointer
+            .primary_pressed()
+            .then(|| i.pointer.interact_pos())
+            .flatten()
+    })?;
+    (canvas.contains(s) && ui.ctx().layer_id_at(s).is_none_or(|l| l == ui.layer_id())).then_some(s)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_press_on_a_window_over_the_drawing_is_not_the_drawings() {
+        let ctx = crate::theme::ui_context();
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let popup = egui::Rect::from_min_size(egui::pos2(300.0, 200.0), egui::vec2(200.0, 100.0));
+        let mut got = None;
+        let mut run = |events: Vec<egui::Event>, got: &mut Option<Option<egui::Pos2>>| {
+            let input = egui::RawInput {
+                screen_rect: Some(canvas),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                // The drawing, and a window over part of it.
+                let _ = ui.allocate_rect(canvas, egui::Sense::click_and_drag());
+                egui::Area::new(egui::Id::new("over"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(popup.min)
+                    .show(ui.ctx(), |ui| {
+                        ui.allocate_exact_size(popup.size(), egui::Sense::click());
+                    });
+                *got = Some(super::press_on_drawing(ui, canvas));
+            });
+            out.textures_delta.clear();
+        };
+        let press = |p| egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let release = |p| egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(vec![], &mut got);
+        // On the window: not the drawing's.
+        let on = popup.center();
+        run(vec![egui::Event::PointerMoved(on)], &mut got);
+        run(vec![press(on)], &mut got);
+        assert_eq!(got, Some(None));
+        run(vec![release(on)], &mut got);
+        // Beside it: the drawing's.
+        let off = egui::pos2(100.0, 100.0);
+        run(vec![egui::Event::PointerMoved(off)], &mut got);
+        run(vec![press(off)], &mut got);
+        assert_eq!(got, Some(Some(off)));
+    }
+
     /// One browser wheel notch (100 pixels, or three lines at egui's
     /// web line speed of 8 points) zooms 15 %, as a desktop notch
     /// does; it zoomed about 5.7 times or 52 % at once (#1016).

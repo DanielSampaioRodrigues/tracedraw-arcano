@@ -516,7 +516,7 @@ fn table(app: &mut App, ui: &mut Ui, st: &mut TrackerDialog) {
                     }
                     if tracker.active == Some(i) {
                         let c = pos2(r.left() + COLS[0] / 2.0 + 1.0, r.center().y);
-                        p.circle_filled(c, 3.5, Tokens::ACCENT);
+                        p.circle_filled(c, 3.5, Tokens::accent());
                     }
                     cell(p, r, 1, &task.name, Tokens::text(), false);
                     cell(

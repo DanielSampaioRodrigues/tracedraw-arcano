@@ -61,3 +61,17 @@
   centre stays under the pointer and the zoom doubles.
 - Given an object far from the page origin, when zooming to fit it, then
   its centre is the window centre (`view::tests::fit_centres_rectangles_anywhere_on_the_page`).
+
+## The page while the view moves (Arcano edition)
+
+While a pan, a scroll or a zoom moves the view, the last picture of the
+page is shown moved or scaled into place until the view rests
+(`raster::SETTLE_SECONDS`) and the page is drawn anew. Under it the whole
+page, with a margin of a fifth of its size all round, is drawn small
+(its longest side 1400 pixels, `Raster::overview`), so a zoom out or a pan
+never shows the page empty where the last picture did not reach. The small
+picture is made on a thread of its own for the drawing as it is: at once
+when the view starts to move, else once the drawing has stayed the same
+for 0.6 s (not at every step of an edit). It is not used in the Multipage
+View, while objects are dragged, or while a group is edited in focus.
+

@@ -150,6 +150,7 @@ mod placeholder;
 mod preflight;
 mod prefs;
 mod prelo_casa;
+mod prelo_quebras;
 mod print_merge;
 mod printers;
 mod qr;

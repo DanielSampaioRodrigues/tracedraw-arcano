@@ -8,6 +8,12 @@ work is in `apps/tracedraw/src/ui/context_bar.rs`.
 - Under the selection's bounds, centred, 18 px below; with nothing
   selected, at the foot of the drawing area. Kept inside the drawing
   area.
+- A grip of six dots at its start moves it: dragged, the bar stays where
+  it is let go (kept 8 points inside the drawing area, remembered in the
+  settings as `context_bar_at`, from the drawing area's top left) and no
+  longer follows the selection; a double click on the grip puts it back
+  under the selection (`a_dragged_bar_stays_inside_the_drawing`,
+  `the_grip_moves_the_bar_and_a_double_click_brings_it_back`).
 - A rounded panel-coloured bar with a soft shadow; AI actions carry
   their picture.
 

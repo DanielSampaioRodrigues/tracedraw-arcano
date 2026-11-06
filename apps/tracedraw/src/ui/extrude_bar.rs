@@ -539,7 +539,7 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
                 p.rect_stroke(
                     r,
                     2.0,
-                    Stroke::new(1.0, Tokens::ACCENT),
+                    Stroke::new(1.0, Tokens::accent()),
                     egui::StrokeKind::Inside,
                 );
             }

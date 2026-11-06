@@ -194,7 +194,7 @@ pub fn font_sampler(app: &mut App, ui: &mut Ui) {
                             ui.painter().rect_stroke(
                                 rect,
                                 3.0,
-                                egui::Stroke::new(1.5, Tokens::ACCENT),
+                                egui::Stroke::new(1.5, Tokens::accent()),
                                 egui::StrokeKind::Inside,
                             );
                         }

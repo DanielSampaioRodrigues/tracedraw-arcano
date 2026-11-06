@@ -301,6 +301,10 @@ pub struct Settings {
     /// actions that suit it (`ui::context_bar`).
     #[serde(default = "default_true")]
     pub context_bar: bool,
+    /// Where the contextual bar was dragged to: its top left corner from
+    /// the drawing area's top left, in points (none: under the selection).
+    #[serde(default)]
+    pub context_bar_at: Option<[f32; 2]>,
     /// Customization > Appearance > Theme: "light", "medium_light",
     /// "medium_dark" or "dark".
     #[serde(default)]
@@ -610,6 +614,12 @@ pub struct Settings {
     pub arcano_persona: String,
     #[serde(default)]
     pub arcano_persona_layouts: std::collections::BTreeMap<String, DockerSetup>,
+    /// The user's own workspaces, after Drawing and Page.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arcano_workspaces: Vec<crate::personas::UserWorkspace>,
+    /// The colour, picture and name given to Drawing and Page.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub arcano_workspace_looks: std::collections::BTreeMap<String, crate::personas::WorkspaceLook>,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -697,6 +707,13 @@ pub struct FloatingSetup {
     pub tab: String,
     pub pos: [f32; 2],
     pub size: [f32; 2],
+    /// Arcano edition: the panel whose window this one is a tab of (empty
+    /// for a window of its own) and, of a window holding others, the one
+    /// in front (empty: its own).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub host: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub front: String,
 }
 
 /// Which bars are shown (Window > Toolbars, the bars' menu). The palette
@@ -1842,6 +1859,7 @@ impl Default for Settings {
             // Tests check the panels as they were; the program starts stacked.
             stacked_panels: !cfg!(test),
             context_bar: !cfg!(test),
+            context_bar_at: None,
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             bar_items: Default::default(),
@@ -1890,6 +1908,8 @@ impl Default for Settings {
             arcano_house: Default::default(),
             arcano_persona: String::new(),
             arcano_persona_layouts: Default::default(),
+            arcano_workspaces: Vec::new(),
+            arcano_workspace_looks: Default::default(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),

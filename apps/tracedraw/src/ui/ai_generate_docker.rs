@@ -766,9 +766,9 @@ fn tile(
     let p = ui.painter();
     paint(p, pic);
     let stroke = if on {
-        egui::Stroke::new(2.0, Tokens::ACCENT)
+        egui::Stroke::new(2.0, Tokens::accent())
     } else if resp.hovered() {
-        egui::Stroke::new(1.0, Tokens::ACCENT)
+        egui::Stroke::new(1.0, Tokens::accent())
     } else {
         egui::Stroke::new(1.0, Tokens::border())
     };
@@ -778,7 +778,7 @@ fn tile(
         egui::Align2::CENTER_TOP,
         name,
         egui::FontId::proportional(10.0),
-        if on { Tokens::ACCENT } else { Tokens::text() },
+        if on { Tokens::accent() } else { Tokens::text() },
     );
     resp.rich_tip(name)
 }

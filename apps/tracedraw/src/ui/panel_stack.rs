@@ -439,7 +439,7 @@ fn divider(
         )
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
     let line = if resp.hovered() || resp.dragged() {
-        Tokens::ACCENT
+        Tokens::accent()
     } else {
         Tokens::border()
     };

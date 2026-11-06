@@ -5,7 +5,7 @@
 //! active master layer (or on every page). See docs/behavior/sections.md.
 
 use crate::app::App;
-use tracedraw_core::document::{PageNumberField, Section};
+use tracedraw_core::document::Section;
 use tracedraw_core::Command;
 
 /// The numbering styles, in [`Section::style`]'s order (i18n keys).
@@ -159,14 +159,15 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, close: &mut bool) {
     }
 }
 
-/// What a field shows on page `index` (for the preview in tests).
-pub fn shown(app: &App, f: &PageNumberField, index: usize) -> String {
-    app.doc().field_text(f, index)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracedraw_core::document::PageNumberField;
+
+    /// What a field shows on page `index`.
+    fn shown(app: &App, f: &PageNumberField, index: usize) -> String {
+        app.doc().field_text(f, index)
+    }
 
     #[test]
     fn sections_number_their_pages_and_name_the_running_head() {

@@ -337,7 +337,7 @@ fn general(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::O
                         ui.painter().rect_stroke(
                             r.rect.expand(2.0),
                             0.0,
-                            EStroke::new(1.0, Tokens::ACCENT),
+                            EStroke::new(1.0, Tokens::accent()),
                             egui::StrokeKind::Outside,
                         );
                     }
@@ -702,12 +702,12 @@ fn variable(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::
             c,
             5.0,
             if picked {
-                Tokens::ACCENT
+                Tokens::accent()
             } else {
                 Color32::WHITE
             },
         );
-        p.circle_stroke(c, 5.0, EStroke::new(1.2, Tokens::ACCENT));
+        p.circle_stroke(c, 5.0, EStroke::new(1.2, Tokens::accent()));
     }
     let u = lib.units;
     let node = st.node.filter(|i| *i < st.stroke.widths.len());
@@ -826,7 +826,7 @@ fn pic_button(ui: &mut Ui, pic: Pic, on: bool, enabled: bool, tip: &str) -> bool
     let resp = resp.rich_tip(tr(tip));
     let p = ui.painter();
     if on {
-        p.rect_filled(rect, 3.0, Tokens::ACCENT.gamma_multiply(0.35));
+        p.rect_filled(rect, 3.0, Tokens::accent().gamma_multiply(0.35));
     } else if resp.hovered() && enabled {
         p.rect_filled(rect, 3.0, Tokens::tool_hover());
     }
@@ -889,14 +889,14 @@ fn draw_pic(p: &egui::Painter, r: Rect, pic: Pic, ink: Color32) {
                     Pos2::new(l + w / 2.0, b),
                     Pos2::new(l + w / 2.0, t + w / 2.0),
                 ],
-                EStroke::new(1.0, Tokens::ACCENT),
+                EStroke::new(1.0, Tokens::accent()),
             );
             p.line_segment(
                 [
                     Pos2::new(l + w / 2.0, t + w / 2.0),
                     Pos2::new(rt, t + w / 2.0),
                 ],
-                EStroke::new(1.0, Tokens::ACCENT),
+                EStroke::new(1.0, Tokens::accent()),
             );
         }
         Pic::CapButt | Pic::CapRound | Pic::CapSquare => {
@@ -933,7 +933,7 @@ fn draw_pic(p: &egui::Painter, r: Rect, pic: Pic, ink: Color32) {
             }
             p.line_segment(
                 [Pos2::new(l, c.y), Pos2::new(end, c.y)],
-                EStroke::new(1.0, Tokens::ACCENT),
+                EStroke::new(1.0, Tokens::accent()),
             );
             p.line_segment([Pos2::new(end, t), Pos2::new(end, b)], thin);
         }
@@ -953,7 +953,7 @@ fn draw_pic(p: &egui::Painter, r: Rect, pic: Pic, ink: Color32) {
             );
             p.line_segment(
                 [Pos2::new(l, y), Pos2::new(rt, y)],
-                EStroke::new(1.0, Tokens::ACCENT),
+                EStroke::new(1.0, Tokens::accent()),
             );
             // The object's inside, light, below the path.
             p.rect_stroke(

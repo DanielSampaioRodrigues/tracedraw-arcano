@@ -16,6 +16,9 @@ use tracedraw_core::{
     Command, ShapeId,
 };
 
+/// The most pages Flow Into New Pages adds at once.
+pub const MAX_AUTOFLOW_PAGES: usize = 500;
+
 const NEXT: &str = "text.next";
 const PREV: &str = "text.prev";
 
@@ -358,6 +361,107 @@ impl App {
         self.select(vec![to]);
     }
 
+    /// Arcano edition, Text > Flow Into New Pages: while the last frame of
+    /// the chain of `any` (a paragraph frame) overflows, a page is added
+    /// after the last frame's page, a frame put where the last one is
+    /// on its page and linked to it, so the text runs on until it all
+    /// fits (at most [`MAX_AUTOFLOW_PAGES`] pages). One undo step. The
+    /// number of pages added.
+    pub fn autoflow(&mut self, any: ShapeId) -> usize {
+        let mark = self.engine.begin_group();
+        let mut added = 0;
+        while added < MAX_AUTOFLOW_PAGES {
+            let Some(&last) = self.chain_of(any).last() else {
+                break;
+            };
+            let overflows = self
+                .text_layout_of(last)
+                .is_some_and(|(l, _)| l.overflow);
+            if !overflows {
+                break;
+            }
+            let Some(src) = self.doc().find_shape(last).cloned() else {
+                break;
+            };
+            let ShapeKind::Text {
+                spans,
+                origin,
+                frame: Some(size),
+                align,
+                para,
+                ..
+            } = &src.kind
+            else {
+                break;
+            };
+            let Some(page) = self.page_index_of(last) else {
+                break;
+            };
+            if self.page_index() != page {
+                self.goto_page(page);
+            }
+            self.insert_page(true);
+            let Some(span) = spans.last().cloned().map(|mut s| {
+                s.text.clear();
+                s
+            }) else {
+                break;
+            };
+            // Facing pages: the new page faces the other way, so the frame
+            // keeps its margins mirrored (inner stays inner).
+            let mut origin = *origin;
+            if self.doc().metadata.facing_pages && src.transform == tracedraw_core::Affine::IDENTITY {
+                if let Some(w) = self.doc().pages.get(page + 1).map(|p| p.size.width) {
+                    origin.x = w - origin.x - size.width;
+                }
+            }
+            let kind = ShapeKind::Text {
+                spans: vec![span],
+                origin,
+                frame: Some(*size),
+                align: *align,
+                para: para.clone(),
+                on_path: None,
+            };
+            let Some(to) = self.new_shape(kind) else {
+                break;
+            };
+            // A turned or scaled frame: the new one the same way.
+            if self.doc().find_shape(to).is_some_and(|s| s.transform != src.transform) {
+                self.run(Command::TransformShapes {
+                    shapes: vec![to],
+                    transform: src.transform,
+                });
+            }
+            if !self.link_frames(last, to) {
+                break;
+            }
+            added += 1;
+        }
+        self.engine.end_group(mark, "Flow Into New Pages");
+        self.status = tr(if added == 0 { "status.autoflow_none" } else { "status.autoflow_done" })
+            .replace("{n}", &added.to_string());
+        added
+    }
+
+    /// The index of the page a shape is on (master layers aside).
+    pub fn page_index_of(&self, id: ShapeId) -> Option<usize> {
+        fn holds(s: &tracedraw_core::Shape, id: ShapeId) -> bool {
+            s.id == id
+                || match &s.kind {
+                    ShapeKind::Group { children } => children.iter().any(|c| holds(c, id)),
+                    ShapeKind::ClipFrame { frame, contents } => {
+                        holds(frame, id) || contents.iter().any(|c| holds(c, id))
+                    }
+                    _ => false,
+                }
+        }
+        self.doc()
+            .pages
+            .iter()
+            .position(|p| p.layers.iter().any(|l| l.shapes.iter().any(|s| holds(s, id))))
+    }
+
     /// Unlink the selected frames from their neighbours; each keeps the text
     /// it currently shows.
     pub fn unlink_text_frames(&mut self) {
@@ -541,6 +645,49 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Flow Into New Pages adds pages until the text fits, each with a
+    /// frame where the last one was, linked; one undo step takes it back.
+    #[test]
+    fn autoflow_adds_pages_until_the_text_fits() {
+        let mut app = App::headless();
+        let text = "Palavras que enchem a moldura e seguem adiante. ".repeat(45);
+        let id = frame(&mut app, &text, 60.0, 40.0);
+        let pages = app.doc().pages.len();
+        let steps = app.engine.history_labels().0.len();
+        let added = app.autoflow(id);
+        assert!(added >= 2, "{added}");
+        assert_eq!(app.doc().pages.len(), pages + added);
+        let chain = app.chain_of(id);
+        assert_eq!(chain.len(), added + 1);
+        let last = *chain.last().unwrap();
+        assert!(!app.text_layout_of(last).unwrap().0.overflow);
+        assert_eq!(app.page_index_of(last), Some(added));
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        // Nothing overflows: nothing added.
+        assert_eq!(app.autoflow(id), 0);
+        app.undo();
+        assert_eq!(app.doc().pages.len(), pages);
+    }
+
+    #[test]
+    fn autoflow_mirrors_the_frames_on_facing_pages() {
+        let mut app = App::headless();
+        app.set_facing_pages(true);
+        let width = app.doc().pages[0].size.width;
+        let text = "Palavras que enchem a moldura e seguem adiante. ".repeat(45);
+        // 10 mm from the left (the spine of a right-hand page), 60 wide.
+        let id = frame(&mut app, &text, 60.0, 40.0);
+        assert!(app.autoflow(id) >= 2);
+        let x = |app: &App, id: ShapeId| match &app.doc().find_shape(id).unwrap().kind {
+            ShapeKind::Text { origin, .. } => origin.x,
+            _ => f64::NAN,
+        };
+        let chain = app.chain_of(id);
+        // Left-hand pages: 10 mm from the right; right-hand ones as the first.
+        assert!((x(&app, chain[1]) - (width - 10.0 - 60.0)).abs() < 1e-9);
+        assert!((x(&app, chain[2]) - 10.0).abs() < 1e-9);
+    }
     use tracedraw_core::geometry::{Point, Size};
     use tracedraw_core::TextAlign;
 

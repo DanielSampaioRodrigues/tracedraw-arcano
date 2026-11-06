@@ -668,7 +668,7 @@ fn picker(
             }
         }
         let line = if resp.hovered() {
-            Tokens::ACCENT
+            Tokens::accent()
         } else {
             Tokens::border()
         };
@@ -686,7 +686,7 @@ fn picker(
                 a + Vec2::new(4.0, -3.0),
                 a + Vec2::new(0.0, 2.0),
             ],
-            Tokens::ACCENT,
+            Tokens::accent(),
             egui::Stroke::NONE,
         ));
         let resp = resp.rich_tip(crate::ui::tips::keyed("transparency.picker"));
@@ -748,7 +748,7 @@ fn picker(
 
 fn frame(ui: &Ui, r: Rect, hovered: bool) {
     let line = if hovered {
-        Tokens::ACCENT
+        Tokens::accent()
     } else {
         Tokens::border()
     };
@@ -827,7 +827,7 @@ fn fountain(ui: &mut Ui, set: &mut TransparencySettings, mixed: &[F], field: &mu
         let x = x_of(s.pos);
         let top = bar.bottom() + 1.0;
         let fill = if i == sel {
-            Tokens::ACCENT
+            Tokens::accent()
         } else {
             Tokens::text_dim()
         };

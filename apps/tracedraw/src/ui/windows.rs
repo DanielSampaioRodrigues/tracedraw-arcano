@@ -214,7 +214,7 @@ fn frame(
         Stroke::new(
             1.0,
             if active {
-                Tokens::ACCENT
+                Tokens::accent()
             } else {
                 crate::theme::Tokens::window_border()
             },

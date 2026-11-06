@@ -1352,7 +1352,7 @@ fn blend_pic(
         p.rect_stroke(
             r,
             2.0,
-            egui::Stroke::new(1.0, Tokens::ACCENT),
+            egui::Stroke::new(1.0, Tokens::accent()),
             egui::StrokeKind::Inside,
         );
     } else if resp.hovered() && enabled {
@@ -2124,7 +2124,7 @@ fn bitmap_mask(app: &mut App, ui: &mut Ui) {
                                 egui::Stroke::new(
                                     if picked { 2.0 } else { 1.0 },
                                     if picked {
-                                        crate::theme::Tokens::ACCENT
+                                        crate::theme::Tokens::accent()
                                     } else {
                                         egui::Color32::from_gray(0xA0)
                                     },

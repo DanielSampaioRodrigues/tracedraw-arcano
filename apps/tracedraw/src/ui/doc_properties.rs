@@ -97,7 +97,7 @@ fn rating_label(r: u8) -> String {
 fn heading(ui: &mut Ui, title: &str) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new(title).color(Tokens::ACCENT));
+        ui.label(RichText::new(title).color(Tokens::accent()));
         let r = ui.available_rect_before_wrap();
         let y = r.center().y;
         ui.painter().line_segment(
@@ -105,7 +105,7 @@ fn heading(ui: &mut Ui, title: &str) {
                 egui::pos2(r.left() + 6.0, y),
                 egui::pos2(r.right() - 4.0, y),
             ],
-            egui::Stroke::new(1.0, Tokens::ACCENT),
+            egui::Stroke::new(1.0, Tokens::accent()),
         );
     });
 }

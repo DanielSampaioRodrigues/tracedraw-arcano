@@ -913,7 +913,7 @@ fn ai_button(app: &mut App, ui: &mut Ui) {
         egui::Align2::CENTER_CENTER,
         "\u{2728}",
         egui::FontId::proportional(15.0),
-        Tokens::ACCENT,
+        Tokens::accent(),
     );
     p.galley(
         egui::pos2(rect.left() + 26.0, rect.center().y - galley.size().y / 2.0),

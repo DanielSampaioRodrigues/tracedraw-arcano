@@ -751,7 +751,7 @@ pub fn button_row_after(
                 .scope(|ui| {
                     if i == 0 {
                         let w = &mut ui.visuals_mut().widgets;
-                        w.inactive.bg_stroke = Stroke::new(1.0, Tokens::ACCENT);
+                        w.inactive.bg_stroke = Stroke::new(1.0, Tokens::accent());
                         w.inactive.weak_bg_fill = crate::theme::Tokens::tool_hover();
                     }
                     ui.add_sized([100.0, 27.0], egui::Button::new(text))

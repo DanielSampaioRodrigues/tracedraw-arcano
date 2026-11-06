@@ -657,7 +657,7 @@ impl<N: Numeric> Slider<'_, N> {
             } else {
                 Rect::from_x_y_ranges(egui::Rangef::new(groove.left(), pos), groove.y_range())
             };
-            p.rect_filled(filled, 0.0, Tokens::ACCENT);
+            p.rect_filled(filled, 0.0, Tokens::accent());
         }
         // The ticks under the groove (beside it when upright).
         if self.ticks {
@@ -697,9 +697,9 @@ impl<N: Numeric> Slider<'_, N> {
         let (fill, border) = if !enabled {
             (Tokens::panel(), Tokens::icon_off())
         } else if resp.dragged() || resp.is_pointer_button_down_on() {
-            (Tokens::tool_active(), Tokens::ACCENT)
+            (Tokens::tool_active(), Tokens::accent())
         } else if resp.hovered() || resp.has_focus() {
-            (Tokens::tool_hover(), Tokens::ACCENT)
+            (Tokens::tool_hover(), Tokens::accent())
         } else {
             (Tokens::button(), Tokens::control_border())
         };

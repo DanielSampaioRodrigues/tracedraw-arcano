@@ -477,17 +477,19 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
     let Some(p) = pointer.or(drag.last) else {
         if !down {
             app.docker_drag = None;
+            app.float_window_drag = None;
         }
         return;
     };
+    let whole = app.float_window_drag.filter(|h| *h == drag.tab);
     drag.last = Some(p);
     app.docker_drag = Some(drag);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,
         egui::Id::new("docker_drag_overlay"),
     ));
-    let fill = egui::Color32::from_rgba_unmultiplied(0x1A, 0xA3, 0x50, 46);
-    let edge = egui::Stroke::new(1.5, egui::Color32::from_rgb(0x1A, 0xA3, 0x50));
+    let fill = crate::theme::Tokens::accent().gamma_multiply(46.0 / 255.0);
+    let edge = egui::Stroke::new(1.5, crate::theme::Tokens::accent());
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
     // Over a column's tabs: a line between the two tabs it would go
     // between, and the release puts it there, so the tabs of a column
@@ -527,6 +529,18 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
             return;
         }
     }
+    // Over another floating window's top: a tab of that window.
+    if let Some((host, r)) = float_drop(app, ctx, p, drag.tab) {
+        let top = egui::Rect::from_min_size(r.min, egui::vec2(r.width(), TITLE_H));
+        painter.rect(r, 8.0, fill, egui::Stroke::NONE, egui::StrokeKind::Inside);
+        painter.rect(top, 8.0, fill, edge, egui::StrokeKind::Inside);
+        if !down {
+            app.docker_drag = None;
+            app.float_window_drag = None;
+            app.join_floating(drag.tab, host);
+        }
+        return;
+    }
     let columns = column_rects(ctx);
     let mut place = drop_target(screen, &columns, p);
     // A docker alone in its column, dropped beside it: it stays.
@@ -537,7 +551,23 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
     painter.rect(zone, 2.0, fill, edge, egui::StrokeKind::Inside);
     if !down {
         app.docker_drag = None;
+        app.float_window_drag = None;
         let at = (place == DockerPlace::Floating).then_some(zone.min);
+        // A window of several panels moved whole: it keeps them, floating
+        // or docked together.
+        if let Some(host) = whole {
+            let group = app.float_group(host);
+            if place == DockerPlace::Floating {
+                app.move_float_window(host, zone.min);
+            } else {
+                let front = app.float_front(host);
+                for t in group.iter().filter(|t| **t != front) {
+                    app.move_docker(*t, place, None);
+                }
+                app.move_docker(front, place, None);
+            }
+            return;
+        }
         // Dropped where it already is: nothing moves.
         let same = app.docker_place(drag.tab) == Some(place) && place != DockerPlace::Floating;
         if !same {
@@ -550,7 +580,15 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
 /// (its name; a menu with its places; close), resizable at its edges.
 /// Dragging the title moves it (near a side it docks there).
 pub fn floating_dockers(app: &mut App, ctx: &egui::Context) {
-    let tabs: Vec<DockerTab> = app.floating_dockers.iter().map(|f| f.tab).collect();
+    // Only the windows: a panel that is a tab of another's window is
+    // drawn in it.
+    let tabs: Vec<DockerTab> = app
+        .floating_dockers
+        .iter()
+        .filter(|f| f.host.is_none())
+        .map(|f| f.tab)
+        .collect();
+    let mut windows: Vec<(DockerTab, egui::Rect)> = Vec::new();
     for tab in tabs {
         let Some(fd) = app.floating_dockers.iter_mut().find(|f| f.tab == tab) else {
             continue;
@@ -591,16 +629,25 @@ pub fn floating_dockers(app: &mut App, ctx: &egui::Context) {
         if place {
             window = window.current_pos(pos).fixed_size(size);
         }
+        let group = app.float_group(tab);
+        let front = app.float_front(tab);
         let shown = window.show(ctx, |ui| {
             ui.set_min_size(ui.available_size());
-            docker_title(app, ui, tab, DockerPlace::Floating);
+            if group.len() > 1 {
+                float_tabs(app, ui, tab, &group, front);
+            } else {
+                docker_title(app, ui, tab, DockerPlace::Floating);
+            }
             let content = ui.available_rect_before_wrap();
             let inner = content.shrink2(egui::vec2(6.0, 6.0));
             let mut page = ui.new_child(egui::UiBuilder::new().max_rect(inner));
             page.set_clip_rect(content.intersect(ui.clip_rect()));
             ui.advance_cursor_after_rect(content);
-            docker_page(app, &mut page, tab);
+            docker_page(app, &mut page, front);
         });
+        if let Some(shown) = &shown {
+            windows.push((tab, shown.response.rect));
+        }
         if let Some(shown) = shown {
             if let Some(fd) = app.floating_dockers.iter_mut().find(|f| f.tab == tab) {
                 let r = shown.response.rect;
@@ -610,6 +657,107 @@ pub fn floating_dockers(app: &mut App, ctx: &egui::Context) {
                 }
             }
         }
+    }
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(FLOAT_WINDOWS), windows));
+}
+
+/// Where the floating windows were drawn this frame, by their own panel.
+const FLOAT_WINDOWS: &str = "floating_docker_windows";
+
+/// The floating window whose top a panel dragged to `p` would join: not
+/// its own (nor, moved whole, the one it is moving).
+fn float_drop(app: &App, ctx: &egui::Context, p: egui::Pos2, tab: DockerTab) -> Option<(DockerTab, egui::Rect)> {
+    let windows = ctx
+        .data(|d| d.get_temp::<Vec<(DockerTab, egui::Rect)>>(egui::Id::new(FLOAT_WINDOWS)))
+        .unwrap_or_default();
+    let own = app.float_host(tab);
+    windows.into_iter().rev().find(|(host, r)| {
+        let top = egui::Rect::from_min_size(r.min, egui::vec2(r.width(), TITLE_H + 10.0));
+        Some(*host) != own && top.contains(p)
+    })
+}
+
+/// The tab strip of a floating window holding several panels: a click
+/// brings a panel to the front, dragging a tab takes that panel out and
+/// dragging the free part of the strip moves the window; the cross closes
+/// the panel in front.
+fn float_tabs(app: &mut App, ui: &mut Ui, host: DockerTab, group: &[DockerTab], front: DockerTab) {
+    let full = ui.max_rect();
+    let (bar, resp) = ui.allocate_exact_size(egui::vec2(full.width(), TITLE_H), egui::Sense::click_and_drag());
+    ui.painter().rect_filled(bar, 0.0, crate::theme::Tokens::tab_strip());
+    if resp.drag_started_by(egui::PointerButton::Primary) {
+        let grab = resp.interact_pointer_pos().map(|p| p - bar.min).unwrap_or(egui::vec2(12.0, 12.0));
+        app.docker_drag = Some(DockerDrag {
+            tab: host,
+            grab: egui::vec2(grab.x.clamp(0.0, 300.0), grab.y.clamp(0.0, TITLE_H)),
+            last: None,
+        });
+        app.float_window_drag = Some(host);
+    }
+    let mut x = bar.left() + 4.0;
+    let font = egui::FontId::proportional(12.0);
+    for &t in group {
+        let name = tr(t.key());
+        let w = ui.painter().layout_no_wrap(name.clone(), font.clone(), Tokens::text()).size().x + 16.0;
+        let w = w.min((bar.right() - 30.0 - x).max(40.0));
+        let r = egui::Rect::from_min_size(egui::pos2(x, bar.top() + 3.0), egui::vec2(w, TITLE_H - 3.0));
+        let tr_ = ui
+            .interact(r, egui::Id::new(("float_tab", t.key())), egui::Sense::click_and_drag())
+            .rich_tip(format!("{}\n{}", tr(t.key()), tr("docker.title_desc")));
+        let on = t == front;
+        if on {
+            ui.painter().rect_filled(r, egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 }, crate::theme::Tokens::panel());
+            ui.painter().line_segment(
+                [egui::pos2(r.left() + 4.0, r.bottom() - 1.0), egui::pos2(r.right() - 4.0, r.bottom() - 1.0)],
+                egui::Stroke::new(2.0, Tokens::accent()),
+            );
+        }
+        let col = if on || tr_.hovered() { Tokens::text() } else { Tokens::text_dim() };
+        ui.painter().with_clip_rect(r).text(
+            egui::pos2(r.left() + 8.0, r.center().y),
+            egui::Align2::LEFT_CENTER,
+            name,
+            font.clone(),
+            col,
+        );
+        if tr_.clicked() {
+            app.set_float_front(t);
+        }
+        if tr_.drag_started_by(egui::PointerButton::Primary) {
+            let grab = tr_.interact_pointer_pos().map(|p| p - r.min).unwrap_or(egui::vec2(12.0, 12.0));
+            app.docker_drag = Some(DockerDrag {
+                tab: t,
+                grab: egui::vec2(grab.x.clamp(0.0, 300.0), grab.y.clamp(0.0, TITLE_H)),
+                last: None,
+            });
+            app.float_window_drag = None;
+        }
+        egui::Popup::context_menu(&tr_)
+            .id(egui::Id::new(("float_tab_menu", t.key())))
+            .style(crate::ui::menus::menu_popup_style)
+            .show(|ui| {
+                crate::ui::menus::body(ui, |ui| {
+                    place_menu(app, ui, t);
+                    crate::ui::menus::sep(ui);
+                    if crate::ui::menus::item(ui, "docker.close_docker", "", true) {
+                        app.close_docker(t);
+                    }
+                })
+            });
+        x += w + 2.0;
+    }
+    // Close the panel in front.
+    let close = egui::Rect::from_center_size(egui::pos2(bar.right() - 12.0, bar.center().y), egui::vec2(20.0, 20.0));
+    let cr = ui
+        .interact(close, egui::Id::new(("float_close", host.key())), egui::Sense::click())
+        .rich_tip(tr("docker.close_docker"));
+    let col = if cr.hovered() { Tokens::text() } else { crate::theme::Tokens::text_dim() };
+    let c = close.center();
+    let st = egui::Stroke::new(1.5, col);
+    ui.painter().line_segment([c + egui::vec2(-4.5, -4.5), c + egui::vec2(4.5, 4.5)], st);
+    ui.painter().line_segment([c + egui::vec2(4.5, -4.5), c + egui::vec2(-4.5, 4.5)], st);
+    if cr.clicked() {
+        app.close_docker(front);
     }
 }
 
@@ -1937,7 +2085,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                     ui.allocate_exact_size(egui::vec2(34.0, 20.0), egui::Sense::click());
                 gradient_swatch(ui.painter(), r, &current);
                 let line = if resp.hovered() {
-                    crate::theme::Tokens::ACCENT
+                    crate::theme::Tokens::accent()
                 } else {
                     crate::theme::Tokens::border()
                 };
@@ -1963,7 +2111,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                             gradient_swatch(ui.painter(), r, &stops);
                         }
                         let line = if resp.hovered() {
-                            crate::theme::Tokens::ACCENT
+                            crate::theme::Tokens::accent()
                         } else {
                             crate::theme::Tokens::border()
                         };
@@ -2564,7 +2712,7 @@ fn outline_editor_mixed(
                                     ui.painter().rect_stroke(
                                         r.rect.expand(2.0),
                                         0.0,
-                                        egui::Stroke::new(1.0, Tokens::ACCENT),
+                                        egui::Stroke::new(1.0, Tokens::accent()),
                                         egui::StrokeKind::Outside,
                                     );
                                 }

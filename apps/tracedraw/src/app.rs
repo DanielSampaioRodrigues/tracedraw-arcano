@@ -1717,6 +1717,9 @@ pub struct App {
     pub left_inner_dockers: DockerColumn,
     /// Dockers floating over the window, each in a window of its own.
     pub floating_dockers: Vec<FloatingDocker>,
+    /// Arcano edition: a floating window holding several panels is being
+    /// moved whole (dragged by its tab strip's free part), its own panel.
+    pub float_window_drag: Option<DockerTab>,
     /// A docker being moved by its tab or its title (see ui/dockers.rs).
     pub docker_drag: Option<DockerDrag>,
     /// A panel shown beside its column folded to pictures (stacked
@@ -2346,6 +2349,12 @@ pub struct FloatingDocker {
     /// The window is put at `pos` on the next frame (it was just dropped
     /// or moved); otherwise it keeps where egui has it.
     pub place: bool,
+    /// Arcano edition: the floating panel whose window this one is a tab
+    /// of (`None`: a window of its own, perhaps holding others).
+    pub host: Option<DockerTab>,
+    /// Of a window holding other panels: the one in front (`None`: this
+    /// one).
+    pub front: Option<DockerTab>,
 }
 
 impl FloatingDocker {
@@ -2869,6 +2878,7 @@ impl App {
             inner_dockers: DockerColumn::default(),
             left_inner_dockers: DockerColumn::default(),
             floating_dockers: Vec::new(),
+            float_window_drag: None,
             docker_drag: None,
             stack_flyout: None,
             stacks: Default::default(),
@@ -3732,6 +3742,8 @@ impl App {
                     tab: f.tab.key().to_string(),
                     pos: [f.pos.x, f.pos.y],
                     size: [f.size.x, f.size.y],
+                    host: f.host.map(|h| h.key().to_string()).unwrap_or_default(),
+                    front: f.front.map(|h| h.key().to_string()).unwrap_or_default(),
                 })
                 .collect(),
             stacks: self
@@ -3819,9 +3831,37 @@ impl App {
                     },
                     size,
                     place: true,
+                    host: None,
+                    front: None,
                 })
             })
             .collect();
+        // Panels floating in another's window, where that one floats alone.
+        let hosts: Vec<(DockerTab, Option<DockerTab>, Option<DockerTab>)> = setup
+            .floating
+            .iter()
+            .filter_map(|f| Some((by_key(&f.tab)?, by_key(&f.host), by_key(&f.front))))
+            .collect();
+        let standing: Vec<DockerTab> = self.floating_dockers.iter().map(|f| f.tab).collect();
+        for (tab, host, front) in hosts {
+            let host = host.filter(|h| *h != tab && standing.contains(h));
+            let front = front.filter(|f| standing.contains(f));
+            if let Some(fd) = self.floating_dockers.iter_mut().find(|f| f.tab == tab) {
+                fd.host = host;
+                fd.front = front;
+            }
+        }
+        let windows: Vec<DockerTab> = self
+            .floating_dockers
+            .iter()
+            .filter(|f| f.host.is_none())
+            .map(|f| f.tab)
+            .collect();
+        for fd in &mut self.floating_dockers {
+            if fd.host.is_some_and(|h| !windows.contains(&h)) {
+                fd.host = None;
+            }
+        }
         if let Some(t) = by_key(&setup.front) {
             self.docker_tab = t;
         }
@@ -3931,8 +3971,143 @@ impl App {
             Some(DockerPlace::LeftInner) => {
                 self.left_inner_dockers.shown && self.left_inner_dockers.front == tab
             }
-            Some(DockerPlace::Floating) => true,
+            Some(DockerPlace::Floating) => self
+                .float_host(tab)
+                .is_some_and(|h| self.float_front(h) == tab),
             None => false,
+        }
+    }
+
+    /// Arcano edition: the floating panel whose window `tab` is shown in
+    /// (itself when it floats alone or holds others).
+    pub fn float_host(&self, tab: DockerTab) -> Option<DockerTab> {
+        self.floating_dockers
+            .iter()
+            .find(|f| f.tab == tab)
+            .map(|f| f.host.unwrap_or(f.tab))
+    }
+
+    /// The panels of the floating window of `host`, `host` first.
+    pub fn float_group(&self, host: DockerTab) -> Vec<DockerTab> {
+        let mut out = vec![host];
+        out.extend(
+            self.floating_dockers
+                .iter()
+                .filter(|f| f.host == Some(host))
+                .map(|f| f.tab),
+        );
+        out
+    }
+
+    /// The panel in front of the floating window of `host`.
+    pub fn float_front(&self, host: DockerTab) -> DockerTab {
+        self.floating_dockers
+            .iter()
+            .find(|f| f.tab == host)
+            .and_then(|f| f.front)
+            .filter(|t| self.float_group(host).contains(t))
+            .unwrap_or(host)
+    }
+
+    /// Bring `tab` to the front of its floating window.
+    pub fn set_float_front(&mut self, tab: DockerTab) {
+        let Some(host) = self.float_host(tab) else {
+            return;
+        };
+        if let Some(fd) = self.floating_dockers.iter_mut().find(|f| f.tab == host) {
+            fd.front = (tab != host).then_some(tab);
+        }
+    }
+
+    /// Put `tab` in the floating window of `host`, in front: a panel from
+    /// a column leaves it, a floating one leaves its window, and a window
+    /// holding several panels brings them all.
+    pub fn join_floating(&mut self, tab: DockerTab, host: DockerTab) {
+        let Some(host) = self.float_host(host) else {
+            return;
+        };
+        if self.float_host(tab) == Some(host) {
+            self.set_float_front(tab);
+            return;
+        }
+        let moving = match self.floating_dockers.iter().find(|f| f.tab == tab) {
+            Some(f) if f.host.is_none() => self.float_group(tab),
+            _ => vec![tab],
+        };
+        for t in &moving {
+            if self.floating_dockers.iter().any(|f| f.tab == *t) {
+                self.leave_float_group(*t);
+                self.floating_dockers.retain(|f| f.tab != *t);
+            } else {
+                self.take_docker(*t);
+            }
+        }
+        let Some((pos, size)) = self
+            .floating_dockers
+            .iter()
+            .find(|f| f.tab == host)
+            .map(|f| (f.pos, f.size))
+        else {
+            return;
+        };
+        for t in moving {
+            self.floating_dockers.push(FloatingDocker {
+                tab: t,
+                pos,
+                size,
+                place: false,
+                host: Some(host),
+                front: None,
+            });
+        }
+        self.set_float_front(tab);
+    }
+
+    /// Move the floating window of `host`, with every panel in it.
+    pub fn move_float_window(&mut self, host: DockerTab, at: Pos2) {
+        if !at.is_finite() {
+            return;
+        }
+        if let Some(fd) = self.floating_dockers.iter_mut().find(|f| f.tab == host) {
+            fd.pos = Pos2::new(at.x.max(0.0), at.y.max(0.0));
+            fd.place = true;
+        }
+    }
+
+    /// `tab` leaves the floating window it is a tab of; a window's own
+    /// panel leaving hands the window to the next panel in it.
+    fn leave_float_group(&mut self, tab: DockerTab) {
+        let Some(f) = self.floating_dockers.iter().find(|f| f.tab == tab).copied() else {
+            return;
+        };
+        if let Some(h) = f.host {
+            if let Some(hf) = self.floating_dockers.iter_mut().find(|x| x.tab == h) {
+                if hf.front == Some(tab) {
+                    hf.front = None;
+                }
+            }
+            return;
+        }
+        let members: Vec<DockerTab> = self
+            .floating_dockers
+            .iter()
+            .filter(|x| x.host == Some(tab))
+            .map(|x| x.tab)
+            .collect();
+        let Some(&next) = members.first() else {
+            return;
+        };
+        let front = f.front.filter(|t| *t != next && members.contains(t));
+        for x in &mut self.floating_dockers {
+            if x.tab == next {
+                x.host = None;
+                x.pos = f.pos;
+                x.size = f.size;
+                x.place = true;
+                x.front = front;
+            } else if x.host == Some(tab) {
+                x.host = Some(next);
+            }
         }
     }
 
@@ -4040,6 +4215,8 @@ impl App {
                     pos: Pos2::new(pos.x.max(0.0), pos.y.max(0.0)),
                     size,
                     place: true,
+                    host: None,
+                    front: None,
                 });
             }
         }
@@ -4129,6 +4306,7 @@ impl App {
         }
         self.inner_dockers.take(tab);
         self.left_inner_dockers.take(tab);
+        self.leave_float_group(tab);
         self.floating_dockers.retain(|f| f.tab != tab);
         self.settle_columns();
     }
@@ -9375,6 +9553,48 @@ mod tests {
     /// Dockers move between the two columns and float; one brought to
     /// the front the old way is put in front where it lies; the places
     /// survive the preferences.
+    /// Arcano edition: floating panels dock into each other's windows as
+    /// tabs, keep the group through the preferences, and a window's own
+    /// panel leaving hands the window to the next one.
+    #[test]
+    fn floating_panels_join_one_window() {
+        let mut app = App::headless();
+        app.move_docker(DockerTab::Objects, DockerPlace::Floating, Some(Pos2::new(300.0, 200.0)));
+        app.move_docker(DockerTab::Properties, DockerPlace::Floating, Some(Pos2::new(600.0, 100.0)));
+        app.join_floating(DockerTab::Properties, DockerTab::Objects);
+        assert_eq!(app.float_group(DockerTab::Objects), [DockerTab::Objects, DockerTab::Properties]);
+        assert_eq!(app.float_front(DockerTab::Objects), DockerTab::Properties);
+        assert!(app.docker_shown(DockerTab::Properties));
+        assert!(!app.docker_shown(DockerTab::Objects));
+        assert_eq!(app.docker_place(DockerTab::Properties), Some(DockerPlace::Floating));
+        // A panel from a column joins too.
+        app.join_floating(DockerTab::Hints, DockerTab::Properties);
+        assert_eq!(app.float_group(DockerTab::Objects).len(), 3);
+        assert!(!app.open_dockers.contains(&DockerTab::Hints));
+        app.set_float_front(DockerTab::Objects);
+        assert_eq!(app.float_front(DockerTab::Objects), DockerTab::Objects);
+        // Kept with the preferences.
+        let setup = app.docker_setup();
+        let mut next = App::headless();
+        next.set_docker_setup(&setup);
+        assert_eq!(next.float_group(DockerTab::Objects).len(), 3);
+        assert_eq!(next.float_host(DockerTab::Hints), Some(DockerTab::Objects));
+        // The window's own panel goes to a column: the next takes the
+        // window where it was.
+        app.move_docker(DockerTab::Objects, DockerPlace::Right, None);
+        assert_eq!(app.float_host(DockerTab::Properties), Some(DockerTab::Properties));
+        assert_eq!(app.float_group(DockerTab::Properties), [DockerTab::Properties, DockerTab::Hints]);
+        let fd = app.floating_dockers.iter().find(|f| f.tab == DockerTab::Properties).unwrap();
+        assert_eq!(fd.pos, Pos2::new(300.0, 200.0));
+        // Moved whole, nobody leaves.
+        app.move_float_window(DockerTab::Properties, Pos2::new(50.0, 60.0));
+        assert_eq!(app.float_group(DockerTab::Properties).len(), 2);
+        // Closing a tab of the window leaves the rest.
+        app.close_docker(DockerTab::Hints);
+        assert_eq!(app.float_group(DockerTab::Properties), [DockerTab::Properties]);
+        assert!(app.docker_shown(DockerTab::Properties));
+    }
+
     #[test]
     fn dockers_move_between_the_columns_and_float() {
         let mut app = App::headless();

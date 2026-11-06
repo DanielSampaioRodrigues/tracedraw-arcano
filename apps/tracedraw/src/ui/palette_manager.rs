@@ -296,7 +296,7 @@ fn tool_button(ui: &mut Ui, pic: Pic, enabled: bool) -> egui::Response {
             rect.shrink(1.0),
             3.0,
             Tokens::tool_hover(),
-            Stroke::new(1.0, Tokens::ACCENT),
+            Stroke::new(1.0, Tokens::accent()),
             egui::StrokeKind::Inside,
         );
     }
@@ -509,7 +509,7 @@ fn size_slider(ui: &mut Ui, size: u8, enabled: bool) -> Option<u8> {
     if enabled {
         p.line_segment(
             [pos2(track.left(), y), pos2(x_of(t), y)],
-            Stroke::new(2.0, Tokens::ACCENT),
+            Stroke::new(2.0, Tokens::accent()),
         );
     }
     for (s, _) in SWATCH_STEPS {
@@ -531,7 +531,7 @@ fn size_slider(ui: &mut Ui, size: u8, enabled: bool) -> Option<u8> {
         Stroke::new(
             1.5,
             if enabled && (resp.hovered() || resp.dragged()) {
-                Tokens::ACCENT
+                Tokens::accent()
             } else {
                 color
             },
@@ -576,7 +576,7 @@ fn palette_row(app: &mut App, ui: &mut Ui, i: usize) {
     if dragging_here {
         p.line_segment(
             [rect.left_top(), rect.right_top()],
-            Stroke::new(2.0, Tokens::ACCENT),
+            Stroke::new(2.0, Tokens::accent()),
         );
     }
     let shown = app.visible_palettes.contains(&i);

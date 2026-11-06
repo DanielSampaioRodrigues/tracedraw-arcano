@@ -1183,7 +1183,7 @@ fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool) -> e
             rect.shrink(1.0),
             2.0,
             Tokens::tool_hover(),
-            Stroke::new(1.0, Tokens::ACCENT),
+            Stroke::new(1.0, Tokens::accent()),
             egui::StrokeKind::Inside,
         );
     }
@@ -2108,7 +2108,7 @@ fn card(
     let resp = ui.interact(card, id, Sense::click_and_drag());
     let p = ui.painter_at(rect);
     let (fill, line) = if picked {
-        (Tokens::selected_row(), Tokens::ACCENT)
+        (Tokens::selected_row(), Tokens::accent())
     } else if resp.hovered() {
         (Tokens::hovered_row(), Tokens::border())
     } else {

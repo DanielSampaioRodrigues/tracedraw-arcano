@@ -1358,6 +1358,11 @@ pub struct ParagraphStyle {
     pub drop_cap_lines: u32,
     /// Tab stops in mm from the left edge; empty = default every 12.7 mm.
     pub tabs: Vec<f64>,
+    /// How each stop of `tabs` aligns the text after it and what fills
+    /// the space before it, by index; a stop with no entry is a left
+    /// stop with no leader (files and imports that know only positions).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tab_details: Vec<TabDetail>,
     pub hyphenate: bool,
     /// Fit text to frame: scale the font so the text fills the frame height.
     pub fit_to_frame: bool,
@@ -1452,6 +1457,7 @@ impl Default for ParagraphStyle {
             bullet_indent: 5.0,
             drop_cap_lines: 0,
             tabs: Vec::new(),
+            tab_details: Vec::new(),
             hyphenate: false,
             fit_to_frame: false,
             baseline_grid_mm: 0.0,
@@ -1459,6 +1465,113 @@ impl Default for ParagraphStyle {
             vertical: false,
             frame_fill: None,
             flow: crate::text_flow::FrameFlow::default(),
+        }
+    }
+}
+
+/// How a tab stop places the text after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabAlign {
+    /// The text starts at the stop.
+    #[default]
+    Left,
+    /// The text is centred on the stop.
+    Center,
+    /// The text ends at the stop.
+    Right,
+    /// The first `TabDetail::align_on` character of the text sits at the
+    /// stop (the text ends there when it has none).
+    Decimal,
+}
+
+impl TabAlign {
+    pub const ALL: [TabAlign; 4] = [
+        TabAlign::Left,
+        TabAlign::Center,
+        TabAlign::Right,
+        TabAlign::Decimal,
+    ];
+}
+
+/// What a tab stop does beyond its position (see
+/// [`ParagraphStyle::tab_details`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TabDetail {
+    pub align: TabAlign,
+    /// Characters repeated across the space the tab opens (dots for a
+    /// table of contents); empty = none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub leader: String,
+    /// The character a decimal stop lines up on.
+    pub align_on: char,
+}
+
+impl Default for TabDetail {
+    fn default() -> Self {
+        TabDetail {
+            align: TabAlign::Left,
+            leader: String::new(),
+            align_on: ',',
+        }
+    }
+}
+
+impl ParagraphStyle {
+    /// The details of stop `i` of `tabs` (a plain left stop when it has
+    /// none).
+    pub fn tab_detail(&self, i: usize) -> TabDetail {
+        self.tab_details.get(i).cloned().unwrap_or_default()
+    }
+
+    /// Set the details of stop `i`, filling the stops before it with
+    /// plain left stops; nothing beyond `tabs` is kept.
+    pub fn set_tab_detail(&mut self, i: usize, d: TabDetail) {
+        if i >= self.tabs.len() {
+            return;
+        }
+        if self.tab_details.len() <= i {
+            self.tab_details.resize(i + 1, TabDetail::default());
+        }
+        if let Some(slot) = self.tab_details.get_mut(i) {
+            *slot = d;
+        }
+        self.trim_tab_details();
+    }
+
+    /// Remove stop `i` with its details.
+    pub fn remove_tab(&mut self, i: usize) {
+        if i < self.tabs.len() {
+            self.tabs.remove(i);
+        }
+        if i < self.tab_details.len() {
+            self.tab_details.remove(i);
+        }
+        self.trim_tab_details();
+    }
+
+    /// Put the stops in order of position, each keeping its details.
+    pub fn sort_tabs(&mut self) {
+        let mut pairs: Vec<(f64, TabDetail)> = (0..self.tabs.len())
+            .map(|i| (self.tabs.get(i).copied().unwrap_or(0.0), self.tab_detail(i)))
+            .collect();
+        pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        self.tabs = pairs.iter().map(|p| p.0).collect();
+        self.tab_details = pairs.into_iter().map(|p| p.1).collect();
+        self.trim_tab_details();
+    }
+
+    /// No details past the stops, nor trailing plain ones (so a drawing
+    /// with plain stops saves as before).
+    fn trim_tab_details(&mut self) {
+        self.tab_details.truncate(self.tabs.len());
+        while self
+            .tab_details
+            .last()
+            .is_some_and(|d| *d == TabDetail::default())
+        {
+            self.tab_details.pop();
         }
     }
 }
@@ -3788,6 +3901,7 @@ impl ParagraphStyle {
     /// leaving its spacing and indents.
     pub fn apply_layout_to(&self, to: &mut ParagraphStyle) {
         to.tabs = self.tabs.clone();
+        to.tab_details = self.tab_details.clone();
         to.columns = self.columns;
         to.gutter = self.gutter;
         to.bullets = self.bullets;
@@ -3854,6 +3968,11 @@ pub struct Metadata {
     /// older drawings read and write as before.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page_spacing: Option<f64>,
+    /// Facing pages (a book's spreads): the Multipage View shows the
+    /// pages in pairs, the first page alone on the right, a left-hand
+    /// page beside the right-hand page after it with the spine between.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub facing_pages: bool,
 }
 
 /// The space between pages in the Multipage View when a drawing sets
@@ -6062,6 +6181,41 @@ mod tests {
         assert_eq!(back.extra_strokes.len(), 2);
     }
     use crate::geometry::Point;
+
+    /// Tab stop details go by index with the stops; plain ones are not
+    /// written, so a drawing with plain stops saves as before, and a file
+    /// that knows only positions reads as left stops.
+    #[test]
+    fn tab_details_follow_their_stops_and_plain_ones_are_not_written() {
+        let mut p = ParagraphStyle {
+            tabs: vec![30.0, 10.0, 20.0],
+            ..Default::default()
+        };
+        p.set_tab_detail(
+            0,
+            TabDetail {
+                align: TabAlign::Right,
+                leader: ". ".into(),
+                ..Default::default()
+            },
+        );
+        p.set_tab_detail(5, TabDetail::default());
+        assert_eq!(p.tab_details.len(), 1);
+        p.sort_tabs();
+        assert_eq!(p.tabs, vec![10.0, 20.0, 30.0]);
+        assert_eq!(p.tab_detail(2).align, TabAlign::Right);
+        assert_eq!(p.tab_detail(0), TabDetail::default());
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("\"align\":\"right\""), "{json}");
+        let back: ParagraphStyle = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tab_detail(2).leader, ". ");
+        p.remove_tab(2);
+        assert!(p.tab_details.is_empty());
+        let plain = serde_json::to_string(&p).unwrap();
+        assert!(!plain.contains("tab_details"), "{plain}");
+        let old: ParagraphStyle = serde_json::from_str(r#"{"tabs":[12.5]}"#).unwrap();
+        assert_eq!(old.tab_detail(0).align, TabAlign::Left);
+    }
 
     #[test]
     fn tdraw_files_carry_their_format_version_and_older_ones_open() {

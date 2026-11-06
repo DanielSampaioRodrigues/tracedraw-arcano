@@ -3562,7 +3562,7 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
     }
     // What the last shortcut set took over.
     if let Some(note) = &app.shortcut_editor.note {
-        ui.label(egui::RichText::new(note).color(Tokens::ACCENT));
+        ui.label(egui::RichText::new(note).color(Tokens::accent()));
     }
 }
 

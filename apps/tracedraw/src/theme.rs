@@ -3,7 +3,7 @@
 //! theme in use is picked with [`set_theme`] and read by every token.
 
 use egui::{Color32, Visuals};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 /// The interface themes, lightest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,10 +108,99 @@ pub fn link_color() -> Color32 {
             let [r, g, b] = contrast_colors().hot_light;
             Color32::from_rgb(r, g, b)
         }
-        t if t.is_dark() => Color32::from_rgb(0x4F, 0xD1, 0x7E),
-        _ => Tokens::ACCENT,
+        t if t.is_dark() => rehue(Color32::from_rgb(0x4F, 0xD1, 0x7E)),
+        _ => Tokens::accent(),
     }
 }
+
+// ----- the accent of the workspace in use (Arcano edition) ---------------
+
+/// The program's own green, which every accent colour of the themes is
+/// made around.
+pub const GREEN: [u8; 3] = [0x1A, 0xA3, 0x50];
+
+static ACCENT: AtomicU32 = AtomicU32::new(0x1A_A3_50);
+
+/// The accent colour in use (the workspace's).
+pub fn accent_rgb() -> [u8; 3] {
+    let v = ACCENT.load(Ordering::Relaxed);
+    [(v >> 16) as u8, (v >> 8) as u8, v as u8]
+}
+
+/// Use `rgb` as the accent from now on: the selected buttons, tools,
+/// rows, menus, links and focus take it instead of the green. True when
+/// it changed (the visuals must be made again).
+pub fn set_accent(rgb: [u8; 3]) -> bool {
+    let v = (rgb[0] as u32) << 16 | (rgb[1] as u32) << 8 | rgb[2] as u32;
+    ACCENT.swap(v, Ordering::Relaxed) != v
+}
+
+fn to_hsl(c: [u8; 3]) -> (f32, f32, f32) {
+    let [r, g, b] = c.map(|v| v as f32 / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    if d < 1e-6 {
+        return (0.0, 0.0, l);
+    }
+    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let h = if max == r {
+        ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    } * 60.0;
+    (h, s, l)
+}
+
+fn from_hsl(h: f32, s: f32, l: f32) -> [u8; 3] {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = h.rem_euclid(360.0) / 60.0;
+    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
+    let (r, g, b) = match hp as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    [r, g, b].map(|v| ((v + m).clamp(0.0, 1.0) * 255.0).round() as u8)
+}
+
+/// A colour made around the green, made around the accent in use: its
+/// hue turned and its saturation and lightness scaled as the accent's
+/// differ from the green's (so the green itself becomes the accent and a
+/// pale green tint a pale tint of the accent).
+pub fn rehue(c: Color32) -> Color32 {
+    let acc = accent_rgb();
+    if acc == GREEN || theme() == Theme::HighContrast {
+        return c;
+    }
+    let (gh, gs, gl) = to_hsl(GREEN);
+    let (ah, as_, al) = to_hsl(acc);
+    let (h, s, l) = to_hsl([c.r(), c.g(), c.b()]);
+    let s = (s * as_ / gs.max(1e-3)).clamp(0.0, 1.0);
+    let l = if l <= gl {
+        l * al / gl.max(1e-3)
+    } else {
+        1.0 - (1.0 - l) * (1.0 - al) / (1.0 - gl).max(1e-3)
+    };
+    let [r, g, b] = from_hsl(h + (ah - gh), s, l.clamp(0.0, 1.0));
+    Color32::from_rgba_unmultiplied(r, g, b, c.a())
+}
+
+/// The tokens made around the green.
+const ACCENT_TOKENS: [&str; 5] = [
+    "tool_active",
+    "menu_hover",
+    "menu_hover_line",
+    "selected_row",
+    "selected_row_line",
+];
 
 /// The high contrast palettes made so far, by the colours they were made
 /// from: the system's colours can change while the editor runs (#1412),
@@ -446,7 +535,12 @@ macro_rules! tokens {
             $(
                 $(#[$doc])*
                 pub fn $name() -> Color32 {
-                    theme().palette().$name
+                    let c = theme().palette().$name;
+                    if ACCENT_TOKENS.contains(&stringify!($name)) {
+                        rehue(c)
+                    } else {
+                        c
+                    }
                 }
             )*
         }
@@ -511,8 +605,15 @@ tokens!(
 );
 
 impl Tokens {
-    /// Accents, the page and the selection stay the same in every theme.
+    /// The program's green: the accent is [`Tokens::accent`], the
+    /// workspace's colour made from it.
     pub const ACCENT: Color32 = Color32::from_rgb(0x1A, 0xA3, 0x50);
+
+    /// The accent in use: the workspace's colour (the green at first),
+    /// the same in every theme.
+    pub fn accent() -> Color32 {
+        rehue(Tokens::ACCENT)
+    }
     pub const PAGE: Color32 = Color32::WHITE;
     /// Screen offset of the page shadow, pixels.
     pub const PAGE_SHADOW_OFFSET: egui::Vec2 = egui::vec2(6.0, 4.0);
@@ -687,7 +788,7 @@ pub fn visuals() -> Visuals {
     v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, Color32::TRANSPARENT);
     v.widgets.inactive.fg_stroke.color = Tokens::text();
     v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, Tokens::control_border());
-    v.widgets.active.bg_stroke = egui::Stroke::new(1.0, Tokens::ACCENT);
+    v.widgets.active.bg_stroke = egui::Stroke::new(1.0, Tokens::accent());
     v.widgets.hovered.bg_fill = Tokens::tool_hover();
     v.widgets.hovered.weak_bg_fill = Tokens::tool_hover();
     v.widgets.hovered.fg_stroke.color = Tokens::text();
@@ -703,12 +804,12 @@ pub fn visuals() -> Visuals {
     v.selection.stroke.color = if theme().is_dark() {
         Color32::WHITE
     } else {
-        Tokens::ACCENT
+        Tokens::accent()
     };
     v.hyperlink_color = if theme().is_dark() {
-        Color32::from_rgb(0x4F, 0xD1, 0x7E)
+        rehue(Color32::from_rgb(0x4F, 0xD1, 0x7E))
     } else {
-        Tokens::ACCENT
+        Tokens::accent()
     };
     if theme() == Theme::HighContrast {
         // Text on the highlight in the desktop's highlight text colour,

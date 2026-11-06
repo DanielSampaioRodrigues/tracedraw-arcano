@@ -447,6 +447,8 @@ pub fn docker(app: &mut App, ui: &mut egui::Ui) {
         "local",
         &|a, fix| a.house_local_formatting(fix),
     );
+    crate::prelo_quebras::breaks_section(app, ui);
+    crate::prelo_quebras::openings_section(app, ui);
     // House standard: its values and Apply.
     ui.add_space(10.0);
     ui.strong(tr("prelo.standard"))

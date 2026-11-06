@@ -34,4 +34,23 @@ side tabs). The work is in `apps/tracedraw/src/ui/panel_stack.rs`.
 - The groups are kept with the panels (`DockerSetup::stacks`: the panels'
   keys, the one in front and the share of the height of each group).
 
+## Floating panels in one window (Arcano edition)
+
+- A panel dropped on the top of another floating window (its title or tab
+  strip and a little under it, the window shaded while over it) becomes a
+  tab of that window, in front (`FloatingDocker::host`; the window's own
+  panel keeps which one is in front, `front`). A panel from a column joins
+  the same way; a window of several panels dropped there brings them all.
+- A window of several panels shows a tab strip instead of a title: a click
+  brings a panel to the front, dragging a tab takes that panel out
+  (anywhere: a column, another window, a window of its own), dragging the
+  free part of the strip moves the window with all its panels (into a
+  column they all go there), the cross closes the panel in front, a right
+  click on a tab gives its places and Close.
+- When the window's own panel leaves, the next one takes the window where
+  it was. The windows and their tabs are kept with the panels
+  (`FloatingSetup::host` and `front`).
+
+Tests: `app::tests::floating_panels_join_one_window`.
+
 Tests: `ui::panel_stack::tests`.
