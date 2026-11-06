@@ -39,6 +39,7 @@ pub mod shaping;
 pub mod style;
 pub mod table;
 pub mod text_flow;
+pub mod text_styles;
 
 pub use bytes::SharedBytes;
 pub use color::Color;

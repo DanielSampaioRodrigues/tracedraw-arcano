@@ -1084,6 +1084,10 @@ pub struct TextSpan {
     /// object's alignment and paragraph style.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paragraph: Option<Box<crate::paragraphs::ParagraphFormat>>,
+    /// The character style these characters are linked to (see
+    /// [`crate::text_styles`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub char_style: Option<u32>,
 }
 
 /// Serde: leave a zero out of the file.
@@ -1112,6 +1116,7 @@ impl TextSpan {
             features: Vec::new(),
             variations: Vec::new(),
             paragraph: None,
+            char_style: None,
         }
     }
 
@@ -4340,6 +4345,9 @@ pub struct Document {
     pub master: Vec<Layer>,
     #[serde(default)]
     pub object_styles: Vec<ObjectStyle>,
+    /// Named paragraph and character styles (see [`crate::text_styles`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_styles: Vec<crate::text_styles::TextStyle>,
     /// The fill and outline new objects get.
     #[serde(default)]
     pub defaults: ObjectDefaults,
@@ -4641,6 +4649,7 @@ impl Document {
             ids,
             master: Vec::new(),
             object_styles: Vec::new(),
+            text_styles: Vec::new(),
             defaults: ObjectDefaults::default(),
             color_styles: Vec::new(),
             symbols: Vec::new(),

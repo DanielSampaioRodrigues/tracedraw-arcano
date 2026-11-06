@@ -938,7 +938,7 @@ mod tests {
                 app.assistente.linhas.push(Linha::Assistente("uma resposta **longa** ".repeat(30)));
             }
             let mut o = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-                let r = egui::Panel::right("dock").default_size(300.0).show_inside(ui, |ui| docker(&mut app, ui));
+                let r = egui::Panel::right("dock").default_size(300.0).show(ui, |ui| docker(&mut app, ui));
                 widths.push(r.response.rect.width());
             });
             o.textures_delta.clear();

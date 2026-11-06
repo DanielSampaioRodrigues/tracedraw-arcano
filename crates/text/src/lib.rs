@@ -5602,6 +5602,7 @@ mod tests {
             features: Vec::new(),
             variations: Vec::new(),
             paragraph: None,
+            char_style: None,
         }
     }
 

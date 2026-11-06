@@ -106,6 +106,13 @@ pub enum Command {
     SetObjectStyles {
         styles: Vec<ObjectStyle>,
     },
+    /// Replace the text styles (paragraph and character). Styles without
+    /// an id get a free one; text linked to a style takes it again, and
+    /// links to a style that is gone are dropped (see
+    /// [`crate::text_styles`]).
+    SetTextStyles {
+        styles: Vec<crate::text_styles::TextStyle>,
+    },
     /// Link objects to an object style and give them its parts; `None`
     /// breaks their links and leaves their properties as they are.
     LinkObjectStyle {
@@ -462,6 +469,7 @@ impl Command {
             Command::SetSelectionGroup { .. } => "Selection Group",
             Command::SetNodeTypes { .. } => "Node Type",
             Command::SetObjectStyles { .. } => "Object Styles",
+            Command::SetTextStyles { .. } => "Text Styles",
             Command::LinkObjectStyle { style: Some(_), .. } => "Apply Style",
             Command::LinkObjectStyle { style: None, .. } => "Break Link to Style",
             Command::SetObjectDefaults { .. } => "Default Properties",
@@ -645,6 +653,21 @@ impl Command {
                 }
                 doc.object_styles = styles;
                 restyle(doc);
+            }
+            Command::SetTextStyles { styles } => {
+                let mut styles = styles.clone();
+                let mut next = styles.iter().map(|s| s.id).max().unwrap_or(0);
+                for st in styles.iter_mut().filter(|s| s.id == 0) {
+                    next += 1;
+                    st.id = next;
+                }
+                doc.text_styles = styles;
+                let styles = doc.text_styles.clone();
+                for layer in doc.all_layers_mut() {
+                    for shape in &mut layer.shapes {
+                        crate::text_styles::refresh_shape(shape, &styles);
+                    }
+                }
             }
             Command::LinkObjectStyle { shapes, style } => {
                 let found = match style {

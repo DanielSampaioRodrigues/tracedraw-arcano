@@ -36,6 +36,10 @@ pub struct ParagraphFormat {
     pub drop_cap_lines: u32,
     pub tabs: Vec<f64>,
     pub hyphenate: bool,
+    /// The paragraph style the paragraph is linked to (see
+    /// [`crate::text_styles`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<u32>,
 }
 
 impl Default for ParagraphFormat {
@@ -64,6 +68,7 @@ impl ParagraphFormat {
             drop_cap_lines: p.drop_cap_lines,
             tabs: p.tabs.clone(),
             hyphenate: p.hyphenate,
+            style: None,
         }
     }
 
