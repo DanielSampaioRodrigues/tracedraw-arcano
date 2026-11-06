@@ -16,7 +16,6 @@ const PAD: f32 = 15.0;
 const CLOSE: f32 = 14.0;
 const FONT: f32 = 13.0;
 /// The line under the tabs.
-const LINE: Color32 = Color32::from_rgb(0x00, 0xAD, 0xFE);
 
 /// What a click on the strip asked for.
 enum Action {
@@ -64,7 +63,7 @@ pub fn document_tabs(app: &mut App, ui: &mut Ui) {
             Pos2::new(strip.right(), line_y + 1.0),
         ),
         0.0,
-        LINE,
+        crate::theme::Tokens::border(),
     );
     ui.allocate_space(Vec2::new(0.0, 1.0));
     match action {
@@ -89,6 +88,23 @@ pub fn document_tabs(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// A tab: rounded at the top, the one in front in the colour of the
+/// rulers under it with a short accent line along its foot.
+fn paint_tab(painter: &egui::Painter, rect: Rect, active: bool, hovered: bool) {
+    let r = Rect::from_min_max(Pos2::new(rect.left() + 1.0, rect.top() + 3.0), Pos2::new(rect.right() - 1.0, rect.bottom()));
+    if active || hovered {
+        let fill = if active { crate::theme::Tokens::ruler_bg() } else { tab_fill(false, true) };
+        painter.rect_filled(r, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, fill);
+    }
+    if active {
+        painter.rect_filled(
+            Rect::from_min_max(Pos2::new(r.left() + 8.0, r.bottom() - 2.0), Pos2::new(r.right() - 8.0, r.bottom())),
+            1.0,
+            crate::theme::Tokens::ACCENT,
+        );
+    }
+}
+
 fn tab_fill(active: bool, hovered: bool) -> Color32 {
     if active {
         crate::theme::Tokens::tab_active()
@@ -108,7 +124,7 @@ fn welcome_tab(ui: &mut Ui, active: bool, closed: bool) -> TabClick {
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(TAB_HEIGHT), Sense::hover());
         let resp = ui.interact(rect, egui::Id::new(WELCOME_TAB), Sense::click());
         let painter = ui.painter();
-        painter.rect_filled(rect, 0.0, tab_fill(active, resp.hovered()));
+        paint_tab(&painter, rect, active, resp.hovered());
         house(
             painter,
             rect.center() - Vec2::splat(icon / 2.0),
@@ -141,7 +157,7 @@ fn welcome_tab(ui: &mut Ui, active: bool, closed: bool) -> TabClick {
         .rich_tip(crate::ui::tips::keyed("tabs.close_welcome"));
     let close_hovered = close_resp.hovered();
     let painter = ui.painter();
-    painter.rect_filled(rect, 0.0, tab_fill(active, resp.hovered()));
+    paint_tab(&painter, rect, active, resp.hovered());
     house(
         painter,
         Pos2::new(rect.left() + 6.0, rect.top() + 5.0),
@@ -214,7 +230,7 @@ fn house(painter: &egui::Painter, o: Pos2, color: Color32) {
 fn new_tab(ui: &mut Ui) -> bool {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(TAB_HEIGHT), Sense::click());
     let painter = ui.painter();
-    painter.rect_filled(rect, 0.0, tab_fill(false, resp.hovered()));
+    paint_tab(&painter, rect, false, resp.hovered());
     let c = rect.center();
     let s = Stroke::new(2.0, crate::theme::Tokens::text_dim());
     painter.line_segment([c - Vec2::new(7.0, 0.0), c + Vec2::new(7.0, 0.0)], s);
@@ -245,7 +261,7 @@ fn doc_tab(ui: &mut Ui, i: usize, title: &str, active: bool) -> TabClick {
         .interact(close_rect, close_id, Sense::click())
         .rich_tip(crate::ui::tips::keyed("tabs.close_drawing"));
     let painter = ui.painter();
-    painter.rect_filled(rect, 0.0, tab_fill(active, resp.hovered()));
+    paint_tab(&painter, rect, active, resp.hovered());
     painter.galley(
         Pos2::new(
             rect.left() + PAD,

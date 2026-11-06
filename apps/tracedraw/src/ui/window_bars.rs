@@ -509,30 +509,17 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
             .interact(r, egui::Id::new(("page_tab", i)), Sense::click())
             .rich_tip(format!("{name}\n{}", tr("view.page_tab_desc")));
         let selected = i == current;
-        let slant = SLANT;
-        let shape = vec![
-            Pos2::new(r.min.x, r.min.y),
-            Pos2::new(r.max.x, r.min.y),
-            Pos2::new(r.max.x - slant, r.max.y),
-            Pos2::new(r.min.x + slant, r.max.y),
-        ];
+        let slant = 2.0;
+        // A rounded pill: the current page's in the selection tint.
         let fill = if selected {
-            crate::theme::Tokens::field()
+            Tokens::tool_active()
         } else if resp.hovered() {
             Tokens::tool_hover()
         } else {
             Tokens::panel_dark()
         };
         let p = ui.painter();
-        p.add(egui::epaint::PathShape::convex_polygon(
-            shape.clone(),
-            fill,
-            Stroke::NONE,
-        ));
-        let edge = Stroke::new(1.0, Tokens::text_dim());
-        p.line_segment([shape[0], shape[3]], edge);
-        p.line_segment([shape[3], shape[2]], edge);
-        p.line_segment([shape[2], shape[1]], edge);
+        p.rect_filled(r.shrink2(Vec2::new(1.0, 2.0)), 5.0, fill);
         p.galley(
             Pos2::new(
                 r.center().x - galley.size().x / 2.0,
