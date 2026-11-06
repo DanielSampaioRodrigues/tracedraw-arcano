@@ -41,7 +41,10 @@ The keys always align to the object selected last:
    - [[docker.distribute_selection]] (at first): the first and last objects
      stay where they are, and the others move between them;
    - [[docker.distribute_page]]: the objects spread across the whole page,
-     the first touching one side and the last the other.
+     the first touching one side and the last the other;
+   - [[docker.distribute_spacing]]: the first object stays, and each next
+     one goes the [[docker.distribute_gap]] you type after the one before
+     (5 mm at first). Two objects are enough.
 3. Click one of the eight buttons: left edges, centers, gaps or right edges
    across the page, or top edges, centers, gaps or bottom edges down it.
    Spreading the gaps gives equal space between the objects whatever their

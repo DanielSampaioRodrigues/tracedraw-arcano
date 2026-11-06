@@ -36,6 +36,7 @@ are spread:
 |---|---|---|
 | Selection extent (default) | 3 objects | the first and last objects (ordered by the edge or centre distributed; by centre for gaps) stay; the others move so the edges or centres are evenly spaced, or the gaps are equal between the first's low edge and the last's high edge |
 | Page extent | 2 objects | the first object's low edge (left, bottom) touches the page's, the last object's high edge (right, top) touches the page's; edges and centres in between are evenly spaced, or the gaps are equal across the page |
+| Fixed spacing | 2 objects | the first object stays; each next one goes the Distance field's length after the one before: between edges or centres, or as the gap between them. The distance is typed in the document's units, kept in millimetres (5 mm at first), and remembered with the docker's other choices |
 
 - With fewer objects the buttons are pale and a line says how many are
   needed.

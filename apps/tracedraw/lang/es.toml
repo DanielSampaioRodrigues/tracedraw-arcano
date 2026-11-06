@@ -7691,3 +7691,7 @@ section.style_upper_roman = "I, II, III" # mt
 section.style_lower_roman = "i, ii, iii" # mt
 section.style_upper_alpha = "A, B, C" # mt
 section.style_lower_alpha = "a, b, c" # mt
+docker.distribute_spacing = "Espaciado fijo" # mt
+docker.distribute_spacing_hint = "Seleccione dos o más objetos para espaciarlos." # mt
+docker.distribute_gap = "Distancia:" # mt
+docker.distribute_gap_desc = "La distancia entre los objetos: el hueco entre ellos con los botones de espaciado, o entre sus bordes o centros con los demás. El primer objeto no se mueve." # mt

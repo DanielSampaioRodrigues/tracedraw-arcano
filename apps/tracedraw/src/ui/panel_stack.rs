@@ -484,24 +484,11 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
         if resp.hovered() {
             ui.painter().rect_filled(r, 6.0, Tokens::tool_hover());
         }
-        match crate::ui::dockers::tab_icon(tab) {
-            Some(icon) => icon(
-                ui.painter(),
-                Rect::from_center_size(r.center(), vec2(18.0, 18.0)),
-            ),
-            None => {
-                // No picture: the name's first letters.
-                let name = tr(tab.key());
-                let short: String = name.chars().take(2).collect();
-                ui.painter().text(
-                    r.center(),
-                    egui::Align2::CENTER_CENTER,
-                    short,
-                    egui::FontId::proportional(12.0),
-                    Tokens::text(),
-                );
-            }
-        }
+        crate::ui::panel_icons::draw(
+            ui.painter(),
+            Rect::from_center_size(r.center(), vec2(18.0, 18.0)),
+            tab,
+        );
         if resp.drag_started_by(egui::PointerButton::Primary) {
             app.docker_drag = Some(DockerDrag {
                 tab,

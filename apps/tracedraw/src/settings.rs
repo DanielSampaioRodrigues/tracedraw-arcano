@@ -1576,6 +1576,8 @@ pub struct PanelPrefs {
     pub align_to: String,
     pub align_use_outline: bool,
     pub distribute_to: String,
+    /// The fixed distance (millimetres) for the Spacing extent.
+    pub distribute_gap: f64,
     /// The Shaping docker's operation (`Shaping::id`) and what Weld,
     /// Trim and Intersect leave: [source objects, target] each.
     pub shaping_op: String,
@@ -1590,6 +1592,7 @@ impl Default for PanelPrefs {
             align_to: "active".into(),
             align_use_outline: false,
             distribute_to: "selection".into(),
+            distribute_gap: 5.0,
             shaping_op: "weld".into(),
             shaping_leave: [[false, false], [true, false], [true, true]],
         }

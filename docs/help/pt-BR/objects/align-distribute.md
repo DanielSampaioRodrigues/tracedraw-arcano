@@ -43,7 +43,10 @@ As teclas sempre alinham pelo objeto selecionado por último:
    - [[docker.distribute_selection]] (de início): o primeiro e o último objeto
      ficam onde estão, e os outros se movem entre eles;
    - [[docker.distribute_page]]: os objetos se espalham pela página inteira, o
-     primeiro tocando um lado e o último o outro.
+     primeiro tocando um lado e o último o outro;
+   - [[docker.distribute_spacing]]: o primeiro objeto fica onde está, e cada
+     um dos outros vai para a [[docker.distribute_gap]] que você digitar depois
+     do anterior (5 mm de início). Bastam dois objetos.
 3. Clique em um dos oito botões: bordas esquerdas, centros, espaços ou bordas
    direitas na horizontal, ou bordas superiores, centros, espaços ou bordas
    inferiores na vertical. Distribuir os espaços dá a mesma distância entre os

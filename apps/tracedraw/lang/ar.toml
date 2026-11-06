@@ -7691,3 +7691,7 @@ section.style_upper_roman = "I, II, III" # mt
 section.style_lower_roman = "i, ii, iii" # mt
 section.style_upper_alpha = "A, B, C" # mt
 section.style_lower_alpha = "a, b, c" # mt
+docker.distribute_spacing = "تباعد ثابت" # mt
+docker.distribute_spacing_hint = "حدد كائنين أو أكثر لتباعدها." # mt
+docker.distribute_gap = "المسافة:" # mt
+docker.distribute_gap_desc = "المسافة بين الكائنات: الفراغ بينها مع أزرار التباعد، أو بين الحواف أو المراكز مع غيرها. يبقى الكائن الأول في مكانه." # mt

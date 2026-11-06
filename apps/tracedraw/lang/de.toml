@@ -7691,3 +7691,7 @@ section.style_upper_roman = "I, II, III" # mt
 section.style_lower_roman = "i, ii, iii" # mt
 section.style_upper_alpha = "A, B, C" # mt
 section.style_lower_alpha = "a, b, c" # mt
+docker.distribute_spacing = "Fester Abstand" # mt
+docker.distribute_spacing_hint = "Wählen Sie zwei oder mehr Objekte aus, um sie zu verteilen." # mt
+docker.distribute_gap = "Abstand:" # mt
+docker.distribute_gap_desc = "Der Abstand der Objekte: die Lücke zwischen ihnen bei den Abstandsschaltflächen, sonst zwischen Kanten oder Mitten. Das erste Objekt bleibt stehen." # mt

@@ -240,6 +240,14 @@ fn paint(p: &Painter, r: Rect, icon: Icon, color: Color32) {
                     pen.block(6.75, 6.0, 9.25, 10.0);
                     pen.block(12.0, 6.0, 14.5, 10.0);
                 }
+                // Two boxes and a measure between them.
+                DistributeTo::Spacing => {
+                    pen.block(1.0, 4.0, 5.0, 12.0);
+                    pen.block(11.0, 4.0, 15.0, 12.0);
+                    pen.line(6.0, 8.0, 10.0, 8.0, 1.0);
+                    pen.line(6.0, 6.0, 6.0, 10.0, 1.0);
+                    pen.line(10.0, 6.0, 10.0, 10.0, 1.0);
+                }
             }
         }
         Icon::Outline => {
@@ -406,6 +414,7 @@ pub fn align_distribute(app: &mut App, ui: &mut Ui) {
         for (to, key) in [
             (DistributeTo::Selection, "docker.distribute_selection"),
             (DistributeTo::Page, "docker.distribute_page"),
+            (DistributeTo::Spacing, "docker.distribute_spacing"),
         ] {
             if button(
                 ui,
@@ -425,8 +434,32 @@ pub fn align_distribute(app: &mut App, ui: &mut Ui) {
         tr(match app.distribute_to {
             DistributeTo::Selection => "docker.distribute_selection",
             DistributeTo::Page => "docker.distribute_page",
+            DistributeTo::Spacing => "docker.distribute_spacing",
         }),
     );
+    if app.distribute_to == DistributeTo::Spacing {
+        ui.horizontal(|ui| {
+            ui.label(tr("docker.distribute_gap"));
+            let units = app.units;
+            let mut v = units.world_from_mm(app.distribute_gap);
+            let resp = ui
+                .add_sized(
+                    [80.0, 22.0],
+                    crate::ui::field::NumField::new(&mut v)
+                        .range(0.0..=units.world_from_mm(10_000.0))
+                        .max_decimals(3)
+                        .speed(0.1),
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.distribute_gap",
+                    "docker.distribute_gap_desc",
+                ));
+            if resp.changed() && v.is_finite() {
+                app.distribute_gap = units.world_to_mm(v).clamp(0.0, 10_000.0);
+            }
+            ui.label(units.short());
+        });
+    }
     if !can {
         ui.add_space(2.0);
         dim(
@@ -434,6 +467,7 @@ pub fn align_distribute(app: &mut App, ui: &mut Ui) {
             tr(match app.distribute_to {
                 DistributeTo::Selection => "docker.distribute_hint",
                 DistributeTo::Page => "docker.distribute_page_hint",
+                DistributeTo::Spacing => "docker.distribute_spacing_hint",
             }),
         );
     }
@@ -489,6 +523,30 @@ mod tests {
         // Centres on a vertical line share x.
         app.align_with(Align::CenterV, AlignTo::ActiveObject);
         assert!(near(bounds(&app, a).center().x, bounds(&app, b).center().x));
+    }
+
+    #[test]
+    fn fixed_spacing_keeps_the_typed_distance() {
+        let mut app = App::headless();
+        let a = rect(&mut app, 10.0, 10.0, 20.0, 20.0);
+        let b = rect(&mut app, 25.0, 10.0, 45.0, 20.0);
+        let c = rect(&mut app, 90.0, 10.0, 95.0, 20.0);
+        app.select(vec![a, b, c]);
+        app.distribute_gap = 7.0;
+        // Two objects are enough.
+        assert!(app.can_distribute(DistributeTo::Spacing));
+        // The gaps: 7 mm between each, the first one staying put.
+        app.distribute_with(Distribute::SpacingH, DistributeTo::Spacing);
+        assert!(near(bounds(&app, a).x0, 10.0));
+        assert!(near(bounds(&app, b).x0, 27.0));
+        assert!(near(bounds(&app, c).x0, 54.0));
+        // The left edges: 7 mm apart.
+        app.distribute_with(Distribute::Left, DistributeTo::Spacing);
+        assert!(near(bounds(&app, b).x0, 17.0));
+        assert!(near(bounds(&app, c).x0, 24.0));
+        // One undo step.
+        app.undo();
+        assert!(near(bounds(&app, c).x0, 54.0));
     }
 
     #[test]

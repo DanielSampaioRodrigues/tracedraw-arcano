@@ -220,10 +220,8 @@ pub(crate) fn panels_menu(app: &mut App, resp: &egui::Response, place: DockerPla
             crate::ui::menus::body(ui, |ui| {
                 let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
                     let open = app.docker_open(tab);
-                    let pic = tab_icon(tab);
-                    let pic = pic
-                        .as_ref()
-                        .map(|f| f as &dyn Fn(&egui::Painter, egui::Rect));
+                    let pic = crate::ui::panel_icons::painter_for(tab);
+                    let pic = Some(&pic as &dyn Fn(&egui::Painter, egui::Rect));
                     if crate::ui::menus::check_pic(ui, tab.key(), open, pic) {
                         if open {
                             app.close_docker(tab);

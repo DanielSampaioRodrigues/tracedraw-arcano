@@ -7691,3 +7691,7 @@ section.style_upper_roman = "I, II, III" # mt
 section.style_lower_roman = "i, ii, iii" # mt
 section.style_upper_alpha = "A, B, C" # mt
 section.style_lower_alpha = "a, b, c" # mt
+docker.distribute_spacing = "Sabit aralık" # mt
+docker.distribute_spacing_hint = "Aralık vermek için iki veya daha fazla nesne seçin." # mt
+docker.distribute_gap = "Mesafe:" # mt
+docker.distribute_gap_desc = "Nesneler arasındaki mesafe: aralık düğmelerinde aradaki boşluk, diğerlerinde kenarlar veya merkezler arası. İlk nesne yerinde kalır." # mt

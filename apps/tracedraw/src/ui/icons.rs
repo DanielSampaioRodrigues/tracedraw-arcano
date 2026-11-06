@@ -58,12 +58,13 @@ pub fn tool_color(tool: Tool, plain: Color32) -> Color32 {
     }
 }
 
-/// The accent of the icons: the brand blue, lighter on dark panels.
+/// The accent of the icons: the green of the program's own icon, a
+/// shade deeper on light panels so that it keeps its contrast.
 pub fn accent() -> Color32 {
     if crate::theme::theme().is_dark() {
-        Color32::from_rgb(0x5C, 0xAE, 0xFF)
+        Color32::from_rgb(0x27, 0xCB, 0x5D)
     } else {
-        Color32::from_rgb(0x2F, 0x6F, 0xD0)
+        Color32::from_rgb(0x17, 0x9A, 0x44)
     }
 }
 

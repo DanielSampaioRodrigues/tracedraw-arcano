@@ -7691,3 +7691,7 @@ section.style_upper_roman = "I, II, III" # mt
 section.style_lower_roman = "i, ii, iii" # mt
 section.style_upper_alpha = "A, B, C" # mt
 section.style_lower_alpha = "a, b, c" # mt
+docker.distribute_spacing = "固定間距" # mt
+docker.distribute_spacing_hint = "選取兩個或更多物件以設定間距。" # mt
+docker.distribute_gap = "距離:" # mt
+docker.distribute_gap_desc = "物件之間的距離：間距按鈕為它們之間的空隙，其他按鈕為邊緣或中心之間。第一個物件保持不動。" # mt

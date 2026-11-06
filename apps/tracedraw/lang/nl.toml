@@ -7691,3 +7691,7 @@ section.style_upper_roman = "I, II, III" # mt
 section.style_lower_roman = "i, ii, iii" # mt
 section.style_upper_alpha = "A, B, C" # mt
 section.style_lower_alpha = "a, b, c" # mt
+docker.distribute_spacing = "Vaste afstand" # mt
+docker.distribute_spacing_hint = "Selecteer twee of meer objecten om ze te verdelen." # mt
+docker.distribute_gap = "Afstand:" # mt
+docker.distribute_gap_desc = "De afstand tussen de objecten: de tussenruimte met de afstandknoppen, of tussen randen of middens met de andere. Het eerste object blijft staan." # mt

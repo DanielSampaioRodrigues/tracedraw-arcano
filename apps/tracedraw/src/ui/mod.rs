@@ -80,6 +80,7 @@ pub mod package_dialog;
 pub mod palette;
 pub mod palette_bars;
 pub mod palette_manager;
+pub mod panel_icons;
 pub mod panel_stack;
 pub mod pdf_import_dialog;
 pub mod pdf_password;
