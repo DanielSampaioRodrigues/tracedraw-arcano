@@ -1051,8 +1051,8 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
         egui::Order::Tooltip,
         egui::Id::new("bar_drag_overlay"),
     ));
-    let fill = Color32::from_rgba_unmultiplied(0x1E, 0x78, 0xD7, 46);
-    let edge = Stroke::new(1.5, Color32::from_rgb(0x1E, 0x78, 0xD7));
+    let fill = Color32::from_rgba_unmultiplied(0x1A, 0xA3, 0x50, 46);
+    let edge = Stroke::new(1.5, Color32::from_rgb(0x1A, 0xA3, 0x50));
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
     // Over a row of toolbars: into it, or a row of its own between two.
     if let Some(t) = row_target(&app.bar_rows, drag.bar, p) {
@@ -2248,7 +2248,7 @@ mod tests {
             modifiers: egui::Modifiers::NONE,
         };
         let shapes = run(&mut app, vec![egui::Event::PointerMoved(at), press]);
-        let blue = Color32::from_rgb(0x1E, 0x78, 0xD7);
+        let blue = Color32::from_rgb(0x1A, 0xA3, 0x50);
         let band = shapes.iter().find_map(|s| match s {
             egui::Shape::Rect(r) if r.stroke.color == blue => Some(r.rect),
             _ => None,
@@ -2322,7 +2322,7 @@ mod tests {
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
-        let blue = Color32::from_rgb(0x1E, 0x78, 0xD7);
+        let blue = Color32::from_rgb(0x1A, 0xA3, 0x50);
         let band = |shapes: &[egui::Shape]| {
             shapes.iter().find_map(|s| match s {
                 egui::Shape::Rect(r) if r.stroke.color == blue => Some(r.rect),

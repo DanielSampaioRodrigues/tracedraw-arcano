@@ -754,8 +754,8 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
     painter.rect(
         zone,
         2.0,
-        Color32::from_rgba_unmultiplied(0x1E, 0x78, 0xD7, 46),
-        Stroke::new(1.5, Color32::from_rgb(0x1E, 0x78, 0xD7)),
+        Color32::from_rgba_unmultiplied(0x1A, 0xA3, 0x50, 46),
+        Stroke::new(1.5, Color32::from_rgb(0x1A, 0xA3, 0x50)),
         egui::StrokeKind::Inside,
     );
     if !down {

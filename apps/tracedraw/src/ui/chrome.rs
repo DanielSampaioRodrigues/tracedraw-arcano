@@ -21,7 +21,7 @@ pub const FIELD_H: f32 = 28.0;
 pub const ROW_PITCH: f32 = 33.0;
 /// The close button's width.
 const CLOSE_W: f32 = 46.0;
-pub const FIELD_FOCUS: Color32 = Color32::from_rgb(0x00, 0xAD, 0xFE);
+pub const FIELD_FOCUS: Color32 = Color32::from_rgb(0x2E, 0xBF, 0x67);
 /// The close button turns red under the pointer.
 const CLOSE_HOVER: Color32 = Color32::from_rgb(0xE8, 0x11, 0x23);
 const TITLE_FONT: f32 = 13.0;

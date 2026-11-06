@@ -16,7 +16,7 @@ use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 
 /// The blue of the boxes in the pictures.
-const BOX: Color32 = Color32::from_rgb(0x4A, 0x90, 0xD9);
+const BOX: Color32 = Color32::from_rgb(0x34, 0xB8, 0x64);
 const BOX_EDGE: Color32 = Color32::from_rgb(0x2F, 0x6D, 0xB5);
 
 /// A picture on a docker button.

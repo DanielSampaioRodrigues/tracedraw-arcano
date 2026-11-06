@@ -57,7 +57,7 @@ pub fn banner(app: &mut App, ui: &mut Ui, need: Need) -> bool {
             Color32::from_rgb(0x3D, 0x7A, 0xB8),
         )
     } else {
-        (Color32::from_rgb(0xE8, 0xF2, 0xFC), Tokens::ACCENT)
+        (Color32::from_rgb(0xE6, 0xF6, 0xEC), Tokens::ACCENT)
     };
     egui::Frame::new()
         .fill(fill)

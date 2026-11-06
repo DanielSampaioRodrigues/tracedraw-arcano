@@ -486,8 +486,8 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
         egui::Order::Tooltip,
         egui::Id::new("docker_drag_overlay"),
     ));
-    let fill = egui::Color32::from_rgba_unmultiplied(0x1E, 0x78, 0xD7, 46);
-    let edge = egui::Stroke::new(1.5, egui::Color32::from_rgb(0x1E, 0x78, 0xD7));
+    let fill = egui::Color32::from_rgba_unmultiplied(0x1A, 0xA3, 0x50, 46);
+    let edge = egui::Stroke::new(1.5, egui::Color32::from_rgb(0x1A, 0xA3, 0x50));
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
     // Over a column's tabs: a line between the two tabs it would go
     // between, and the release puts it there, so the tabs of a column

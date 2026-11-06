@@ -108,7 +108,7 @@ pub fn link_color() -> Color32 {
             let [r, g, b] = contrast_colors().hot_light;
             Color32::from_rgb(r, g, b)
         }
-        t if t.is_dark() => Color32::from_rgb(0x5C, 0xB2, 0xFF),
+        t if t.is_dark() => Color32::from_rgb(0x4F, 0xD1, 0x7E),
         _ => Tokens::ACCENT,
     }
 }
@@ -297,7 +297,7 @@ const LIGHT: Palette = Palette {
     page_shadow: rgb(0xCDCFD4),
     page_border: rgb(0xC6C8CD),
     ruler_bg: rgb(0xF7F7F8),
-    tool_active: rgb(0xD7E9FB),
+    tool_active: rgb(0xD5F2DF),
     tool_hover: rgb(0xE8E9EC),
     icon: rgb(0x2B2D31),
     button: rgb(0xEDEEF0),
@@ -306,14 +306,14 @@ const LIGHT: Palette = Palette {
     field: rgb(0xEEEFF1),
     menu: rgb(0xFFFFFF),
     menu_gutter: rgb(0xFFFFFF),
-    menu_hover: rgb(0xE5F1FC),
-    menu_hover_line: rgb(0xE5F1FC),
+    menu_hover: rgb(0xE3F5E9),
+    menu_hover_line: rgb(0xE3F5E9),
     menu_text_off: rgb(0xB6B8BD),
     title_bar: rgb(0xF7F7F8),
     window_border: rgb(0xD4D6DA),
-    selected_row: rgb(0xD7E9FB),
+    selected_row: rgb(0xD5F2DF),
     hovered_row: rgb(0xEEF0F3),
-    selected_row_line: rgb(0xD7E9FB),
+    selected_row_line: rgb(0xD5F2DF),
     control_fill: rgb(0xF1F2F4),
     tab_strip: rgb(0xEEEFF1),
     tab: rgb(0xEEEFF1),
@@ -335,7 +335,7 @@ const MEDIUM_LIGHT: Palette = Palette {
     page_shadow: rgb(0xB9BCC2),
     page_border: rgb(0xB3B6BC),
     ruler_bg: rgb(0xE6E7EA),
-    tool_active: rgb(0xC9DFF6),
+    tool_active: rgb(0xC6EBD3),
     tool_hover: rgb(0xD6D8DC),
     icon: rgb(0x2B2D31),
     button: rgb(0xDCDDE1),
@@ -344,14 +344,14 @@ const MEDIUM_LIGHT: Palette = Palette {
     field: rgb(0xD8DADE),
     menu: rgb(0xF4F5F6),
     menu_gutter: rgb(0xF4F5F6),
-    menu_hover: rgb(0xD9E9FA),
-    menu_hover_line: rgb(0xD9E9FA),
+    menu_hover: rgb(0xD6F0DF),
+    menu_hover_line: rgb(0xD6F0DF),
     menu_text_off: rgb(0xA5A8AE),
     title_bar: rgb(0xE6E7EA),
     window_border: rgb(0xC2C5CA),
-    selected_row: rgb(0xC9DFF6),
+    selected_row: rgb(0xC6EBD3),
     hovered_row: rgb(0xDDDFE3),
-    selected_row_line: rgb(0xC9DFF6),
+    selected_row_line: rgb(0xC6EBD3),
     control_fill: rgb(0xDEE0E3),
     tab_strip: rgb(0xDCDDE1),
     tab: rgb(0xDCDDE1),
@@ -373,7 +373,7 @@ const MEDIUM_DARK: Palette = Palette {
     page_shadow: rgb(0x232427),
     page_border: rgb(0x26272A),
     ruler_bg: rgb(0x333438),
-    tool_active: rgb(0x2F6296),
+    tool_active: rgb(0x2E7A4B),
     tool_hover: rgb(0x47484D),
     icon: rgb(0xE2E3E6),
     button: rgb(0x46474C),
@@ -382,14 +382,14 @@ const MEDIUM_DARK: Palette = Palette {
     field: rgb(0x2E2F33),
     menu: rgb(0x3A3B3F),
     menu_gutter: rgb(0x3A3B3F),
-    menu_hover: rgb(0x2F6296),
-    menu_hover_line: rgb(0x2F6296),
+    menu_hover: rgb(0x2E7A4B),
+    menu_hover_line: rgb(0x2E7A4B),
     menu_text_off: rgb(0x74767C),
     title_bar: rgb(0x333438),
     window_border: rgb(0x505157),
-    selected_row: rgb(0x2C5785),
+    selected_row: rgb(0x2A6A43),
     hovered_row: rgb(0x44454A),
-    selected_row_line: rgb(0x2C5785),
+    selected_row_line: rgb(0x2A6A43),
     control_fill: rgb(0x414246),
     tab_strip: rgb(0x2E2F33),
     tab: rgb(0x3A3B3F),
@@ -411,7 +411,7 @@ const DARK: Palette = Palette {
     page_shadow: rgb(0x101113),
     page_border: rgb(0x141518),
     ruler_bg: rgb(0x28292D),
-    tool_active: rgb(0x285A8C),
+    tool_active: rgb(0x276F44),
     tool_hover: rgb(0x3C3D42),
     icon: rgb(0xD9DADD),
     button: rgb(0x3C3D42),
@@ -420,14 +420,14 @@ const DARK: Palette = Palette {
     field: rgb(0x222327),
     menu: rgb(0x2E2F33),
     menu_gutter: rgb(0x2E2F33),
-    menu_hover: rgb(0x285A8C),
-    menu_hover_line: rgb(0x285A8C),
+    menu_hover: rgb(0x276F44),
+    menu_hover_line: rgb(0x276F44),
     menu_text_off: rgb(0x66686D),
     title_bar: rgb(0x28292D),
     window_border: rgb(0x48494F),
-    selected_row: rgb(0x24476B),
+    selected_row: rgb(0x22563A),
     hovered_row: rgb(0x37383D),
-    selected_row_line: rgb(0x24476B),
+    selected_row_line: rgb(0x22563A),
     control_fill: rgb(0x35363A),
     tab_strip: rgb(0x26272B),
     tab: rgb(0x2E2F33),
@@ -512,7 +512,7 @@ tokens!(
 
 impl Tokens {
     /// Accents, the page and the selection stay the same in every theme.
-    pub const ACCENT: Color32 = Color32::from_rgb(0x0C, 0x8C, 0xE9);
+    pub const ACCENT: Color32 = Color32::from_rgb(0x1A, 0xA3, 0x50);
     pub const PAGE: Color32 = Color32::WHITE;
     /// Screen offset of the page shadow, pixels.
     pub const PAGE_SHADOW_OFFSET: egui::Vec2 = egui::vec2(6.0, 4.0);
@@ -706,7 +706,7 @@ pub fn visuals() -> Visuals {
         Tokens::ACCENT
     };
     v.hyperlink_color = if theme().is_dark() {
-        Color32::from_rgb(0x5C, 0xB2, 0xFF)
+        Color32::from_rgb(0x4F, 0xD1, 0x7E)
     } else {
         Tokens::ACCENT
     };
