@@ -3,8 +3,8 @@
 //! [`crate::Engine`], which applies them and records history.
 
 use crate::document::{
-    ColorStyle, Guide, Layer, MasterScope, Metadata, ObjectStyle, Page, Shadow, Shape, ShapeKind,
-    Symbol,
+    ColorStyle, Guide, Layer, MasterPage, MasterScope, Metadata, ObjectStyle, Page, PageMaster,
+    Shadow, Shape, ShapeKind, Symbol, NO_MASTER,
 };
 use crate::geometry::{Affine, BezPath, PathEl, Size};
 use crate::id::{LayerId, PageId, ShapeId};
@@ -50,6 +50,26 @@ pub enum Command {
         layer: LayerId,
         scope: MasterScope,
     },
+    /// Arcano edition: a new master page (the next free id from 1) with
+    /// one master layer named `layer_name` for its objects.
+    NewMasterPage {
+        prefix: String,
+        name: String,
+        based_on: Option<u32>,
+        layer_name: String,
+    },
+    /// Arcano edition: change a master page's prefix, name or parent
+    /// (A included); a parent that would make a loop is refused.
+    SetMasterPage { master: MasterPage },
+    /// Arcano edition: delete a master page (not A) with its layers; its
+    /// pages are left with no master and the masters based on it take its
+    /// parent.
+    DeleteMasterPage { id: u32 },
+    /// Arcano edition: give `pages` the master `master` (0 for A,
+    /// [`NO_MASTER`] for none).
+    SetPageMaster { pages: Vec<PageId>, master: u32 },
+    /// Arcano edition: move a master layer to master page `master`.
+    SetLayerMasterPage { layer: LayerId, master: u32 },
     /// A master layer in front of the pages' own layers, or behind them
     /// (#1132).
     SetLayerInFront {
@@ -462,6 +482,11 @@ impl Command {
             Command::ResizePage { .. } => "Resize Page",
             Command::AddLayer { .. } => "New Layer",
             Command::AddMasterLayer { .. } => "New Master Layer",
+            Command::NewMasterPage { .. } => "New Master Page",
+            Command::SetMasterPage { .. } => "Master Page Options",
+            Command::DeleteMasterPage { .. } => "Delete Master Page",
+            Command::SetPageMaster { .. } => "Apply Master Page",
+            Command::SetLayerMasterPage { .. } => "Master Layer Page",
             Command::SetLayerScope { .. } => "Master Layer Scope",
             Command::SetLayerInFront { .. } => "Master Layer Order",
             Command::SetLayerPrintable { .. } => "Layer Printable",
@@ -591,6 +616,82 @@ impl Command {
             }
             Command::SetLayerScope { layer, scope } => {
                 doc.layer_mut(*layer)?.scope = *scope;
+            }
+            Command::NewMasterPage {
+                prefix,
+                name,
+                based_on,
+                layer_name,
+            } => {
+                if let Some(p) = based_on {
+                    doc.master_page(*p).ok_or(Error::MasterNotFound(*p))?;
+                }
+                let id = doc.master_pages.iter().map(|m| m.id).max().unwrap_or(0) + 1;
+                doc.master_pages.push(MasterPage {
+                    id,
+                    prefix: prefix.clone(),
+                    name: name.clone(),
+                    based_on: *based_on,
+                });
+                let layer = doc.ids_mut().layer();
+                let mut l = Layer::master(layer, layer_name.clone(), MasterScope::All);
+                l.master_page = id;
+                doc.master.push(l);
+            }
+            Command::SetMasterPage { master } => {
+                doc.master_page(master.id)
+                    .ok_or(Error::MasterNotFound(master.id))?;
+                if let Some(p) = master.based_on {
+                    doc.master_page(p).ok_or(Error::MasterNotFound(p))?;
+                }
+                if doc.master_would_loop(master.id, master.based_on) {
+                    return Err(Error::MasterLoop);
+                }
+                match doc.master_pages.iter_mut().find(|m| m.id == master.id) {
+                    Some(m) => *m = master.clone(),
+                    None => doc.master_pages.insert(0, master.clone()),
+                }
+            }
+            Command::DeleteMasterPage { id } => {
+                let gone = doc
+                    .master_pages
+                    .iter()
+                    .position(|m| m.id == *id && *id != 0)
+                    .ok_or(Error::MasterNotFound(*id))?;
+                let parent = doc.master_pages.remove(gone).based_on;
+                doc.master.retain(|l| l.master_page != *id);
+                for m in doc.master_pages.iter_mut().filter(|m| m.based_on == Some(*id)) {
+                    m.based_on = parent;
+                }
+                for p in doc.page_masters.iter_mut().filter(|p| p.master == *id) {
+                    p.master = NO_MASTER;
+                }
+            }
+            Command::SetPageMaster { pages, master } => {
+                if *master != NO_MASTER {
+                    doc.master_page(*master)
+                        .ok_or(Error::MasterNotFound(*master))?;
+                }
+                for page in pages {
+                    doc.page(*page)?;
+                }
+                doc.page_masters.retain(|p| !pages.contains(&p.page));
+                if *master != 0 {
+                    doc.page_masters.extend(pages.iter().map(|page| PageMaster {
+                        page: *page,
+                        master: *master,
+                    }));
+                }
+            }
+            Command::SetLayerMasterPage { layer, master } => {
+                doc.master_page(*master)
+                    .ok_or(Error::MasterNotFound(*master))?;
+                let l = doc
+                    .master
+                    .iter_mut()
+                    .find(|l| l.id == *layer)
+                    .ok_or(Error::LayerNotFound(*layer))?;
+                l.master_page = *master;
             }
             Command::SetLayerInFront { layer, in_front } => {
                 let (_, master) = layer_list_mut(doc, *layer)?;
@@ -3525,6 +3626,92 @@ mod tests {
         }
         .apply(&mut doc)
         .is_err());
+    }
+
+    #[test]
+    fn named_master_pages_draw_on_their_pages_with_their_parents_behind() {
+        let mut doc = Document::new("t", Size::new(100.0, 100.0));
+        Command::AddPage {
+            name: None,
+            size: Size::new(100.0, 100.0),
+            layer: None,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let pages: Vec<PageId> = doc.pages.iter().map(|p| p.id).collect();
+        // A's layer, as every drawing had it.
+        Command::AddMasterLayer {
+            name: "A".into(),
+            scope: MasterScope::All,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let a = doc.master[0].id;
+        // B, based on A.
+        Command::NewMasterPage {
+            prefix: "B".into(),
+            name: "Abertura".into(),
+            based_on: Some(0),
+            layer_name: "B".into(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let b = doc.master[1].id;
+        assert_eq!(doc.master[1].master_page, 1);
+        let masters = doc.masters();
+        assert_eq!(masters.len(), 2);
+        assert_eq!((masters[0].id, masters[1].id), (0, 1));
+        let ids = |doc: &Document, p: PageId| -> Vec<LayerId> {
+            doc.layers_for_page(p)
+                .unwrap()
+                .iter()
+                .map(|l| l.id)
+                .filter(|l| [a, b].contains(l))
+                .collect()
+        };
+        // Every page has A at first.
+        assert_eq!(ids(&doc, pages[0]), vec![a]);
+        // B on page 2: A's objects behind B's.
+        Command::SetPageMaster {
+            pages: vec![pages[1]],
+            master: 1,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(doc.master_of(pages[1]), 1);
+        assert_eq!(ids(&doc, pages[1]), vec![a, b]);
+        assert_eq!(ids(&doc, pages[0]), vec![a]);
+        // No master: nothing of either.
+        Command::SetPageMaster {
+            pages: vec![pages[0]],
+            master: NO_MASTER,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert!(ids(&doc, pages[0]).is_empty());
+        // A based on B would be a loop.
+        let mut a_rec = doc.master_page(0).unwrap();
+        a_rec.based_on = Some(1);
+        assert!(matches!(
+            Command::SetMasterPage { master: a_rec }.apply(&mut doc),
+            Err(Error::MasterLoop)
+        ));
+        // Renaming A keeps it first.
+        let mut a_rec = doc.master_page(0).unwrap();
+        a_rec.name = "Texto".into();
+        Command::SetMasterPage { master: a_rec }.apply(&mut doc).unwrap();
+        assert_eq!(doc.masters()[0].name, "Texto");
+        assert_eq!(doc.masters().len(), 2);
+        // Deleting B takes its layer; its page is left with no master.
+        Command::DeleteMasterPage { id: 1 }.apply(&mut doc).unwrap();
+        assert_eq!(doc.master.len(), 1);
+        assert_eq!(doc.master_of(pages[1]), NO_MASTER);
+        assert!(Command::DeleteMasterPage { id: 0 }.apply(&mut doc).is_err());
+        // Saved and opened again.
+        let back: Document =
+            serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(back.masters(), doc.masters());
+        assert_eq!(back.page_masters, doc.page_masters);
     }
 
     #[test]

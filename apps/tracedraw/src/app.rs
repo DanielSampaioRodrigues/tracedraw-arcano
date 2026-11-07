@@ -8777,7 +8777,14 @@ impl App {
 
     pub fn add_page(&mut self) {
         let size = self.page_size();
+        // Arcano edition: the new page keeps the master of the last one.
+        let from = self.doc().pages.last().map(|p| p.id);
+        let mark = self.engine.begin_group();
         self.run(self.localized_page(size));
+        if let (Some(from), Some(new)) = (from, self.doc().pages.last().map(|p| p.id)) {
+            self.inherit_master(new, from);
+        }
+        self.engine.end_group(mark, "Insert Page");
         if let Some(p) = self.doc().pages.last() {
             self.page = p.id;
         }
@@ -8790,14 +8797,20 @@ impl App {
     pub fn insert_page(&mut self, after: bool) {
         let idx = self.page_index();
         let size = self.page_size();
+        let from = self.page;
+        let mark = self.engine.begin_group();
         self.run(self.localized_page(size));
         let Some(new) = self.doc().pages.last().map(|p| p.id) else {
+            self.engine.end_group(mark, "Insert Page");
             return;
         };
         let to = if after { idx + 1 } else { idx };
         if to + 1 < self.doc().pages.len() {
             self.run(Command::MovePage { page: new, to });
         }
+        // Arcano edition: the new page keeps the current page's master.
+        self.inherit_master(new, from);
+        self.engine.end_group(mark, "Insert Page");
         self.page = new;
         self.selection.clear();
         self.fit_pending = true;
@@ -8808,12 +8821,18 @@ impl App {
     pub fn duplicate_page(&mut self, before: bool, contents: bool) {
         let page = self.page;
         let old: Vec<_> = self.doc().pages.iter().map(|p| p.id).collect();
+        let mark = self.engine.begin_group();
         self.run(Command::DuplicatePage {
             page,
             before,
             contents,
         });
         let new = self.doc().pages.iter().position(|p| !old.contains(&p.id));
+        // Arcano edition: the copy keeps the page's master.
+        if let Some(copy) = new.and_then(|i| self.doc().pages.get(i)).map(|p| p.id) {
+            self.inherit_master(copy, page);
+        }
+        self.engine.end_group(mark, "Duplicate Page");
         if let Some(i) = new {
             self.goto_page(i);
         }

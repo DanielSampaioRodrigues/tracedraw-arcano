@@ -52,7 +52,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::ObjectData => object_data(app, ui),
         DockerTab::Links => links(app, ui),
         DockerTab::Symbols => symbols(app, ui),
-        DockerTab::Pages => pages(app, ui),
+        DockerTab::Pages => crate::ui::pages_panel::pages_panel(app, ui),
         DockerTab::Guidelines => guidelines(app, ui),
         DockerTab::Fonts => fonts(app, ui),
         DockerTab::FontSampler => crate::ui::font_sampler::font_sampler(app, ui),
@@ -2452,89 +2452,6 @@ fn symbols(app: &mut App, ui: &mut Ui) {
     }
     if app.doc().symbols.is_empty() {
         dim(ui, tr("docker.symbols_hint"));
-    }
-}
-
-fn pages(app: &mut App, ui: &mut Ui) {
-    let pages: Vec<(tracedraw_core::PageId, String, tracedraw_core::Size)> = app
-        .doc()
-        .pages
-        .iter()
-        .map(|p| (p.id, p.name.clone(), p.size))
-        .collect();
-    let n = pages.len();
-    ui.horizontal(|ui| {
-        if ui
-            .button(tr("menu.layout.insert_page"))
-            .rich_tip(crate::ui::tips::keyed("menu.layout.insert_page"))
-            .clicked()
-        {
-            app.add_page();
-        }
-        if ui
-            .add_enabled(n > 1, egui::Button::new(tr("menu.layout.delete_page")))
-            .rich_tip(crate::ui::tips::keyed("menu.layout.delete_page"))
-            .rich_disabled_tip(crate::ui::tips::keyed("menu.layout.delete_page"))
-            .clicked()
-        {
-            app.ask_delete_page();
-        }
-        if ui
-            .button(tr("menu.layout.duplicate_page"))
-            .rich_tip(crate::ui::tips::keyed("menu.layout.duplicate_page"))
-            .clicked()
-        {
-            app.dialog = crate::ui::dialogs::Dialog::duplicate_page();
-        }
-        if ui
-            .selectable_label(app.page_sorter, tr("menu.view.page_sorter"))
-            .rich_tip(crate::ui::tips::keyed("menu.view.page_sorter"))
-            .clicked()
-        {
-            app.page_sorter = !app.page_sorter;
-        }
-    });
-    for (i, (id, name, size)) in pages.iter().enumerate() {
-        ui.horizontal(|ui| {
-            let active = *id == app.page;
-            if ui
-                .selectable_label(active, format!("{}. {name}", i + 1))
-                .rich_tip_with(|| format!("{name}\n{}", tr("docker.page_list_desc")))
-                .clicked()
-            {
-                app.goto_page(i);
-            }
-            dim(
-                ui,
-                format!(
-                    "{} x {}",
-                    app.units.from_mm(size.width).round(),
-                    app.units.from_mm(size.height).round()
-                ),
-            );
-            if i > 0
-                && ui
-                    .small_button("\u{23F6}")
-                    .rich_tip(crate::ui::tips::keyed("docker.page_move_up"))
-                    .clicked()
-            {
-                app.run(Command::MovePage {
-                    page: *id,
-                    to: i - 1,
-                });
-            }
-            if i + 1 < n
-                && ui
-                    .small_button("\u{23F7}")
-                    .rich_tip(crate::ui::tips::keyed("docker.page_move_down"))
-                    .clicked()
-            {
-                app.run(Command::MovePage {
-                    page: *id,
-                    to: i + 1,
-                });
-            }
-        });
     }
 }
 

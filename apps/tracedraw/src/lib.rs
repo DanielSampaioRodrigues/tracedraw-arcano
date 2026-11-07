@@ -151,6 +151,8 @@ mod preflight;
 mod prefs;
 mod prelo_casa;
 mod prelo_quebras;
+mod masters;
+mod page_thumbs;
 mod print_merge;
 mod printers;
 mod qr;

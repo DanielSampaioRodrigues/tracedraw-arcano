@@ -305,6 +305,10 @@ pub struct Settings {
     /// the drawing area's top left, in points (none: under the selection).
     #[serde(default)]
     pub context_bar_at: Option<[f32; 2]>,
+    /// Arcano edition: the size of the Pages panel's miniatures (0 small,
+    /// 1 medium, 2 large).
+    #[serde(default = "default_one_u8")]
+    pub pages_thumb: u8,
     /// Customization > Appearance > Theme: "light", "medium_light",
     /// "medium_dark" or "dark".
     #[serde(default)]
@@ -1860,6 +1864,7 @@ impl Default for Settings {
             stacked_panels: !cfg!(test),
             context_bar: !cfg!(test),
             context_bar_at: None,
+            pages_thumb: 1,
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             bar_items: Default::default(),
@@ -2976,4 +2981,8 @@ mod tests {
         assert_eq!(s.ai, crate::ai::AiPrefs::default());
         assert!(s.ai_image.is_none());
     }
+}
+
+fn default_one_u8() -> u8 {
+    1
 }

@@ -48,7 +48,8 @@ pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
     split_spans_at, Baseline, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners,
     DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc,
-    FollowBlack, FontVariation, Layer, LeadingUnit, MasterScope, Metadata, ObjectDefaults,
+    FollowBlack, FontVariation, Layer, LeadingUnit, MasterPage, MasterScope, Metadata, ObjectDefaults,
+    PageMaster, NO_MASTER,
     ObjectStyle, Page, ParagraphStyle, PathTextOrientation, PathTextVertical, QrCode, QrKind,
     Shadow, Shape, ShapeKind, StyleParts, Symbol, TabAlign, TabDetail, Table, TableCell,
     TextAlign, TextOnPath,
@@ -94,6 +95,10 @@ pub enum Error {
     NotClipFrame(ShapeId),
     #[error("a B-spline needs two finite control points or more")]
     BadSpline,
+    #[error("master page not found: {0}")]
+    MasterNotFound(u32),
+    #[error("a master page cannot be based on itself, directly or not")]
+    MasterLoop,
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }

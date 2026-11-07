@@ -3561,6 +3561,59 @@ pub struct Layer {
     /// instead of behind them (#1132).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub in_front: bool,
+    /// For master layers (Arcano edition): the master page they belong
+    /// to ([`MasterPage::id`]; 0 is A, the master every page has unless
+    /// told otherwise).
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub master_page: u32,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
+}
+
+/// A page with no master page at all ([`PageMaster::master`]).
+pub const NO_MASTER: u32 = u32::MAX;
+
+/// Arcano edition: a named master page ("A-Master", "B-Chapter
+/// opening"). Its objects are on the master layers whose
+/// [`Layer::master_page`] is its id; a page shows the layers of its
+/// master and of the masters that one is based on, the parents' behind.
+/// Master layers scoped to odd or even pages are its right-hand and
+/// left-hand pages.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MasterPage {
+    /// 0 is A; the others are numbered from 1.
+    pub id: u32,
+    /// The letters shown on the pages it is applied to ("A", "B").
+    pub prefix: String,
+    /// Its name after the prefix ("Master", "Chapter opening"); empty for
+    /// the interface's own name of A.
+    #[serde(default)]
+    pub name: String,
+    /// The master it takes its objects from too, drawn behind its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub based_on: Option<u32>,
+}
+
+impl MasterPage {
+    /// A, as a drawing without master pages of its own has it.
+    pub fn a() -> Self {
+        MasterPage {
+            id: 0,
+            prefix: "A".into(),
+            name: String::new(),
+            based_on: None,
+        }
+    }
+}
+
+/// Arcano edition: a page whose master is not A.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageMaster {
+    pub page: PageId,
+    /// The master's id, or [`NO_MASTER`].
+    pub master: u32,
 }
 
 /// Which pages a master layer appears on.
@@ -4209,6 +4262,7 @@ impl Layer {
             shapes: Vec::new(),
             scope: MasterScope::All,
             in_front: false,
+            master_page: 0,
         }
     }
 }
@@ -4541,6 +4595,13 @@ pub struct Document {
     /// Sections with their own page numbering and title (see [`Section`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sections: Vec<Section>,
+    /// Arcano edition: the master pages besides an unnamed A (see
+    /// [`MasterPage`]); A is listed here only once renamed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub master_pages: Vec<MasterPage>,
+    /// Arcano edition: the pages whose master is not A.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub page_masters: Vec<PageMaster>,
     /// The fill and outline new objects get.
     #[serde(default)]
     pub defaults: ObjectDefaults,
@@ -4844,6 +4905,8 @@ impl Document {
             object_styles: Vec::new(),
             text_styles: Vec::new(),
             sections: Vec::new(),
+            master_pages: Vec::new(),
+            page_masters: Vec::new(),
             defaults: ObjectDefaults::default(),
             color_styles: Vec::new(),
             symbols: Vec::new(),
@@ -4999,15 +5062,79 @@ impl Document {
     /// and selections take objects from.
     pub fn layers_for_page(&self, page: PageId) -> Result<Vec<&Layer>> {
         let idx = self.page_index(page)?;
+        // The page's master and the masters it is based on, parents first
+        // (behind).
+        let chain = self.master_chain(self.master_of(page));
         let masters = |front: bool| {
-            self.master
+            let mut ls: Vec<&Layer> = self
+                .master
                 .iter()
-                .filter(move |l| l.scope.applies(idx) && l.in_front == front)
+                .filter(|l| l.scope.applies(idx) && l.in_front == front)
+                .filter(|l| chain.contains(&l.master_page))
+                .collect();
+            ls.sort_by_key(|l| chain.iter().position(|m| *m == l.master_page));
+            ls
         };
-        let mut out: Vec<&Layer> = masters(false).collect();
+        let mut out: Vec<&Layer> = masters(false);
         out.extend(self.pages[idx].layers.iter());
         out.extend(masters(true));
         Ok(out)
+    }
+
+    /// The master pages, A first (named or not), then the others in the
+    /// order they were made.
+    pub fn masters(&self) -> Vec<MasterPage> {
+        let mut out = Vec::with_capacity(self.master_pages.len() + 1);
+        if !self.master_pages.iter().any(|m| m.id == 0) {
+            out.push(MasterPage::a());
+        }
+        out.extend(self.master_pages.iter().cloned());
+        out.sort_by_key(|m| m.id != 0);
+        out
+    }
+
+    /// The master page `id` (A even when not listed).
+    pub fn master_page(&self, id: u32) -> Option<MasterPage> {
+        self.masters().into_iter().find(|m| m.id == id)
+    }
+
+    /// The master of `page`: A unless told otherwise, [`NO_MASTER`] for
+    /// none or for a master that is gone.
+    pub fn master_of(&self, page: PageId) -> u32 {
+        let m = self
+            .page_masters
+            .iter()
+            .find(|p| p.page == page)
+            .map_or(0, |p| p.master);
+        if m == 0 || m == NO_MASTER || self.master_pages.iter().any(|x| x.id == m) {
+            m
+        } else {
+            NO_MASTER
+        }
+    }
+
+    /// `id` and the masters it is based on, the farthest parent first;
+    /// empty for [`NO_MASTER`]. A loop (from a hand-edited file) ends it.
+    pub fn master_chain(&self, id: u32) -> Vec<u32> {
+        let mut chain = Vec::new();
+        let mut at = Some(id);
+        while let Some(m) = at {
+            if m == NO_MASTER || chain.contains(&m) {
+                break;
+            }
+            let Some(rec) = self.master_page(m) else {
+                break;
+            };
+            chain.push(m);
+            at = rec.based_on;
+        }
+        chain.reverse();
+        chain
+    }
+
+    /// Whether basing master `id` on `parent` would make a loop.
+    pub fn master_would_loop(&self, id: u32, parent: Option<u32>) -> bool {
+        parent.is_some_and(|p| p == id || self.master_chain(p).contains(&id))
     }
 
     /// [`Document::layers_for_page`] as drawn, printed and exported: a

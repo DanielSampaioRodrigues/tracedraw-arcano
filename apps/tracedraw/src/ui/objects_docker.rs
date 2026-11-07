@@ -599,12 +599,15 @@ pub fn objects(app: &mut App, ui: &mut Ui) {
         .0;
         if master_open {
             let count = doc.master.len();
+            // Arcano edition: the layers of the page's master and of the
+            // masters it is based on show on it; the others not.
+            let chain = doc.master_chain(doc.master_of(app.page));
             for (i, layer) in doc.master.iter().enumerate().rev() {
                 let place = Place {
                     index: i,
                     count,
                     master: true,
-                    shown: layer.scope.applies(index),
+                    shown: layer.scope.applies(index) && chain.contains(&layer.master_page),
                     page: None,
                 };
                 layer_rows(app, ui, layer, place, active, &mut act);
@@ -1334,6 +1337,17 @@ pub fn new_master_layer(app: &mut App, scope: MasterScope) {
                 layer,
                 in_front: true,
             }) {
+                app.status = e.to_string();
+            }
+        }
+    }    // Arcano edition: a layer of the current page's master page.
+    let master = app.doc().master_of(app.page);
+    if master != 0 && master != tracedraw_core::NO_MASTER {
+        if let Some(layer) = app.picked_layer {
+            if let Err(e) = app
+                .engine
+                .amend(&Command::SetLayerMasterPage { layer, master })
+            {
                 app.status = e.to_string();
             }
         }
