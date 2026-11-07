@@ -157,7 +157,7 @@ pub fn pages_panel(app: &mut App, ui: &mut Ui) {
     let facing = app.doc().metadata.facing_pages;
     masters_part(app, ui, &mut st, facing);
     ui.separator();
-    let footer_h = 30.0;
+    let footer_h = 38.0;
     let avail = (ui.available_height() - footer_h).max(80.0);
     egui::ScrollArea::vertical()
         .id_salt("arcano_pages_scroll")
@@ -640,8 +640,9 @@ fn footer(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
         };
         let picked = picked_indices(app, st);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let menu = ui.menu_button("\u{2026}", |ui| page_menu(app, ui, st, &picked, facing));
-            menu.response.rich_tip(crate::ui::tips::pair("pages.menu", "pages.menu_desc"));
+            let more = icon_button(ui, true, paint_dots)
+                .rich_tip(crate::ui::tips::pair("pages.menu", "pages.menu_desc"));
+            egui::Popup::menu(&more).show(|ui| page_menu(app, ui, st, &picked, facing));
             let del = icon_button(ui, picked.len() < n, paint_trash)
                 .rich_tip(crate::ui::tips::pair("pages.delete", "pages.delete_desc"));
             if del.clicked() {
@@ -672,15 +673,21 @@ fn icon_button(ui: &mut Ui, enabled: bool, paint: fn(&egui::Painter, Rect, Color
     resp
 }
 
-/// A page with a plus at its corner.
+/// A page with a plus beside its corner.
 fn paint_new_page(p: &egui::Painter, r: Rect, c: Color32) {
     let s = Stroke::new(1.2, c);
-    let page = Rect::from_min_max(r.min, pos2(r.right() - 3.0, r.bottom()));
+    let page = Rect::from_min_max(r.min, pos2(r.left() + r.width() * 0.62, r.bottom() - 2.0));
     p.rect_stroke(page, 0.0, s, egui::StrokeKind::Inside);
-    let at = pos2(r.right() - 3.0, r.bottom() - 3.0);
-    p.circle_filled(at, 4.0, Tokens::panel());
-    p.line_segment([at - vec2(3.0, 0.0), at + vec2(3.0, 0.0)], Stroke::new(1.5, c));
-    p.line_segment([at - vec2(0.0, 3.0), at + vec2(0.0, 3.0)], Stroke::new(1.5, c));
+    let at = pos2(r.right() - 3.0, r.bottom() - 3.5);
+    p.line_segment([at - vec2(3.5, 0.0), at + vec2(3.5, 0.0)], Stroke::new(1.6, c));
+    p.line_segment([at - vec2(0.0, 3.5), at + vec2(0.0, 3.5)], Stroke::new(1.6, c));
+}
+
+/// Three dots: the panel's menu.
+fn paint_dots(p: &egui::Painter, r: Rect, c: Color32) {
+    for k in [-4.0, 0.0, 4.0] {
+        p.circle_filled(r.center() + vec2(k, 0.0), 1.4, c);
+    }
 }
 
 /// A bin.
