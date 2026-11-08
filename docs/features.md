@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 190, partial 7 (`.cdr` content coverage; CMX import; print preview; data merge; colour styles; Find and Replace; the Android app), missing 1 (system windows), not applicable 4.
+Counts: works 191, partial 7 (`.cdr` content coverage; CMX import; print preview; data merge; colour styles; Find and Replace; the Android app), missing 1 (system windows), not applicable 4.
 
 ## 1. Selection and navigation
 
@@ -104,6 +104,7 @@ Counts: works 190, partial 7 (`.cdr` content coverage; CMX import; print preview
 | Character horizontal and vertical offsets and angle; character and word spacing; Shape tool character nodes (drag to shift) and interactive horizontal and vertical spacing arrows; Straighten Text and Align to Baseline for characters | works (see `behavior/text.md`); `.cdr` character offsets are not read yet |
 | Hyphenation (Liang patterns en/pt, heuristic elsewhere) and Custom Optional Hyphens (words hyphenated by hand win; turned on for typed, pasted and imported text holding them); Chinese and Japanese text breaks between characters, and closing punctuation never starts a line nor an opening bracket ends one | works |
 | Balance lines: a paragraph set flush left, centred or flush right breaks at the narrowest measure that keeps its lines, so its lines end near the same place (per paragraph and in paragraph styles; justified text and one-line paragraphs are left as they are) | works (see `behavior/text.md`, Balance lines) |
+| The property bar's text rows: with the Text tool, the caret in a text or a text selected the bar takes two rows, the characters above (font, character style, size, axes, bold, italic, underline, tracking, line spacing, word and letter spacing, character offsets and angle) and the paragraph with its frame below (six alignments, vertical text, paragraph style, indents and spaces, columns, hyphenation, balance lines, widows, orphans, keep with next, Bullets, Tabs and Drop Cap) | works (see `behavior/text.md`, Property bar) |
 | Text on path (offset, distance with tick snapping, mirrors that keep the letters in place; on a closed path centred where it was clicked), straighten text | works (see `behavior/text.md`) |
 | Fit text to frame; wrap paragraph text around objects above it on the page (contour or square; left, right, both sides, above and below; text wrap offset); baselines on the page's baseline grid (see `behavior/text-wrap.md`) | works |
 | Insert Placeholder Text: filler that fills each selected paragraph frame (see `behavior/text.md`) | works |

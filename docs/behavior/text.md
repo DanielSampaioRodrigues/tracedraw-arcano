@@ -24,13 +24,20 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 ## Property bar
 
 Text tool, and the Pick tool with only text selected (after the object
-fields): the font list (below), the size in points (a field and an arrow
+fields): the bar takes two rows. The first row, the characters: the font
+list (below), the character style, the size in points (a field and an arrow
 dropping 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48,
-60, 72, 96, 144 and 288), Bold, Italic, Underline, the alignment (a
-button with the alignment's picture dropping Left, Center, Right and
-Full justify), Bullets and Drop Cap (for paragraph text; they open their
-dialogs), Text Properties (the Text docker, Ctrl+T) and Edit Text
-(Ctrl+Shift+T). Each change applies to the
+60, 72, 96, 144 and 288), the variable font's axes, Bold, Italic,
+Underline, tracking, the line spacing in points, the word and letter
+spacing, the character offsets and angle, Text Properties (the Text docker,
+Ctrl+T) and Edit Text. The second row, the paragraph and its frame: the
+six alignments, the paragraph style, the left, right and first-line
+indents, the space before and after, the columns, hyphenation, balance
+lines, widows, orphans, keep with next, and Bullets, Tabs and Drop Cap (for
+paragraph text; they open their dialogs). Without text the bar is one row
+again, and the canvas takes the room back.
+
+Each change applies to the
 selected text objects at once as one "Text Style" undo step, and
 becomes the default for the next text. Only what was changed goes to
 them: the fields show the first selected text, and a field left as it
