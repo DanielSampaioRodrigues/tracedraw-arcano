@@ -11,7 +11,8 @@ top left; the drawing keeps millimetres with y up from its bottom left
 
 - The page size, from `DocumentPreference` in
   `Resources/Preferences.xml` (A4 when the part is missing).
-- The items of the **first spread**: text frames and rectangles.
+- The items of **every spread**, each spread on a page of its own: text
+  frames, rectangles, and groups (Group, kept with its items inside it).
   - A text frame's story is read from `Stories/`, the paragraphs ending
     with `\r` in the file and with `\n` in the drawing; the story's last
     `\r` does not make an empty paragraph.
@@ -29,8 +30,7 @@ top left; the drawing keeps millimetres with y up from its bottom left
 Every item the reader does not know is named in a warning (logged, and
 the drawing opens anyway):
 
-- spreads after the first;
-- groups, tables, linked pictures (`Image`, `PDF`);
+- tables and linked pictures (`Image`, `PDF`);
 - rotation and skew in `ItemTransform` (only its translation is used);
 - paragraph and character styles beyond the first font and size, and the
   text's alignment (left);
@@ -40,7 +40,11 @@ Checks: a package built in the test, with one page, a story of two
 paragraphs in two columns and a filled rectangle, gives a page of A4, the
 text and the rectangle (`idml::tests::a_package_gives_a_page_with_its_text_and_rectangle`);
 a file that is not a package is an error, and one missing its spread
-opens with a warning (`idml::tests::a_broken_package_is_an_error_not_a_panic`).
+opens with a warning (`idml::tests::a_broken_package_is_an_error_not_a_panic`);
+a group comes with its items inside it
+(`idml::tests::a_group_keeps_its_items_together`), and a drawing of two
+pages saves and reads back with both pages
+(`idml::tests::a_drawing_saves_and_reads_back`).
 
 ## INDD files
 

@@ -14,7 +14,9 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
 
-use tracedraw_core::document::{Document, ParagraphStyle, Shape, ShapeKind, TextAlign, TextSpan};
+use tracedraw_core::document::{
+    Document, Layer, Page, ParagraphStyle, Shape, ShapeKind, TextAlign, TextSpan,
+};
 use tracedraw_core::geometry::{Point, Rect, Size};
 use tracedraw_core::id::IdSource;
 use tracedraw_core::Color;
@@ -78,104 +80,59 @@ pub fn open(bytes: &[u8]) -> Result<Imported, String> {
         }
     }
 
-    // The first spread: its page items on the drawing's first page.
-    let spread = map
-        .descendants()
-        .find(|n| n.has_tag_name("Spread"))
-        .and_then(|n| n.attribute("Self"))
-        .map(str::to_string);
-    let Some(spread_id) = spread else {
-        warnings.push("no spread in the design map".into());
-        return Ok(Imported { document: doc, warnings });
-    };
-    let path = format!("Spreads/{spread_id}.xml");
-    let xml = match part(&mut zip, &path) {
-        Ok(xml) => xml,
-        Err(e) => {
-            warnings.push(e);
-            return Ok(Imported { document: doc, warnings });
-        }
-    };
-    let items = roxmltree::Document::parse(&xml).map_err(|e| format!("{path}: {e}"))?;
-    let mut ids = IdSource::default();
-    let mut shapes: Vec<Shape> = Vec::new();
-    let page_h = size.height;
-    for node in items.descendants() {
-        let kind = node.tag_name().name();
-        if kind == "TextFrame" {
-            let Some(place) = box_of(&node, page_h) else {
-                warnings.push("a text frame without bounds".into());
-                continue;
-            };
-            let story_id = node.attribute("ParentStory").unwrap_or("");
-            let story = stories.get(story_id);
-            let spans = match story {
-                Some(story) if !story.text.is_empty() => {
-                    vec![TextSpan::new(&story.text, &story.font, story.size_pt)]
-                }
-                _ => vec![TextSpan::new("", DEFAULT_FONT, DEFAULT_SIZE_PT)],
-            };
-            let mut para = ParagraphStyle::default();
-            para.columns = columns_of(&node);
-            shapes.push(Shape::new(
-                ids.shape(),
-                ShapeKind::Text {
-                    spans,
-                    origin: Point::new(place.origin_top_left.x, place.origin_top_left.y),
-                    frame: Some(place.size),
-                    align: TextAlign::Left,
-                    para,
-                    on_path: None,
-                },
-            ));
-        } else if kind == "Rectangle" || kind == "Oval" || kind == "Polygon" {
-            let Some(place) = box_of(&node, page_h) else {
-                continue;
-            };
-            if kind != "Rectangle" {
-                warnings.push(format!("{kind} taken as a rectangle"));
-            }
-            let rect = Rect::new(
-                place.origin_top_left.x,
-                place.origin_top_left.y,
-                place.origin_top_left.x + place.size.width,
-                place.origin_top_left.y + place.size.height,
-            );
-            let fill = node
-                .attribute("FillColor")
-                .and_then(|id| colours.get(id).copied());
-            let mut shape = Shape::new(
-                ids.shape(),
-                ShapeKind::Rect {
-                    rect,
-                    radius: 0.0,
-                    corners: None,
-                },
-            );
-            shape.fill = fill.map(Fill::Solid).unwrap_or(Fill::None);
-            shapes.push(shape);
-        } else if kind == "Group" {
-            warnings.push("a group was left aside".into());
-        } else if kind == "Image" || kind == "PDF" {
-            warnings.push(format!("a {kind} (linked picture) was left aside"));
-        } else if kind == "Table" {
-            warnings.push("a table was left aside".into());
-        }
-    }
-    if let Some(page) = doc.pages.first_mut() {
-        if let Some(layer) = page.layers.first_mut() {
-            layer.shapes = shapes;
-        }
-    }
-    let spreads = map
+    // Every spread, each on a page of its own (the first spread's items go
+    // on the drawing's first page).
+    let spread_ids: Vec<String> = map
         .descendants()
         .filter(|n| n.has_tag_name("Spread"))
-        .count();
-    if spreads > 1 {
-        warnings.push(format!(
-            "{} spreads left aside: only the first was read",
-            spreads - 1
-        ));
+        .filter_map(|n| n.attribute("Self"))
+        .map(str::to_string)
+        .collect();
+    if spread_ids.is_empty() {
+        warnings.push("no spread in the design map".into());
+        return Ok(Imported { document: doc, warnings });
+    }
+    let page_h = size.height;
+    for (si, spread_id) in spread_ids.iter().enumerate() {
+        let path = format!("Spreads/{spread_id}.xml");
+        let xml = match part(&mut zip, &path) {
+            Ok(xml) => xml,
+            Err(e) => {
+                warnings.push(e);
+                continue;
+            }
+        };
+        let Ok(items) = roxmltree::Document::parse(&xml) else {
+            warnings.push(format!("{path}: not XML"));
+            continue;
+        };
+        let mut ids = IdSource::default();
+        let shapes = shapes_of(
+            &items.root_element(),
+            page_h,
+            &stories,
+            &colours,
+            &mut ids,
+            &mut warnings,
+        );
+        if si > 0 {
+            let page_id = doc.ids_mut().page();
+            let layer_id = doc.ids_mut().layer();
+            let name = format!("Page {}", si + 1);
+            doc.pages.push(Page {
+                id: page_id,
+                name,
+                size,
+                layers: vec![Layer::new(layer_id, "Layer 1")],
+                guides: Vec::new(),
+                background: None,
+            });
+        }
+        if let Some(page) = doc.pages.get_mut(si) {
+            if let Some(layer) = page.layers.first_mut() {
+                layer.shapes = shapes;
+            }
+        }
     }
     Ok(Imported { document: doc, warnings })
 }
@@ -407,6 +364,96 @@ fn read_story(doc: &roxmltree::Document) -> Story {
 struct Place {
     origin_top_left: Point,
     size: Size,
+}
+
+/// The shapes of a spread or of a group: its items, and a group's items
+/// inside a group shape of its own (every item is placed in the spread's
+/// space, so a group's own transform is not applied).
+fn shapes_of(
+    node: &roxmltree::Node,
+    page_h: f64,
+    stories: &HashMap<String, Story>,
+    colours: &HashMap<String, Color>,
+    ids: &mut IdSource,
+    warnings: &mut Vec<String>,
+) -> Vec<Shape> {
+    let mut out: Vec<Shape> = Vec::new();
+    for child in node.children().filter(|n| n.is_element()) {
+        let kind = child.tag_name().name();
+        match kind {
+            "TextFrame" => {
+                let Some(place) = box_of(&child, page_h) else {
+                    warnings.push("a text frame without bounds".into());
+                    continue;
+                };
+                let story_id = child.attribute("ParentStory").unwrap_or("");
+                let story = stories.get(story_id);
+                let spans = match story {
+                    Some(story) if !story.text.is_empty() => {
+                        vec![TextSpan::new(&story.text, &story.font, story.size_pt)]
+                    }
+                    _ => vec![TextSpan::new("", DEFAULT_FONT, DEFAULT_SIZE_PT)],
+                };
+                let mut para = ParagraphStyle::default();
+                para.columns = columns_of(&child);
+                out.push(Shape::new(
+                    ids.shape(),
+                    ShapeKind::Text {
+                        spans,
+                        origin: Point::new(place.origin_top_left.x, place.origin_top_left.y),
+                        frame: Some(place.size),
+                        align: TextAlign::Left,
+                        para,
+                        on_path: None,
+                    },
+                ));
+            }
+            "Rectangle" | "Oval" | "Polygon" => {
+                let Some(place) = box_of(&child, page_h) else {
+                    continue;
+                };
+                if kind != "Rectangle" {
+                    warnings.push(format!("{kind} taken as a rectangle"));
+                }
+                let rect = Rect::new(
+                    place.origin_top_left.x,
+                    place.origin_top_left.y,
+                    place.origin_top_left.x + place.size.width,
+                    place.origin_top_left.y + place.size.height,
+                );
+                let fill = child
+                    .attribute("FillColor")
+                    .and_then(|id| colours.get(id).copied());
+                let mut shape = Shape::new(
+                    ids.shape(),
+                    ShapeKind::Rect {
+                        rect,
+                        radius: 0.0,
+                        corners: None,
+                    },
+                );
+                shape.fill = fill.map(Fill::Solid).unwrap_or(Fill::None);
+                out.push(shape);
+            }
+            "Group" => {
+                let children = shapes_of(&child, page_h, stories, colours, ids, warnings);
+                if !children.is_empty() {
+                    out.push(Shape::new(ids.shape(), ShapeKind::Group { children }));
+                }
+            }
+            "Image" | "PDF" => {
+                warnings.push(format!("a {kind} (linked picture) was left aside"));
+            }
+            "Table" => warnings.push("a table was left aside".into()),
+            // The wrappers the format puts round the items: what they hold
+            // is read as if it stood beside them.
+            "Spread" | "SpreadPackage" | "Page" => {
+                out.extend(shapes_of(&child, page_h, stories, colours, ids, warnings));
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 fn box_of(node: &roxmltree::Node, page_h_mm: f64) -> Option<Place> {
@@ -663,8 +710,31 @@ mod tests {
         );
         rect.fill = Fill::Solid(Color::rgb8(200, 30, 40));
         doc.pages[0].layers[0].shapes = vec![text, rect];
+        // A second page with a rectangle of its own: every page goes as a
+        // spread of its own, and comes back on its own page.
+        let page_id = doc.ids_mut().page();
+        let layer_id = doc.ids_mut().layer();
+        let mut second = Shape::new(
+            ShapeId(3),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        second.fill = Fill::Solid(Color::rgb8(0, 120, 0));
+        doc.pages.push(Page {
+            id: page_id,
+            name: "Page 2".into(),
+            size: Size::new(210.0, 297.0),
+            layers: vec![Layer::new(layer_id, "Layer 1")],
+            guides: Vec::new(),
+            background: None,
+        });
+        doc.pages[1].layers[0].shapes = vec![second];
         let bytes = save(&doc).expect("the drawing saves");
         let back = open(&bytes).expect("the package reads");
+        assert_eq!(back.document.pages.len(), 2, "both pages come back");
         let page = &back.document.pages[0];
         assert!((page.size.width - 210.0).abs() < 0.05, "{:?}", page.size);
         assert!((page.size.height - 297.0).abs() < 0.05, "{:?}", page.size);
@@ -684,6 +754,58 @@ mod tests {
         };
         assert!((rect.width() - 60.0).abs() < 0.1, "{rect:?}");
         assert!(matches!(shapes[1].fill, Fill::Solid(_)), "{:?}", shapes[1].fill);
+        let second = &back.document.pages[1].layers[0].shapes;
+        assert_eq!(second.len(), 1, "{}", second.len());
+        match &second[0].kind {
+            ShapeKind::Rect { rect, .. } => {
+                assert!((rect.width() - 50.0).abs() < 0.1, "{rect:?}");
+            }
+            other => panic!("a rectangle: {other:?}"),
+        }
+    }
+
+    /// A group comes as a group of its own items, not as loose shapes.
+    #[test]
+    fn a_group_keeps_its_items_together() {
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default();
+            let mut put = |zip: &mut zip::ZipWriter<Cursor<&mut Vec<u8>>>, name: &str, body: &str| {
+                zip.start_file(name, opts).expect("zip entry");
+                zip.write_all(body.as_bytes()).expect("zip write");
+            };
+            put(
+                &mut zip,
+                "designmap.xml",
+                r#"<Document Name="Grupo"><Story Self="Story_1">Stories/Story_1.xml</Story><Spread Self="Spread_1">Spreads/Spread_1.xml</Spread></Document>"#,
+            );
+            put(
+                &mut zip,
+                "Stories/Story_1.xml",
+                "<Story Self=\"Story_1\"><ParagraphStyleRange><CharacterStyleRange><Content>Dentro</Content></CharacterStyleRange></ParagraphStyleRange></Story>",
+            );
+            put(
+                &mut zip,
+                "Spreads/Spread_1.xml",
+                r#"<SpreadPackage><Spread Self="Spread_1">
+  <Group Self="g1" ItemTransform="1 0 0 1 20 20">
+    <Rectangle Self="r1" ItemTransform="1 0 0 1 20 20" GeometricBounds="0 0 40 60"/>
+    <TextFrame Self="tf1" ParentStory="Story_1" ItemTransform="1 0 0 1 30 40" GeometricBounds="0 0 30 80"/>
+  </Group>
+</Spread></SpreadPackage>"#,
+            );
+            zip.finish().expect("zip finish");
+        }
+        let imported = open(&buf).expect("the package reads");
+        let shapes = &imported.document.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 1, "one group: {shapes:?}");
+        let ShapeKind::Group { children } = &shapes[0].kind else {
+            panic!("a group: {:?}", shapes[0].kind);
+        };
+        assert_eq!(children.len(), 2, "{}", children.len());
+        assert!(matches!(children[0].kind, ShapeKind::Rect { .. }));
+        assert!(matches!(children[1].kind, ShapeKind::Text { .. }));
     }
 
     /// A file that is not an INDD document is an error, never a panic.
