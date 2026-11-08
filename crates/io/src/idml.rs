@@ -385,28 +385,28 @@ mod tests {
                 &mut zip,
                 "Resources/Preferences.xml",
                 r#"<?xml version="1.0" encoding="UTF-8"?>
-<idPkg:Preferences xmlns:idPkg="http://www.adobe.com/idml/pkg" DOMVersion="18.0">
+<Preferences DOMVersion="18.0">
   <DocumentPreference PageWidth="595.276" PageHeight="841.890" PagesPerDocument="1"/>
-</idPkg:Preferences>"#,
+</Preferences>"#,
             );
             put(
                 &mut zip,
                 "Resources/Graphic.xml",
                 r#"<?xml version="1.0" encoding="UTF-8"?>
-<idPkg:Graphic xmlns:idPkg="http://www.adobe.com/idml/pkg" DOMVersion="18.0">
+<Graphic DOMVersion="18.0">
   <Color Self="Color/Preto" Model="Process" Space="CMYK" ColorValue="0 0 0 100"/>
-</idPkg:Graphic>"#,
+</Graphic>"#,
             );
             put(
                 &mut zip,
                 "Stories/Story_1.xml",
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<idPkg:Story xmlns:idPkg=\"http://www.adobe.com/idml/pkg\" DOMVersion=\"18.0\">\n<Story Self=\"Story_1\"><ParagraphStyleRange><CharacterStyleRange AppliedFont=\"Minion Pro\tRegular\" PointSize=\"11\"><Content>Um titulo&#13;</Content></CharacterStyleRange></ParagraphStyleRange><ParagraphStyleRange><CharacterStyleRange><Content>Segundo paragrafo&#13;</Content></CharacterStyleRange></ParagraphStyleRange></Story></idPkg:Story>",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Story Self=\"Story_1\"><ParagraphStyleRange><CharacterStyleRange AppliedFont=\"Minion Pro\tRegular\" PointSize=\"11\"><Content>Um titulo&#13;</Content></CharacterStyleRange></ParagraphStyleRange><ParagraphStyleRange><CharacterStyleRange><Content>Segundo paragrafo&#13;</Content></CharacterStyleRange></ParagraphStyleRange></Story>",
             );
             put(
                 &mut zip,
                 "Spreads/Spread_1.xml",
                 r#"<?xml version="1.0" encoding="UTF-8"?>
-<idPkg:Spread xmlns:idPkg="http://www.adobe.com/idml/pkg" DOMVersion="18.0">
+<SpreadPackage DOMVersion="18.0">
   <Spread Self="Spread_1">
     <Page Self="Page_1" GeometricBounds="0 0 841.890 595.276"/>
     <TextFrame Self="tf1" ParentStory="Story_1" ItemTransform="1 0 0 1 36 60" GeometricBounds="0 0 100 400">
@@ -414,7 +414,7 @@ mod tests {
     </TextFrame>
     <Rectangle Self="r1" FillColor="Color/Preto" ItemTransform="1 0 0 1 36 200" GeometricBounds="0 0 50 100"/>
   </Spread>
-</idPkg:Spread>"#,
+</SpreadPackage>"#,
             );
             zip.finish().expect("zip finish");
         }
