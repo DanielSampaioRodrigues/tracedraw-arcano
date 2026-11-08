@@ -9,7 +9,7 @@ use crate::ui::tips::RichTip;
 use egui::{Ui, Vec2};
 use tracedraw_core::{document::ShapeKind, geometry::Rect, Fill};
 
-fn vsep(ui: &mut Ui) {
+pub(crate) fn vsep(ui: &mut Ui) {
     ui.add(egui::Separator::default().vertical().spacing(6.0));
 }
 
@@ -1197,18 +1197,57 @@ fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> 
     r.changed()
 }
 
+/// The look every row of the property bar shares: white fields with a
+/// grey border, and the pale bar of the Welcome Screen.
+fn bar_style(app: &App, ui: &mut Ui) {
+    ui.spacing_mut().item_spacing.x = 4.0;
+    // The Welcome Screen has no page to set: the bar shows pale.
+    if !app.drawing_shown() {
+        ui.disable();
+    }
+    // Fields and lists are white with a grey border.
+    let v = ui.visuals_mut();
+    v.widgets.inactive.weak_bg_fill = crate::theme::Tokens::field();
+    v.widgets.hovered.weak_bg_fill = crate::theme::Tokens::field();
+}
+
 pub fn property_bar(app: &mut App, ui: &mut Ui) {
+    // With text in hand the bar takes two rows: the characters above, the
+    // paragraph and its frame below (see `text_bar`).
+    if crate::ui::text_bar::two_rows(app) {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                bar_style(app, ui);
+                let shapes = app.selected_rc();
+                if matches!(app.tool, Tool::Pick | Tool::FreeformPick) && !shapes.is_empty() {
+                    object_properties(app, ui);
+                    vsep(ui);
+                    if app.fitted_text().is_some() {
+                        crate::ui::text_path_bar::text_path_bar(app, ui);
+                        vsep(ui);
+                    }
+                    if let Some(first) = shapes.first() {
+                        let id = first.id;
+                        app.sync_text_defaults_from(id);
+                    }
+                }
+                crate::ui::text_bar::characters(app, ui);
+            });
+            ui.horizontal(|ui| {
+                bar_style(app, ui);
+                crate::ui::text_bar::paragraph(app, ui);
+                let shapes = app.selected_rc();
+                if matches!(app.tool, Tool::Pick | Tool::FreeformPick) && !shapes.is_empty() {
+                    vsep(ui);
+                    crate::ui::propbar::arrange_part(app, ui);
+                }
+            });
+        });
+        return;
+    }
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+        bar_style(app, ui);
         ui.set_min_height(crate::ui::propbar::BAR_H);
-        // The Welcome Screen has no page to set: the bar shows pale.
-        if !app.drawing_shown() {
-            ui.disable();
-        }
-        // Fields and lists are white with a grey border.
-        let v = ui.visuals_mut();
-        v.widgets.inactive.weak_bg_fill = crate::theme::Tokens::field();
-        v.widgets.hovered.weak_bg_fill = crate::theme::Tokens::field();
         let shapes = app.selected_rc();
         match app.tool {
             Tool::Shape => shape_tool_bar(app, ui),
@@ -1859,7 +1898,7 @@ fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
     }
 }
 
-fn object_properties(app: &mut App, ui: &mut Ui) {
+pub(crate) fn object_properties(app: &mut App, ui: &mut Ui) {
     if app.selection_bounds().is_none() {
         page_properties(app, ui);
         return;

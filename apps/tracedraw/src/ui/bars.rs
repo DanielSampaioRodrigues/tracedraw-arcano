@@ -123,6 +123,27 @@ impl Bar {
         self.row_height_at(crate::theme::bar_size())
     }
 
+    /// The height of the band in a row for `app`: the property bar takes
+    /// two rows while it shows the text controls, and comes back to one
+    /// without text (see [`crate::ui::text_bar`]).
+    pub fn row_height_for(self, app: &App) -> f32 {
+        if self == Bar::Property && crate::ui::text_bar::two_rows(app) {
+            crate::ui::text_bar::ROWS_H + 16.0
+        } else {
+            self.row_height()
+        }
+    }
+
+    /// The room the toolbar's buttons take across its row for `app`, the
+    /// text rows of the property bar included.
+    fn inner_height_for(self, app: &App) -> f32 {
+        if self == Bar::Property && crate::ui::text_bar::two_rows(app) {
+            crate::ui::text_bar::ROWS_H
+        } else {
+            self.inner_height()
+        }
+    }
+
     /// The height of the toolbar's band at button size `size`: the room
     /// for its buttons and the margins above and below them (36 px,
     /// 53 px for the property bar, up to Medium buttons; taller with
@@ -221,7 +242,7 @@ impl Bar {
                 crate::ui::palette_bars::floating_window_size(app, crate::ui::palette::Row::Main)
             }
             Bar::Standard => vec2(940.0, 36.0 + TITLE_H + 4.0),
-            Bar::Property => vec2(1100.0, 53.0 + TITLE_H + 4.0),
+            Bar::Property => vec2(1100.0, self.row_height_for(app) + TITLE_H + 4.0),
             Bar::Status => vec2(900.0, 40.0),
             Bar::Text => vec2(760.0, 36.0 + TITLE_H + 4.0),
             Bar::Zoom => vec2(420.0, 36.0 + TITLE_H + 4.0),
@@ -1286,7 +1307,7 @@ pub fn docked_rows(app: &mut App, ui: &mut Ui, dock: Dock) {
         order.reverse();
     }
     for (index, bars) in order {
-        let height = bars.iter().map(|b| b.row_height()).fold(0.0, f32::max);
+        let height = bars.iter().map(|b| b.row_height_for(app)).fold(0.0, f32::max);
         let panel = if dock == Dock::Top {
             egui::Panel::top(egui::Id::new(("bar_row_top", index)))
         } else {
@@ -1313,7 +1334,7 @@ pub fn docked_rows(app: &mut App, ui: &mut Ui, dock: Dock) {
                     let slot = Rect::from_min_max(pos2(x, row.top()), pos2(x + w, row.bottom()));
                     x += w;
                     spots.push((*bar, slot));
-                    let inner = bar.inner_height().min(slot.height());
+                    let inner = bar.inner_height_for(app).min(slot.height());
                     let body = Rect::from_center_size(slot.center(), vec2(slot.width(), inner));
                     let mut child = ui.new_child(
                         egui::UiBuilder::new()

@@ -1,4 +1,4 @@
-//! Arcano edition: the Character and Paragraph panels of the Page
+﻿//! Arcano edition: the Character and Paragraph panels of the Page
 //! workspace, laid out as page layout work wants them: a small picture
 //! before every field, two fields to a row, the alignments and the
 //! character options as rows of buttons.
@@ -35,7 +35,7 @@ const FIELD_W: f32 = 82.0;
 
 /// The picture before a field: a few letters drawn small and dim, with
 /// the field's name as the tip.
-fn glyph_icon(ui: &mut Ui, text: &str, key: &str) {
+pub(crate) fn glyph_icon(ui: &mut Ui, text: &str, key: &str) {
     let (r, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
     ui.painter().text(
         r.center(),
@@ -48,7 +48,7 @@ fn glyph_icon(ui: &mut Ui, text: &str, key: &str) {
 }
 
 /// A paragraph line picture of the Text panel before a field.
-fn para_icon(ui: &mut Ui, icon: td::ParaIcon, key: &str) {
+pub(crate) fn para_icon(ui: &mut Ui, icon: td::ParaIcon, key: &str) {
     let (r, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
     for shape in td::para_icon_shapes(icon, r, Tokens::icon()) {
         ui.painter().add(shape);
@@ -57,7 +57,7 @@ fn para_icon(ui: &mut Ui, icon: td::ParaIcon, key: &str) {
 }
 
 /// A number field of the grid; true when changed.
-fn num(ui: &mut Ui, v: &mut f64, range: std::ops::RangeInclusive<f64>, suffix: &str) -> bool {
+pub(crate) fn num(ui: &mut Ui, v: &mut f64, range: std::ops::RangeInclusive<f64>, suffix: &str) -> bool {
     let before = *v;
     ui.add_sized(
         [FIELD_W, 22.0],
@@ -70,7 +70,7 @@ fn num(ui: &mut Ui, v: &mut f64, range: std::ops::RangeInclusive<f64>, suffix: &
 }
 
 /// A distance field of the grid in the ruler unit; true when changed.
-fn dist(ui: &mut Ui, app: &App, mm: &mut f64) -> bool {
+pub(crate) fn dist(ui: &mut Ui, app: &App, mm: &mut f64) -> bool {
     let u = app.units;
     let mut v = *mm / u.mm();
     let before = v;
@@ -96,7 +96,7 @@ fn toggle(ui: &mut Ui, on: bool, text: egui::RichText, key: &str) -> bool {
         .clicked()
 }
 
-fn first_text(app: &App) -> Option<tracedraw_core::Shape> {
+pub(crate) fn first_text(app: &App) -> Option<tracedraw_core::Shape> {
     app.active_cell_text_shape().or_else(|| {
         app.selected_shapes()
             .into_iter()
@@ -105,7 +105,7 @@ fn first_text(app: &App) -> Option<tracedraw_core::Shape> {
 }
 
 /// Change only `before` to `after` in every paragraph the edit reaches.
-fn edit_format(app: &mut App, before: &tracedraw_core::ParagraphStyle, after: &tracedraw_core::ParagraphStyle) {
+pub(crate) fn edit_format(app: &mut App, before: &tracedraw_core::ParagraphStyle, after: &tracedraw_core::ParagraphStyle) {
     let before = ParagraphFormat::of(TextAlign::Left, before);
     let after = ParagraphFormat::of(TextAlign::Left, after);
     td::edit_paragraphs(app, move |q| {
@@ -385,7 +385,7 @@ mod tests {
     fn paragraph_text(app: &mut App) -> tracedraw_core::ShapeId {
         let id = app
             .new_shape(ShapeKind::Text {
-                spans: vec![TextSpan::new("Um parágrafo.\nOutro.", "Sans", 12.0)],
+                spans: vec![TextSpan::new("Um parÃ¡grafo.\nOutro.", "Sans", 12.0)],
                 origin: Point::new(10.0, 10.0),
                 frame: Some(Size::new(100.0, 50.0)),
                 align: TextAlign::Left,

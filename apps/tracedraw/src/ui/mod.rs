@@ -107,6 +107,7 @@ pub mod symmetry_bar;
 pub mod table_bar;
 pub mod tabs;
 pub mod template_dialog;
+pub mod text_bar;
 pub mod text_docker;
 pub mod text_path_bar;
 pub mod time_tracker;
