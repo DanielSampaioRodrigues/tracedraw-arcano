@@ -56,6 +56,21 @@ is not one at all is refused without a panic
 Saving `.indd` is not planned: the format is undocumented and written by
 nobody else; Save offers IDML and the native format.
 
+## Saving
+
+`tracedraw_io::idml::save` writes the drawing as a package: one spread per
+page, a text frame per text shape with its story, a rectangle per
+rectangle with its solid fill as a named RGB colour, and the page size
+from the first page. File > Save writes that way when the name ends in
+`.idml`, and the round trip comes back with the pages, the text and the
+boxes (`idml::tests::a_drawing_saves_and_reads_back`).
+
+What the drawing has and the writer leaves out (groups, tables, pictures,
+masters, styles, rotation, effects) is not written; the package keeps the
+drawing's pages, text and shapes. The Save As dialog does not offer the
+extension yet: the next part adds it, with the chapters of the format the
+writer still misses.
+
 ## Format notes
 
 The package layout above comes from the IDML interchange format's public

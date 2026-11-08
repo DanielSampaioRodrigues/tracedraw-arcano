@@ -11,6 +11,9 @@ added=$(git diff --unified=0 "$base" HEAD -- . ':(exclude)ATTRIBUTION.md' \
     ':(exclude)licenses' ':(exclude)docs/third-party.md' \
     | grep -E '^\+[^+]' || true)
 status=0
+# Strings a format requires (AGENTS.md rule 3 allows them): the IDML
+# package's mimetype names the format's owner and is written as it is.
+added=$(printf '%s\n' "$added" | sed 's#application/vnd\.adobe\.indesign-idml-package##g')
 if [ -n "${FORBIDDEN_WORDS:-}" ]; then
     hits=$(printf '%s\n' "$added" | grep -inE "$FORBIDDEN_WORDS" || true)
     if [ -n "$hits" ]; then

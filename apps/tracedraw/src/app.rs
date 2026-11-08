@@ -7287,10 +7287,14 @@ impl App {
                 self.cdr_save_version(),
                 &previews,
             ))
+        } else if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("idml"))
+        {
+            // An IDML package: the pages, text frames with their stories
+            // and rectangles with their solid fills.
+            tracedraw_io::idml::save(self.engine.document())
         } else {
-            // Fonts that came with other drawings go along (text imported
-            // or pasted from them), and, with Embed fonts on, the
-            // installed fonts the text uses whose licence allows it.
             self.backup_before_save(&path);
             let version = self
                 .tdraw_version

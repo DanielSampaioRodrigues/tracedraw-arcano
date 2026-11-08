@@ -180,6 +180,172 @@ pub fn open(bytes: &[u8]) -> Result<Imported, String> {
     Ok(Imported { document: doc, warnings })
 }
 
+/// Write the drawing as an IDML package: one spread per page, a story per
+/// text shape, and each solid fill as a named RGB colour. What the format
+/// has that the drawing does not (masters, styles, groups, tables,
+/// pictures) is not written; a reader that needs it gets a plain document.
+pub fn save(doc: &Document) -> Result<Vec<u8>, String> {
+    let Some(first) = doc.pages.first() else {
+        return Err("a drawing with no page".into());
+    };
+    let page_h = first.size.height;
+    let mut stories: Vec<(String, String)> = Vec::new();
+    let mut colours: Vec<(String, [u8; 3])> = Vec::new();
+    let mut spreads: Vec<String> = Vec::new();
+    for (pi, page) in doc.pages.iter().enumerate() {
+        let mut items = String::new();
+        for layer in &page.layers {
+            for shape in &layer.shapes {
+                match &shape.kind {
+                    ShapeKind::Text {
+                        spans,
+                        origin,
+                        frame: Some(frame),
+                        ..
+                    } => {
+                        let text = tracedraw_core::spans_text(spans);
+                        let (font, size_pt) = spans
+                            .first()
+                            .map(|s| (s.font_family.clone(), s.size_pt))
+                            .unwrap_or_else(|| (DEFAULT_FONT.to_string(), DEFAULT_SIZE_PT));
+                        let id = format!("Story_{}", stories.len() + 1);
+                        stories.push((id.clone(), story_xml(&text, &font, size_pt)));
+                        items.push_str(&format!(
+                            "<TextFrame Self=\"tf{pi}_{}\" ParentStory=\"{id}\" \
+ItemTransform=\"1 0 0 1 {tx} {ty}\" GeometricBounds=\"0 0 {h} {w}\"/>",
+                            items.len(),
+                            tx = pt(origin.x),
+                            ty = pt(page_h - origin.y - frame.height),
+                            h = pt(frame.height),
+                            w = pt(frame.width),
+                        ));
+                    }
+                    ShapeKind::Rect { rect, .. } => {
+                        let fill = match &shape.fill {
+                            Fill::Solid(c) => {
+                                let rgb = c.to_rgb8();
+                                let id = format!("Color/{}", colours.len() + 1);
+                                colours.push((id.clone(), rgb));
+                                format!(" FillColor=\"{id}\"")
+                            }
+                            _ => String::new(),
+                        };
+                        items.push_str(&format!(
+                            "<Rectangle Self=\"r{pi}_{}\" ItemTransform=\"1 0 0 1 {tx} {ty}\" \
+GeometricBounds=\"0 0 {h} {w}\"{fill}/>",
+                            items.len(),
+                            tx = pt(rect.x0),
+                            ty = pt(page_h - rect.y1),
+                            h = pt(rect.height()),
+                            w = pt(rect.width()),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        spreads.push(format!(
+            "<SpreadPackage DOMVersion=\"18.0\"><Spread Self=\"Spread_{n}\">\
+<Page Self=\"Page_{n}\" GeometricBounds=\"0 0 {h} {w}\"/>{items}</Spread></SpreadPackage>",
+            n = pi + 1,
+            h = pt(page_h),
+            w = pt(page.size.width),
+        ));
+    }
+    let mut map = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Document DOMVersion=\"18.0\" ",
+    );
+    map.push_str(&format!("Name=\"{}\">", esc(doc.title.as_str())));
+    for (id, _) in &stories {
+        map.push_str(&format!("<Story Self=\"{id}\">Stories/{id}.xml</Story>"));
+    }
+    for n in 1..=spreads.len() {
+        map.push_str(&format!(
+            "<Spread Self=\"Spread_{n}\">Spreads/Spread_{n}.xml</Spread>"
+        ));
+    }
+    map.push_str("</Document>");
+    let prefs = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Preferences DOMVersion=\"18.0\">\
+<DocumentPreference PageWidth=\"{w}\" PageHeight=\"{h}\"/></Preferences>",
+        w = pt(first.size.width),
+        h = pt(page_h),
+    );
+    let mut graphic =
+        String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Graphic DOMVersion=\"18.0\">");
+    for (id, [r, g, b]) in &colours {
+        graphic.push_str(&format!(
+            "<Color Self=\"{id}\" Model=\"Process\" Space=\"RGB\" ColorValue=\"{r} {g} {b}\"/>"
+        ));
+    }
+    graphic.push_str("</Graphic>");
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let packed = zip::write::SimpleFileOptions::default();
+    let stored = packed.compression_method(zip::CompressionMethod::Stored);
+    let mut put = |name: &str, body: &str, opts: zip::write::SimpleFileOptions| {
+        zip.start_file(name, opts)
+            .map_err(|e| format!("{name}: {e}"))?;
+        use std::io::Write as _;
+        zip.write_all(body.as_bytes())
+            .map_err(|e| format!("{name}: {e}"))
+    };
+    put("mimetype", "application/vnd.adobe.indesign-idml-package", stored)?;
+    put("designmap.xml", &map, packed)?;
+    put("Resources/Preferences.xml", &prefs, packed)?;
+    put("Resources/Graphic.xml", &graphic, packed)?;
+    for (id, body) in &stories {
+        put(&format!("Stories/{id}.xml"), body, packed)?;
+    }
+    for (n, body) in spreads.iter().enumerate() {
+        put(&format!("Spreads/Spread_{}.xml", n + 1), body, packed)?;
+    }
+    let cursor = zip.finish().map_err(|e| e.to_string())?;
+    Ok(cursor.into_inner())
+}
+
+/// A story of `text`'s paragraphs, all in one character run.
+fn story_xml(text: &str, font: &str, size_pt: f64) -> String {
+    let mut out = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<StoryPackage DOMVersion=\"18.0\">",
+    );
+    let paragraphs: Vec<&str> = text.split('\n').collect();
+    let last = paragraphs.len().saturating_sub(1);
+    out.push_str(&format!("<Story Self=\"{}\">", "Story"));
+    for (i, para) in paragraphs.iter().enumerate() {
+        let end = if i < last { "&#13;" } else { "" };
+        out.push_str(&format!(
+            "<ParagraphStyleRange><CharacterStyleRange AppliedFont=\"{}\" PointSize=\"{}\">\
+<Content>{}{end}</Content></CharacterStyleRange></ParagraphStyleRange>",
+            esc(font),
+            size_pt,
+            esc(para),
+        ));
+    }
+    out.push_str("</Story></StoryPackage>");
+    out
+}
+
+/// Millimetres to points, as the files write them.
+fn pt(mm: f64) -> String {
+    format!("{:.4}", mm / MM_PER_PT)
+}
+
+/// A string for XML text or an attribute value.
+fn esc(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Read a `.indd` file: the crate that knows that format turns it into an
 /// IDML package, which [`open`] then takes. Its warnings (what it could
 /// not carry over) come first, then ours.
@@ -309,12 +475,12 @@ fn colours(zip: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Option<HashMap<String, C
         let colour = match (space, values.as_slice()) {
             ("CMYK", [c, m, y, k]) => Color::cmyk_pct(*c as f32, *m as f32, *y as f32, *k as f32),
             ("RGB", [r, g, b]) => Color::rgb8(
-                (r * 255.0).round().clamp(0.0, 255.0) as u8,
-                (g * 255.0).round().clamp(0.0, 255.0) as u8,
-                (b * 255.0).round().clamp(0.0, 255.0) as u8,
+                r.round().clamp(0.0, 255.0) as u8,
+                g.round().clamp(0.0, 255.0) as u8,
+                b.round().clamp(0.0, 255.0) as u8,
             ),
             ("Gray", [g]) => {
-                let v = (g * 255.0).round().clamp(0.0, 255.0) as u8;
+                let v = g.round().clamp(0.0, 255.0) as u8;
                 Color::rgb8(v, v, v)
             }
             ("LAB", [l, a, b]) => {
@@ -467,6 +633,56 @@ mod tests {
             }
             other => panic!("a rectangle: {other:?}"),
         }
+        assert!(matches!(shapes[1].fill, Fill::Solid(_)), "{:?}", shapes[1].fill);
+    }
+
+    /// A drawing saved as IDML reads back with its page, its text frame
+    /// and its rectangle.
+    #[test]
+    fn a_drawing_saves_and_reads_back() {
+        use tracedraw_core::id::ShapeId;
+        let mut doc = Document::new("Ida e volta", Size::new(210.0, 297.0));
+        let text = Shape::new(
+            ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![TextSpan::new("Titulo\nCorpo do texto", "Minion Pro", 11.0)],
+                origin: Point::new(30.0, 200.0),
+                frame: Some(Size::new(150.0, 60.0)),
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        let mut rect = Shape::new(
+            ShapeId(2),
+            ShapeKind::Rect {
+                rect: Rect::new(20.0, 20.0, 80.0, 60.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        rect.fill = Fill::Solid(Color::rgb8(200, 30, 40));
+        doc.pages[0].layers[0].shapes = vec![text, rect];
+        let bytes = save(&doc).expect("the drawing saves");
+        let back = open(&bytes).expect("the package reads");
+        let page = &back.document.pages[0];
+        assert!((page.size.width - 210.0).abs() < 0.05, "{:?}", page.size);
+        assert!((page.size.height - 297.0).abs() < 0.05, "{:?}", page.size);
+        let shapes = &page.layers[0].shapes;
+        assert_eq!(shapes.len(), 2, "{}", shapes.len());
+        let ShapeKind::Text { spans, frame, .. } = &shapes[0].kind else {
+            panic!("a text frame: {:?}", shapes[0].kind);
+        };
+        assert_eq!(spans[0].text, "Titulo\nCorpo do texto");
+        assert_eq!(spans[0].font_family, "Minion Pro");
+        assert!((spans[0].size_pt - 11.0).abs() < 1e-9);
+        let frame = frame.expect("a frame");
+        assert!((frame.width - 150.0).abs() < 0.1, "{frame:?}");
+        assert!((frame.height - 60.0).abs() < 0.1, "{frame:?}");
+        let ShapeKind::Rect { rect, .. } = &shapes[1].kind else {
+            panic!("a rectangle: {:?}", shapes[1].kind);
+        };
+        assert!((rect.width() - 60.0).abs() < 0.1, "{rect:?}");
         assert!(matches!(shapes[1].fill, Fill::Solid(_)), "{:?}", shapes[1].fill);
     }
 
