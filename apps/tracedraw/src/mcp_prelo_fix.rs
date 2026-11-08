@@ -1317,7 +1317,7 @@ fn questions(kind: &str) -> Vec<(&'static str, &'static str)> {
             ("reader", "Who should pick this book from the shelf?"),
             ("mood", "Three words for what the cover should feel like?"),
             ("references", "Covers you like (or hate) and why?"),
-            ("image", "Is there an image, an illustrator, or should the cover be typographic?"),
+            ("image", "Is there an image, someone to draw one, or should the cover be typographic?"),
             ("spine", "Page count and paper (for the spine), and the back cover text?"),
             ("deadline", "When and where is it printed?"),
         ],
