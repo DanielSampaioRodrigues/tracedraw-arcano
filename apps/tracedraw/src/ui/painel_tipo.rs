@@ -11,8 +11,9 @@
 //!   OpenType features; the fill, background and outline rows.
 //! - Paragraph: the six alignments; left and right indents, first line
 //!   indent and drop cap lines, space before and after, two to a row;
-//!   hyphenation and the baseline grid; Bullets, Tabs and Drop Cap; the
-//!   word and letter spacing; widows, orphans and keep with next.
+//!   hyphenation, balance lines and the baseline grid; Bullets, Tabs and
+//!   Drop Cap; the word and letter spacing; widows, orphans and keep with
+//!   next.
 //!
 //! Every field edits what the Text panel's does (the characters chosen
 //! while editing, else the selected text objects).
@@ -319,6 +320,9 @@ pub fn paragraph_panel(app: &mut App, ui: &mut Ui) {
         });
     ui.checkbox(&mut p.hyphenate, tr("docker.hyphenate"))
         .rich_tip(crate::ui::tips::keyed("docker.hyphenate"));
+    ui.checkbox(&mut p.balance_lines, tr("docker.balance_lines")).rich_tip(
+        crate::ui::tips::pair("docker.balance_lines", "docker.balance_lines_desc"),
+    );
     if p != before {
         edit_format(app, &before, &p);
     }
@@ -450,5 +454,29 @@ mod tests {
         let f = tracedraw_core::paragraphs::paragraph_formats_of(spans, *align, para);
         assert!(f.iter().all(|f| f.leading_unit == LeadingUnit::Points && (f.leading_pct - 17.0).abs() < 1e-9));
         assert!(f.iter().all(|f| f.drop_cap_lines == 3));
+    }
+
+    /// The Balance Lines box of the panel reaches the paragraphs the
+    /// selection covers, and switching it off takes it away again.
+    #[test]
+    fn balance_lines_reaches_the_paragraphs() {
+        let mut app = App::headless();
+        let id = paragraph_text(&mut app);
+        let t = app.doc().find_shape(id).unwrap().clone();
+        let (_, plain) = app.paragraph_style_of(&t).unwrap();
+        let mut balanced = plain.clone();
+        balanced.balance_lines = true;
+        edit_format(&mut app, &plain, &balanced);
+        let formats = |app: &App| {
+            let ShapeKind::Text { spans, align, para, .. } =
+                &app.doc().find_shape(id).unwrap().kind
+            else {
+                unreachable!()
+            };
+            tracedraw_core::paragraphs::paragraph_formats_of(spans, *align, para)
+        };
+        assert!(formats(&app).iter().all(|f| f.balance_lines));
+        edit_format(&mut app, &balanced, &plain);
+        assert!(formats(&app).iter().all(|f| !f.balance_lines));
     }
 }

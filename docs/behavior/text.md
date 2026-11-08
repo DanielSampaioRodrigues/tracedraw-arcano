@@ -1289,3 +1289,45 @@ widows 2 in Body text and keep the chapter title and the subtitle with the
 next paragraph. Tests: `paragraphs::keep_tests`,
 `textflow::tests::widows_orphans_and_titles_kept_with_the_next_paragraph`
 (52 frame heights).
+
+## Balance lines
+
+A paragraph option (`ParagraphStyle::balance_lines`, off by default), set
+in the Paragraph panel under Hyphenate and carried by paragraph styles.
+With it on, a paragraph set flush left, centred or flush right breaks at
+the narrowest measure that keeps the number of lines it has at the
+frame's width; the lines are then placed in the frame as usual (centred
+or flush right in the whole width). The frame does not change and no line
+passes it.
+
+- One line only: nothing to balance, the layout is the paragraph's own.
+- Justified and force justified paragraphs are not balanced: their lines
+  already reach the frame's edge.
+- Not balanced where the room of the lines is not the frame's: a
+  paragraph with a drop cap, and text flowing around objects above it
+  (see `text-wrap.md`).
+- Search (`balanced_measure`, `crates/text/src/lib.rs`): the line
+  count at the frame's width is `n` (1: no change); the measure is
+  searched between the text's whole width divided by `n` and the
+  frame's width, in at most 14 steps 0.05 mm apart, and a candidate is
+  kept only when its line count is still `n`. A narrower measure
+  therefore never adds a line, and a paragraph whose lines are already as
+  even as they get keeps the frame's width.
+- The count (`lines_at`, in the same file) uses the paragraph's own
+  breaking: spaces and tabs, hyphenation when the paragraph has it, the
+  forced break inside a word that does not fit alone, and Chinese and
+  Japanese between characters.
+
+Checks: given a title whose text takes two lines at the frame's width,
+when Balance lines is on, then it still takes two and the two lines are
+within 25 % of the wider one
+(`tests::balance_lines_even_a_two_line_title_in_a_frame`); given a
+justified paragraph or a one-line one, then the layout is the same with
+the option on and off
+(`tests::balance_lines_leave_justified_and_one_line_text_alone`); given
+any measure, then the counted lines are the breaker's
+(`tests::the_line_counting_agrees_with_the_breaker`). The option is
+written only when it is on, and a paragraph style carries it to the
+paragraphs (`document::tests::balance_lines_is_written_only_when_on`,
+`paragraphs::tests::balance_lines_goes_with_the_paragraph`,
+`text_styles::tests::a_style_carries_balance_lines_to_the_paragraphs`).
