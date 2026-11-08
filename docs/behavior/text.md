@@ -1298,7 +1298,7 @@ With it on, a paragraph set flush left, centred or flush right breaks at
 the narrowest measure that keeps the number of lines it has at the
 frame's width; the lines are then placed in the frame as usual (centred
 or flush right in the whole width). The frame does not change and no line
-passes it.
+passes it. Paragraph text only: artistic text is one line a paragraph.
 
 - One line only: nothing to balance, the layout is the paragraph's own.
 - Justified and force justified paragraphs are not balanced: their lines
