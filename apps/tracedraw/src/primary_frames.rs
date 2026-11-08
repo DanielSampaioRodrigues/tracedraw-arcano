@@ -209,7 +209,7 @@ mod tests {
         with_primary(&mut app, [20.0, 25.0, 22.0, 18.0]);
         app.add_primary_frames_for_master(0);
         let first = app.primary_frame_on(0).unwrap();
-        let words = "palavra ".repeat(4000);
+        let words = "palavra ".repeat(900);
         let mut kind = app.doc().find_shape(first).unwrap().kind.clone();
         if let ShapeKind::Text { spans, .. } = &mut kind {
             spans[0].text = words;

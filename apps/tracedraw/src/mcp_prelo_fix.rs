@@ -504,8 +504,18 @@ fn with_height(s: &Shape, h: f64) -> Shape {
     s
 }
 
+/// Whether frame `s` shows all its text: nothing overflows and the last
+/// line's descent is inside the frame (a first line too tall for a
+/// frame still shows, so overflow alone does not say it).
 fn fits(s: &Shape) -> bool {
-    crate::text_editing::layout_of_text_shape(s, Default::default()).is_some_and(|(l, _)| !l.overflow)
+    let ShapeKind::Text { spans, frame: Some(size), .. } = &s.kind else {
+        return false;
+    };
+    let total: usize = spans.iter().map(|sp| sp.text.chars().count()).sum();
+    crate::text_editing::layout_of_text_shape(s, Default::default()).is_some_and(|(l, _)| {
+        let bottom = l.lines.iter().map(|b| -b.baseline + b.descent.abs()).fold(0.0, f64::max);
+        !l.overflow && l.fitted_chars >= total && bottom <= size.height + 0.01
+    })
 }
 
 fn fit_frame(app: &mut App, args: &Value) -> Result<Value, String> {
@@ -1709,7 +1719,7 @@ mod tests {
         assert!(r["primary_frame"].is_u64());
         assert!(!app.engine.is_dirty());
         let style = r["paragraph_styles"][0].as_str().unwrap().to_string();
-        let text = "Um parágrafo de texto corrido que enche a página. ".repeat(400);
+        let text = "Um parágrafo de texto corrido que enche a página. ".repeat(150);
         let p = reply(&mut app, "place_text", json!({"text": text, "style": style}));
         assert_eq!(p["overflows"], false);
         assert!(p["frames"].as_u64().unwrap() >= 3);

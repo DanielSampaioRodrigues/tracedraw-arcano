@@ -1867,6 +1867,7 @@ pub(crate) mod tests {
     fn the_report_layout_and_map_read_the_drawing() {
         let mut app = App::headless();
         app.add_page();
+        app.goto_page(0);
         let id = frame(&mut app, &"Texto corrido. ".repeat(40), 80.0, 60.0, TextAlign::Justify);
         let r = reply(&mut app, "document_report", json!({}));
         assert_eq!(r["pages"], 2);
