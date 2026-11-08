@@ -1364,6 +1364,13 @@ pub struct ParagraphStyle {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tab_details: Vec<TabDetail>,
     pub hyphenate: bool,
+    /// Balance Lines: a paragraph set flush left, centred or flush right
+    /// breaks at the narrowest measure that keeps its number of lines, so
+    /// its lines end near the same place. It never adds a line and the
+    /// frame keeps its width; justified paragraphs and one-line ones are
+    /// left as they are (see docs/behavior/text.md).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub balance_lines: bool,
     /// Fit text to frame: scale the font so the text fills the frame height.
     pub fit_to_frame: bool,
     /// Align baselines to a grid of this pitch in mm (Text > Align to
@@ -1459,6 +1466,7 @@ impl Default for ParagraphStyle {
             tabs: Vec::new(),
             tab_details: Vec::new(),
             hyphenate: false,
+            balance_lines: false,
             fit_to_frame: false,
             baseline_grid_mm: 0.0,
             vertical_align: VerticalAlign::Top,
@@ -6342,6 +6350,25 @@ mod tests {
         assert!(!plain.contains("tab_details"), "{plain}");
         let old: ParagraphStyle = serde_json::from_str(r#"{"tabs":[12.5]}"#).unwrap();
         assert_eq!(old.tab_detail(0).align, TabAlign::Left);
+    }
+
+    /// Balance Lines is written with the paragraph only when it is on, so
+    /// drawings made before it existed open as they were.
+    #[test]
+    fn balance_lines_is_written_only_when_on() {
+        let plain = ParagraphStyle::default();
+        let json = serde_json::to_string(&plain).expect("json");
+        assert!(!json.contains("balance_lines"), "{json}");
+        let on = ParagraphStyle {
+            balance_lines: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&on).expect("json");
+        assert!(json.contains("\"balance_lines\":true"), "{json}");
+        let back: ParagraphStyle = serde_json::from_str(&json).expect("load");
+        assert!(back.balance_lines);
+        let old: ParagraphStyle = serde_json::from_str(r#"{"hyphenate":true}"#).expect("old");
+        assert!(!old.balance_lines);
     }
 
     #[test]

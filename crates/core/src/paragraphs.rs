@@ -38,6 +38,10 @@ pub struct ParagraphFormat {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tab_details: Vec<crate::document::TabDetail>,
     pub hyphenate: bool,
+    /// Balance Lines: the paragraph breaks at the narrowest measure that
+    /// keeps its number of lines (see [`ParagraphStyle::balance_lines`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub balance_lines: bool,
     /// The least lines of the paragraph left at the foot of a frame
     /// (orphans); 1: no rule.
     #[serde(default = "one", skip_serializing_if = "is_one")]
@@ -83,6 +87,7 @@ impl ParagraphFormat {
             tabs: p.tabs.clone(),
             tab_details: p.tab_details.clone(),
             hyphenate: p.hyphenate,
+            balance_lines: p.balance_lines,
             orphans: 1,
             widows: 1,
             keep_with_next: false,
@@ -109,6 +114,7 @@ impl ParagraphFormat {
         p.tabs = self.tabs.clone();
         p.tab_details = self.tab_details.clone();
         p.hyphenate = self.hyphenate;
+        p.balance_lines = self.balance_lines;
         self.align
     }
 
@@ -139,6 +145,7 @@ impl ParagraphFormat {
             bullet_indent,
             drop_cap_lines,
             hyphenate,
+            balance_lines,
             orphans,
             widows,
             keep_with_next
@@ -475,6 +482,27 @@ mod tests {
             st.iter().map(|s| s.0).collect::<Vec<_>>(),
             vec![TextAlign::Left, TextAlign::Right, TextAlign::Right]
         );
+    }
+
+    /// Balance Lines goes with the paragraph's own formatting, and a
+    /// paragraph back at the object's formatting carries nothing.
+    #[test]
+    fn balance_lines_goes_with_the_paragraph() {
+        let mut k = text("one\ntwo");
+        let old = ParagraphFormat::default();
+        let mut new = old.clone();
+        new.balance_lines = true;
+        let mut other = ParagraphFormat::default();
+        other.take_changes(&old, &new);
+        assert!(other.balance_lines);
+        edit_paragraph_formats(&mut k, Some((5, 5)), |f| f.balance_lines = true);
+        let st = styles(&k);
+        assert!(!st[0].1.balance_lines);
+        assert!(st[1].1.balance_lines);
+        // The whole object: the second paragraph takes the object's
+        // formatting again and stops carrying its own.
+        edit_paragraph_formats(&mut k, None, |f| f.balance_lines = false);
+        assert!(spans(&k).iter().all(|s| s.paragraph.is_none()));
     }
 
     #[test]

@@ -769,6 +769,47 @@ mod tests {
         );
     }
 
+    /// A paragraph style carries Balance Lines: applying it gives the
+    /// paragraphs the option, and it survives the file.
+    #[test]
+    fn a_style_carries_balance_lines_to_the_paragraphs() {
+        let mut title = titulo();
+        let Some(p) = title.para.as_mut() else {
+            unreachable!()
+        };
+        p.balance_lines = true;
+        let styles = vec![title];
+        let mut k = text("Um título de duas linhas");
+        apply_paragraph_style(&mut k, None, &styles, Some(2));
+        let (spans, align, para) = match &k {
+            ShapeKind::Text {
+                spans, align, para, ..
+            } => (spans, *align, para),
+            _ => unreachable!(),
+        };
+        let f = crate::paragraphs::paragraph_formats_of(spans, align, para);
+        assert!(f.iter().all(|f| f.balance_lines), "{f:?}");
+        // The style keeps it through the file.
+        let json = serde_json::to_string(&styles).expect("json");
+        assert!(json.contains("\"balance_lines\":true"), "{json}");
+        let back: Vec<TextStyle> = serde_json::from_str(&json).expect("load");
+        assert_eq!(back, styles);
+        // And back off: the paragraphs stop carrying it.
+        let mut off = styles.clone();
+        if let Some(p) = off[0].para.as_mut() {
+            p.balance_lines = false;
+        }
+        apply_paragraph_style(&mut k, None, &off, Some(2));
+        let (spans, align, para) = match &k {
+            ShapeKind::Text {
+                spans, align, para, ..
+            } => (spans, *align, para),
+            _ => unreachable!(),
+        };
+        let f = crate::paragraphs::paragraph_formats_of(spans, align, para);
+        assert!(f.iter().all(|f| !f.balance_lines), "{f:?}");
+    }
+
     #[test]
     fn a_drawing_with_styles_saves_and_opens() {
         let mut doc = Document::new("t", Size::new(210.0, 297.0));
