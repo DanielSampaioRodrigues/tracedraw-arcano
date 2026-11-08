@@ -980,6 +980,11 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
         if let Some(s) = press_on_drawing(ui, canvas_rect) {
             app.multipage_press(s);
         }
+    } else if app.master_view.is_some() && two_fingers.is_none() {
+        // Arcano edition: a master's spread, both pages at hand.
+        if let Some(s) = press_on_drawing(ui, canvas_rect) {
+            app.master_press(s);
+        }
     }
     if two_fingers.is_none()
         && !rulers::ruler_drag(app, ui)

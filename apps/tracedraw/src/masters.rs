@@ -248,6 +248,24 @@ impl App {
         }
     }
 
+    /// A press at screen point `s` on the master's other page (the one
+    /// shown beside the page edited): that page becomes the one edited,
+    /// where it is on screen, and the press goes on there (drawing,
+    /// picking). True when it was there.
+    pub fn master_press(&mut self, s: egui::Pos2) -> bool {
+        let Some(v) = self.master_view else { return false };
+        let Some(r) = crate::canvas::master_companion_rect(self) else {
+            return false;
+        };
+        if !r.contains(s) {
+            return false;
+        }
+        let paper = crate::canvas::page_screen_rect(self);
+        self.view.origin.x += r.left() - paper.left();
+        self.set_master_side(!v.left);
+        true
+    }
+
     /// Back to the pages from a master being edited.
     pub fn leave_master(&mut self) {
         if self.master_view.take().is_some() {
@@ -441,6 +459,7 @@ mod tests {
                 prefix: c.to_string(),
                 name: String::new(),
                 based_on: None,
+                color: None,
             });
         }
         assert_eq!(free_prefix(&ms), "AA");

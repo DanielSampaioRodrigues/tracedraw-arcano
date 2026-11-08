@@ -2773,6 +2773,9 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
     if mark_item_if(ui, "menu.layout.facing_pages", "", Mark::Check(facing), app.has_document()) {
         app.set_facing_pages(!facing);
     }
+    if item(ui, "menu.layout.thread_frames", "", app.has_document()) {
+        crate::ui::pages_panel::open_thread_window(app, ui.ctx());
+    }
     if item(
         ui,
         "menu.layout.fit_page_selection",

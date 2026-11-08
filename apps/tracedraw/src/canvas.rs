@@ -543,7 +543,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         );
     }
     // Arcano edition: a master being edited with facing pages shows its
-    // other side beside this one, as a spread (a click there edits it).
+    // other page beside this one, as a spread; a press there works there.
     if let Some(r) = master_companion_rect(app) {
         let v = app.master_view.unwrap_or(tracedraw_core::document::MasterView { master: 0, left: false });
         painter.rect_filled(
@@ -564,8 +564,6 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         ) {
             painter.image(t, r, ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
         }
-        // Not the side being edited: a light veil over it.
-        painter.rect_filled(r, 0.0, Color32::from_black_alpha(18));
         painter.rect_stroke(r, 0.0, EStroke::new(1.0, Tokens::page_border()), epaint::StrokeKind::Outside);
     }
     if app.show_bleed {

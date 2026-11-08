@@ -3602,6 +3602,10 @@ pub struct MasterPage {
     /// The master it takes its objects from too, drawn behind its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub based_on: Option<u32>,
+    /// The colour that marks its pages in the Pages panel (none: one
+    /// chosen by its id, see [`MasterPage::label_color`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u8; 3]>,
 }
 
 impl MasterPage {
@@ -3612,7 +3616,26 @@ impl MasterPage {
             prefix: "A".into(),
             name: String::new(),
             based_on: None,
+            color: None,
         }
+    }
+
+    /// The colours masters get when none was chosen, by id.
+    pub const LABEL_COLORS: [[u8; 3]; 8] = [
+        [0x3D, 0x8B, 0xE0],
+        [0xE0, 0x6C, 0x12],
+        [0x2E, 0xA0, 0x5A],
+        [0x9B, 0x51, 0xC8],
+        [0xD6, 0x3A, 0x5B],
+        [0x1A, 0x9E, 0xA8],
+        [0xC9, 0x9A, 0x16],
+        [0x6B, 0x6F, 0x7B],
+    ];
+
+    /// The colour marking its pages: its own, or one by its id.
+    pub fn label_color(&self) -> [u8; 3] {
+        self.color
+            .unwrap_or(Self::LABEL_COLORS[self.id as usize % Self::LABEL_COLORS.len()])
     }
 }
 

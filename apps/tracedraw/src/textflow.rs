@@ -361,6 +361,81 @@ impl App {
         self.select(vec![to]);
     }
 
+    /// Arcano edition, Page > Threaded Text Frames: on the pages from
+    /// index `from` to `to` (in range), a paragraph text frame inside the
+    /// margins `[top, bottom, inner, outer]` (inner and outer swapped on
+    /// left-hand pages when the pages face each other, the first page a
+    /// right-hand one), with `columns` columns `gutter` mm apart, each
+    /// linked to the one before: text put in the first runs on through
+    /// the pages (and Flow Into New Pages carries it on). One undo step;
+    /// the first frame, which is selected.
+    pub fn thread_page_frames(
+        &mut self,
+        from: usize,
+        to: usize,
+        margins: [f64; 4],
+        columns: u32,
+        gutter: f64,
+    ) -> Option<ShapeId> {
+        let n = self.doc().pages.len();
+        if n == 0 || from > to || from >= n {
+            return None;
+        }
+        let to = to.min(n - 1);
+        let [top, bottom, inner, outer] = margins.map(|m| if m.is_finite() { m.max(0.0) } else { 0.0 });
+        let facing = self.doc().metadata.facing_pages;
+        let span = TextSpan {
+            bold: self.text_bold,
+            italic: self.text_italic,
+            ..TextSpan::new("", self.text_font.clone(), self.text_size_pt)
+        };
+        let mut para = tracedraw_core::ParagraphStyle::default();
+        para.hyphenate = self.text_hyphenation;
+        para.columns = columns.clamp(1, 20);
+        para.gutter = if gutter.is_finite() { gutter.max(0.0) } else { 0.0 };
+        let keep_page = self.page;
+        let keep_layer = self.picked_layer;
+        let mark = self.engine.begin_group();
+        let mut made: Vec<ShapeId> = Vec::new();
+        for i in from..=to {
+            let Some(page) = self.doc().pages.get(i).map(|p| (p.id, p.size)) else {
+                break;
+            };
+            let (id, size) = page;
+            let right_hand = !facing || i % 2 == 0;
+            let (left, right) = if right_hand { (inner, outer) } else { (outer, inner) };
+            let w = (size.width - left - right).max(1.0);
+            let h = (size.height - top - bottom).max(1.0);
+            self.page = id;
+            self.picked_layer = None;
+            let kind = ShapeKind::Text {
+                spans: vec![span.clone()],
+                origin: Point::new(left, bottom),
+                frame: Some(tracedraw_core::geometry::Size::new(w, h)),
+                align: self.text_align,
+                para: para.clone(),
+                on_path: None,
+            };
+            if let Some(f) = self.new_shape(kind) {
+                if let Some(&prev) = made.last() {
+                    self.link_frames(prev, f);
+                }
+                made.push(f);
+            }
+        }
+        self.engine.end_group(mark, "Threaded Text Frames");
+        self.page = keep_page;
+        self.picked_layer = keep_layer;
+        let first = made.first().copied();
+        if let Some(f) = first {
+            if let Some(i) = self.page_index_of(f) {
+                self.goto_page(i);
+            }
+            self.select(vec![f]);
+        }
+        first
+    }
+
     /// Arcano edition, Text > Flow Into New Pages: while the last frame of
     /// the chain of `any` (a paragraph frame) overflows, a page is added
     /// after the last frame's page, a frame put where the last one is
@@ -668,6 +743,36 @@ mod tests {
         assert_eq!(app.autoflow(id), 0);
         app.undo();
         assert_eq!(app.doc().pages.len(), pages);
+    }
+
+    #[test]
+    fn threaded_frames_sit_in_the_margins_and_carry_the_text_on() {
+        let mut app = App::headless();
+        for _ in 0..3 {
+            app.add_page();
+        }
+        app.set_facing_pages(true);
+        let w = app.doc().pages[0].size.width;
+        let steps = app.engine.history_labels().0.len();
+        let first = app
+            .thread_page_frames(0, 3, [20.0, 25.0, 22.0, 15.0], 2, 5.0)
+            .expect("frames");
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        let chain = app.chain_of(first);
+        assert_eq!(chain.len(), 4);
+        let frame = |app: &App, id| match &app.doc().find_shape(id).unwrap().kind {
+            ShapeKind::Text { origin, frame: Some(f), para, .. } => (origin.x, f.width, para.columns),
+            _ => panic!("a frame"),
+        };
+        // Page 1 (right-hand): the inner margin on the left; page 2
+        // (left-hand): the outer one.
+        assert_eq!(frame(&app, chain[0]), (22.0, w - 37.0, 2));
+        assert_eq!(frame(&app, chain[1]).0, 15.0);
+        // Each on its own page, in order.
+        let pages: Vec<usize> = chain.iter().map(|id| app.page_index_of(*id).unwrap()).collect();
+        assert_eq!(pages, vec![0, 1, 2, 3]);
+        app.undo();
+        assert!(app.doc().find_shape(first).is_none());
     }
 
     #[test]
