@@ -97,6 +97,30 @@ Text put in the first runs on through the pages, and Text > Text Frame >
 Flow Into New Pages carries it on past the last. One undo step
 (`threaded_frames_sit_in_the_margins_and_carry_the_text_on`).
 
+## Primary text frame
+
+A master can have a primary text frame (Master Options > Primary text
+frame: margins, columns and gutter, the house standard's to start with).
+Every page then made with that master, by Add Page, Insert Page, Insert
+Pages, Duplicate Page without contents or Flow Into New Pages, gets a
+paragraph frame inside those margins (mirrored on left-hand pages with
+facing pages), marked as the page's primary frame and threaded between
+the primary frames of the nearest pages before and after it, so a text
+put in the first frame runs on through the pages and into pages added
+later, also in the middle of the book. Turning it on for a master that
+pages already use puts the frame on them too (unless "Also on the pages
+already using it" is off). In New Document, "Primary text frame" gives
+master A one in the house margins and every page its frame, as the
+drawing's starting state, and "Facing pages" makes the pages face. A
+master based on another takes its parent's primary frame when it has
+none. On a single-page drawing (facing pages off) a master is one page,
+the same on every page that uses it. Tests:
+`primary_frames::tests::pages_made_with_a_primary_master_get_threaded_frames`,
+`text_in_the_primary_frame_runs_on_into_new_pages`,
+`a_new_drawing_can_start_with_its_primary_frames`,
+`a_master_without_a_primary_frame_adds_none`,
+`masters::tests::single_pages_have_one_page_masters`.
+
 ## The panel beside a folded column
 
 - Shown beside a column folded to pictures, the panel folds away at a

@@ -3606,6 +3606,36 @@ pub struct MasterPage {
     /// chosen by its id, see [`MasterPage::label_color`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[u8; 3]>,
+    /// Its primary text frame: every page made with it gets a paragraph
+    /// frame inside these margins, threaded on from the frame of the page
+    /// before, so the text runs on into new pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<PrimaryFrame>,
+}
+
+/// Arcano edition: the primary text frame of a master page
+/// ([`MasterPage::primary`]).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PrimaryFrame {
+    /// Top, bottom, inner and outer margins, mm (inner and outer swap on
+    /// left-hand pages when pages face each other).
+    pub margins: [f64; 4],
+    /// Columns (at least 1) and the gutter between them, mm.
+    pub columns: u32,
+    pub gutter: f64,
+}
+
+impl PrimaryFrame {
+    /// The frame on a page `size` big: its lower-left corner and size, mm
+    /// (y up), on a right-hand page or a left-hand one.
+    pub fn rect_on(&self, size: crate::geometry::Size, right_hand: bool) -> (crate::geometry::Point, crate::geometry::Size) {
+        let clean = |m: f64| if m.is_finite() { m.max(0.0) } else { 0.0 };
+        let [top, bottom, inner, outer] = self.margins.map(clean);
+        let (left, right) = if right_hand { (inner, outer) } else { (outer, inner) };
+        let w = (size.width - left - right).max(1.0);
+        let h = (size.height - top - bottom).max(1.0);
+        (crate::geometry::Point::new(left, bottom), crate::geometry::Size::new(w, h))
+    }
 }
 
 impl MasterPage {
@@ -3617,6 +3647,7 @@ impl MasterPage {
             name: String::new(),
             based_on: None,
             color: None,
+            primary: None,
         }
     }
 

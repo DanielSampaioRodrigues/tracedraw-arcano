@@ -633,6 +633,7 @@ impl Command {
                     name: name.clone(),
                     based_on: *based_on,
                     color: None,
+                    primary: None,
                 });
                 let layer = doc.ids_mut().layer();
                 let mut l = Layer::master(layer, layer_name.clone(), MasterScope::All);

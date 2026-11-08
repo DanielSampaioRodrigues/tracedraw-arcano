@@ -85,6 +85,34 @@ impl App {
         true
     }
 
+    /// OK in Master Page Options (or New Master): the master made or
+    /// changed with its colour and primary frame and, with `fill`, the
+    /// primary frame put on the pages already using it; one undo step.
+    /// The master's id, or `None` when refused.
+    pub fn master_options_ok(&mut self, master: MasterPage, new: bool, fill: bool) -> Option<u32> {
+        let mark = self.engine.begin_group();
+        let id = if new {
+            let id = self.new_master(&master.prefix, &master.name, master.based_on);
+            if let Some(mut m) = id.and_then(|id| self.doc().master_page(id)) {
+                m.color = master.color;
+                m.primary = master.primary;
+                self.set_master(m);
+            }
+            id
+        } else {
+            let had = self.doc().master_page(master.id).and_then(|m| m.primary);
+            let id = master.id;
+            let primary = master.primary;
+            let ok = self.set_master(master);
+            if ok && fill && primary.is_some() && primary != had {
+                self.add_primary_frames_for_master(id);
+            }
+            ok.then_some(id)
+        };
+        self.engine.end_group(mark, "Master Page Options");
+        id
+    }
+
     /// Delete master page `id` (never A) with its objects.
     pub fn delete_master(&mut self, id: u32) {
         if id != 0 && id != NO_MASTER {
@@ -152,6 +180,9 @@ impl App {
                 pages: made.clone(),
                 master,
             });
+        }
+        for p in &made {
+            self.add_primary_frame(*p);
         }
         self.engine.end_group(mark, "Insert Pages");
         if let Some(i) = made
@@ -401,6 +432,35 @@ mod tests {
     }
 
     #[test]
+    fn single_pages_have_one_page_masters() {
+        let mut app = App::headless();
+        for _ in 0..2 {
+            app.add_page();
+        }
+        app.set_facing_pages(false);
+        let pages: Vec<PageId> = app.doc().pages.iter().map(|p| p.id).collect();
+        let b = app.new_master("", "Avulsa", None).unwrap();
+        app.apply_master(&pages, b);
+        app.edit_master(b);
+        // No other page beside the master to click.
+        assert!(crate::canvas::master_companion_rect(&app).is_none());
+        let id = app
+            .new_shape(tracedraw_core::ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(10.0, 10.0, 30.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .unwrap();
+        app.goto_page(0);
+        // The same object on every page, odd or even.
+        for p in &pages {
+            let ids: Vec<_> = app.doc().layers_for_page(*p).unwrap().iter().flat_map(|l| l.shapes.iter().map(|s| s.id)).collect();
+            assert!(ids.contains(&id));
+        }
+        assert!(app.doc().master.iter().filter(|l| l.master_page == b).all(|l| l.scope == MasterScope::All));
+    }
+
+    #[test]
     fn what_is_drawn_on_a_master_shows_on_its_pages_on_its_side() {
         let mut app = App::headless();
         for _ in 0..3 {
@@ -460,6 +520,7 @@ mod tests {
                 name: String::new(),
                 based_on: None,
                 color: None,
+                primary: None,
             });
         }
         assert_eq!(free_prefix(&ms), "AA");

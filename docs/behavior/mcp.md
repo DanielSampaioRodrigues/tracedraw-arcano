@@ -125,7 +125,7 @@ Every answer from a window ends with a line naming it:
 | `switch_document` | `index` | Brings that drawing's tab to the front |
 | `get_selection` | | The selected objects in full and the selection's bounds |
 | `select` | `ids`, `add` | Selects as a click would (the objects' page comes to the front); an unknown id or objects on two pages are refused |
-| `render_area` | `area` (`selection`, default when something is selected, `view`, `page`), or `ids` or `rect_mm`; `padding_mm` (3), `max_px` (1024; 128 to 2048), `page_index` | A PNG on white of just that part of the page, drawn at that size (not cut from a page picture), and a line giving the area in mm and the resolution |
+| `render_area` | `area` (`selection`, default when something is selected, `view`, `page`), or `ids` or `rect_mm`; `padding_mm` (3), `max_px` (1024; 128 to 2048), `page_index`, `save_to` (a .png path, for `compare_snapshots`) | A PNG on white of just that part of the page, drawn at that size (not cut from a page picture), and a line giving the area in mm and the resolution |
 | `font_metrics` | `family`, `size_pt` (12), `bold`, `italic`, `text` | The face's ascent, descent, line height, cap height and x-height in mm, from its tables; with text, its advance width and its letters' ink bounds from the baseline start. A font that is not installed is an error naming similar families, never a substitute's measures |
 | `list_fonts` | `filter` | Up to 200 families with their faces, and how many matched |
 | `api_reference` | `model` | The object model as `run_script` defines it, with the conventions (mm, lower-left origin, y up) |
@@ -155,3 +155,73 @@ Every answer from a window ends with a line naming it:
 - `font_metrics` of an installed font at 72 pt has an ascent between 10
   and 30 mm, twice that at 144 pt, and a width for text; a font that is
   not installed is an error (`mcp_plus::tests::fonts_are_measured_not_guessed`).
+
+## Arcano edition: book and page tools
+
+The tools a press works a book with, in `apps/tracedraw/src/mcp_prelo.rs`
+(reading and checks) and `mcp_prelo_fix.rs` (composing and fixing),
+asked after `mcp_plus.rs`'s. A story is a chain of linked paragraph
+frames, named by the id of its first frame (`story` takes any of its
+frames); without it a tool works on the main story, the one with the
+most characters. Pages are indices (`from_page`, `to_page`, 0 = the
+first); answers give each page's number as the drawing numbers it too.
+Lengths are mm, page lower-left (0, 0), y up. The checks only diagnose;
+each tool that changes the drawing is one undo step and none saves it
+over its file. The tools' files go to Documents/TraceDraw
+(`checkpoints`, `scripts`, `projects`).
+
+| Tool | What it does |
+| --- | --- |
+| `document_report` | Format, facing pages, bleed, house margins, masters with their primary frames, stories, styles, images, missing fonts, and the preflight's problems |
+| `page_layout` | Per page (10 at a time, at most 50): size, side, master, content area (the primary frame's, else the house margins, mirrored), columns; each object with id, type, layer, bounds, for text frames story, next and previous frame, overflow, primary mark, for images their effective ppi |
+| `story_map` | The stories with frames, pages, characters and overflow, the main one told from short texts; the paragraph styles of the main story with counts and how many start a page; the likely opening styles |
+| `export_lines` | Every line laid out: page, frame, column, paragraph, first and last, baseline and ends, measure, style, alignment, size, hyphen, the space ratio of justified lines; `save_to` writes JSON |
+| `audit_justification` | Loose (over 133 % of a normal space) and tight (under 80 %) lines, measured against the same line set flush left; rivers (gaps overlapping on 3 or more lines of a column); hyphens in a row, at the foot, on the last word, one-letter syllables, proper names split |
+| `audit_breaks` | Widows, orphans, a single word on the last line, titles at the foot, stacks of the same first or last word on 3 lines, spreads ending at different heights (not before an `opening_styles` paragraph) |
+| `audit_rag` | Ragged paragraphs: wedges, holes, alternation, a last line under a fifth of the longest, a line ending in a short function word, a number apart from its unit, a proper name split; `poetry` only points |
+| `audit_density` | Characters per mm of full lines against the median of their style and size: light and dark lines (10 %), patches of 3, pages off tone (2.5 %) |
+| `audit_microtypography` | Straight quotes, hyphens as dashes, dashes spaced two ways, double spaces, spaces before punctuation, punctuation stuck to the next word; suggestions: three dots, acronyms in capitals, long numbers |
+| `audit_structure` | Off the page, beyond the bleed, text frames outside the margins, overflow, empty frames, frames over twice their text, loose frames of running text on pages one after another |
+| `audit_local_formatting` | Runs that differ from their paragraph style: off the style, the author's marks by hand, composition settings, with the local and the style's values |
+| `check_openings` | The House Press's front matter and openings checklist |
+| `check_fidelity` | Characters in italic, bold, underline, strike-through, superscript, subscript and small caps, and paragraphs, in the .docx and in the story; what went missing |
+| `font_available` | Whether named families are installed, with their faces, or similar names |
+| `house_standard` | The house margins, bleed and safety distance, new text's settings, the drawing's styles and the house rules |
+| `craft_reference` | The craft base (`docs/craft.md`): chapters, a chapter, or the sections holding all the words searched |
+| `create_document` | A new drawing in the house standard: size, pages, facing pages, margins, book styles, bleed and guides, a primary frame on master A threaded through every page; nothing to undo, not modified |
+| `place_text` | Text or a .txt from a page: the page's empty primary frame or a frame in its content area, frames linked on the next pages, pages added at the end (Flow Into New Pages) until it fits; a style for all and one for the first paragraph |
+| `thread_frames` | Links frames in order (each joins the end of the chain before) |
+| `fit_frame` | The height that just holds the text (and `padding_mm`), the top kept; linked frames are left |
+| `apply_paragraph_style` | A style by name to a story or its paragraphs `from` to `to`, optionally clearing local formatting |
+| `clear_local_formatting` | Style properties back to the style (and composition ones when asked); the author's marks never touched, checked character by character |
+| `fix_typography` | The House Press's typography fix on the story or all texts, refused if a word would change |
+| `fix_justification` | Per paragraph with loose or tight lines, the paragraph's tracking from -5 to +5 thousandths of an em: the most even spacing that keeps its line count, the frame's fitted text and no more lines out of range |
+| `fix_breaks` | Single words: tracking up to +15 thousandths bringing one more word down, the paragraph ending where it did; widows and orphans: a paragraph of the frame before (widow) or of the frame (orphan) gains or loses a line, kept only when the story's widows and orphans go down; what cannot be fixed is listed |
+| `checkpoint` | A .tdraw copy with date and time in its name; the open drawing untouched |
+| `save_as` | Saves under a new name and opens it; refuses the open file and existing files |
+| `run_script_batch` | Scripts one after another, each an undo step, after a checkpoint; stops at an error and at new objects off the page or overflowing |
+| `script_library` | Scripts kept by name with description, arguments, model and where they were used: list, search, read, save |
+| `start_project`, `save_briefing`, `read_briefing` | The short interview per kind of job, the briefing saved as JSON and Markdown, read back or listed |
+| `compare_snapshots` | Two PNGs of the same area (from `render_area` with `save_to`): the share that changed, regions boxed in red, in mm with `dpi` |
+| `measure_contrast` | WCAG contrast of the letters of texts against what is behind them (drawn without them): median, worst 10 %, shares under 3:1 and 4.5:1, by fifth of the width; `suggest_position` tries moves and gives the best |
+
+### Checks (book and page tools)
+
+- Every tool has a description and an answer, and no name is shared with
+  the other lists (`mcp_prelo::tests::every_book_tool_has_a_name_a_description_and_an_answer`).
+- The report, layout and map read a drawing (`the_report_layout_and_map_read_the_drawing`).
+- Lines come with their place and space ratio (`lines_come_with_their_place_and_spacing`).
+- Micro-typography cases, breaks, structure and rag (`the_checks_find_their_cases`);
+  rivers (`rivers_are_gaps_lined_up_over_three_lines`); local formatting
+  groups (`local_formatting_is_told_apart_from_the_authors_marks`);
+  fonts, craft base, house standard (`fonts_and_the_craft_base_answer_by_name`).
+- A new book in the house standard takes its text through new pages, one
+  undo step (`mcp_prelo_fix::tests::a_new_book_gets_the_house_standard_and_its_text_runs_through`);
+  threading and fitting (`frames_thread_and_fit_their_text`); clearing
+  keeps italic (`clearing_local_formatting_keeps_the_authors_marks`);
+  typography (`typography_is_fixed_without_touching_words`); justification
+  keeps the pagination (`justification_fixes_keep_the_pagination`);
+  files never over a file (`files_go_to_the_work_folder_and_never_over_a_file`);
+  scripts, batches and briefings (`scripts_are_kept_and_found_and_batches_stop_at_errors`);
+  contrast (`contrast_is_measured_on_what_is_behind_the_letters`);
+  snapshots (`snapshots_compare_by_pixel`).

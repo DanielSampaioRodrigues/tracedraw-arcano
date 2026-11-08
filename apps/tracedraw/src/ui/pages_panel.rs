@@ -49,6 +49,8 @@ enum Window {
     Master {
         master: MasterPage,
         new: bool,
+        /// Put the primary frame on the pages already using it too.
+        fill: bool,
     },
     Apply {
         master: u32,
@@ -291,6 +293,7 @@ fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                         st.window = Some(Window::Master {
                             master: m.clone(),
                             new: false,
+                            fill: true,
                         });
                         ui.close();
                     }
@@ -590,8 +593,10 @@ fn page_menu(app: &mut App, ui: &mut Ui, st: &mut State, picked: &[usize], facin
                 name: tr("master.default_name"),
                 based_on: None,
                 color: None,
+                primary: None,
             },
             new: true,
+            fill: true,
         });
         ui.close();
     }
@@ -847,7 +852,7 @@ fn windows(app: &mut App, ctx: &egui::Context, st: &mut State) {
                 }
             });
         }
-        Window::Master { master, new } => {
+        Window::Master { master, new, fill } => {
             let title = if *new { tr("pages.new_master") } else { tr("pages.master_options") };
             crate::ui::dialogs::window(ctx, title).show(ctx, |ui| {
                 egui::Grid::new("arcano_master_options").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
@@ -897,16 +902,54 @@ fn windows(app: &mut App, ctx: &egui::Context, st: &mut State) {
                         }
                     });
                     ui.end_row();
+                    // The primary text frame its pages get.
+                    ui.label(tr("pages.primary"));
+                    let mut on = master.primary.is_some();
+                    if ui
+                        .checkbox(&mut on, tr("pages.primary_on"))
+                        .rich_tip(crate::ui::tips::pair("pages.primary", "pages.primary_desc"))
+                        .changed()
+                    {
+                        master.primary = on.then(|| {
+                            let h = crate::prelo_casa::house_prefs(app);
+                            tracedraw_core::PrimaryFrame {
+                                margins: [h.top, h.bottom, h.inner, h.outer],
+                                columns: 1,
+                                gutter: 5.0,
+                            }
+                        });
+                    }
+                    ui.end_row();
+                    if let Some(p) = master.primary.as_mut() {
+                        for (k, key) in ["pages.margin_top", "pages.margin_bottom", "pages.margin_inner", "pages.margin_outer"].iter().enumerate() {
+                            ui.label(tr(key));
+                            ui.add(egui::DragValue::new(&mut p.margins[k]).range(0.0..=500.0).speed(0.5).suffix(" mm"))
+                                .rich_tip(crate::ui::tips::pair(key, "pages.margin_desc"));
+                            ui.end_row();
+                        }
+                        ui.label(tr("pages.columns"));
+                        ui.add(egui::DragValue::new(&mut p.columns).range(1..=20).speed(0.1))
+                            .rich_tip(tr("pages.columns"));
+                        ui.end_row();
+                        ui.label(tr("pages.gutter"));
+                        ui.add(egui::DragValue::new(&mut p.gutter).range(0.0..=100.0).speed(0.2).suffix(" mm"))
+                            .rich_tip(tr("pages.gutter"));
+                        ui.end_row();
+                        if !*new {
+                            ui.label("");
+                            ui.checkbox(fill, tr("pages.primary_fill"))
+                                .rich_tip(crate::ui::tips::pair("pages.primary_fill", "pages.primary_fill_desc"));
+                            ui.end_row();
+                        }
+                    }
                 });
                 ui.separator();
                 if crate::ui::dialogs::ok_cancel(ui, &mut close) {
-                    if *new {
-                        let id = app.new_master(&master.prefix, &master.name, master.based_on);
-                        st.master = id;
-                        close = true;
-                    } else {
-                        close = app.set_master(master.clone());
-                    }
+                    close = app.master_options_ok(master.clone(), *new, *fill).inspect(|id| {
+                        if *new {
+                            st.master = Some(*id);
+                        }
+                    }).is_some();
                 }
             });
         }

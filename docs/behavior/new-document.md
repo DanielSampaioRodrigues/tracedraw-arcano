@@ -76,9 +76,16 @@ black included, stay exactly as saved (see
 [object-styles.md](object-styles.md#default-properties)). The dialog's values
 are kept in the settings file (`new_document`) for the next time.
 
+Arcano edition: "Facing pages" makes the pages face each other in
+spreads, the first a right-hand page; "Primary text frame" gives master A
+a primary text frame in the house margins and every page a frame threaded
+on to the next (see [pages-panel.md](pages-panel.md#primary-text-frame)).
+Both are kept with the dialog's values.
+
 ## Checks
 
 - `new_document::tests::build_makes_the_pages_size_resolution_and_colour_mode`
 - `new_document::tests::editing_a_value_turns_the_preset_into_custom`
 - `new_document::tests::page_sizes_keep_the_orientation_and_typed_sizes_find_their_name`
 - `new_document::tests::ok_opens_a_new_tab_and_remembers_the_settings`
+- `primary_frames::tests::a_new_drawing_can_start_with_its_primary_frames`

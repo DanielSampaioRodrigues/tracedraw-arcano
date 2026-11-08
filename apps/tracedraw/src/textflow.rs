@@ -213,6 +213,47 @@ impl App {
         true
     }
 
+    /// Put the unlinked frame `new` into a chain: after `prev` (before
+    /// the frame `prev` flowed into), else before `next`; the text
+    /// reflows. Part of the caller's undo step.
+    pub fn thread_between(&mut self, new: ShapeId, prev: Option<ShapeId>, next: Option<ShapeId>) {
+        let Some(dn) = self.frame_data(new) else {
+            return;
+        };
+        if self.next_frame(new).is_some() || self.prev_frame(new).is_some() {
+            return;
+        }
+        let (before, after) = match prev {
+            Some(p) if self.frame_data(p).is_some() => (Some(p), self.next_frame(p)),
+            _ => match next {
+                Some(n) if self.frame_data(n).is_some() => (self.prev_frame(n), Some(n)),
+                _ => return,
+            },
+        };
+        let mut cmds = vec![Command::SetObjectData {
+            shape: new,
+            data: with_key(with_key(dn, PREV, before), NEXT, after),
+        }];
+        if let Some(b) = before {
+            if let Some(d) = self.frame_data(b) {
+                cmds.push(Command::SetObjectData {
+                    shape: b,
+                    data: with_key(d, NEXT, Some(new)),
+                });
+            }
+        }
+        if let Some(a) = after {
+            if let Some(d) = self.frame_data(a) {
+                cmds.push(Command::SetObjectData {
+                    shape: a,
+                    data: with_key(d, PREV, Some(new)),
+                });
+            }
+        }
+        let _ = self.engine.run_batch("Link Frames", &cmds);
+        self.reflow_chain(new);
+    }
+
     /// The frame whose flow tab is under the screen point `at` (Pick
     /// tool): a frame shown with a tab that flows into no other frame.
     pub fn flow_tab_at(&self, at: egui::Pos2) -> Option<ShapeId> {
@@ -416,7 +457,8 @@ impl App {
                 para: para.clone(),
                 on_path: None,
             };
-            if let Some(f) = self.new_shape(kind) {
+            let (c, g) = (para.columns, para.gutter);
+            if let Some(f) = self.new_shape_styled(kind, |s| crate::primary_frames::keep_columns(s, c, g)) {
                 if let Some(&prev) = made.last() {
                     self.link_frames(prev, f);
                 }
@@ -475,7 +517,13 @@ impl App {
             if self.page_index() != page {
                 self.goto_page(page);
             }
+            let before = self.chain_of(any).len();
             self.insert_page(true);
+            // The new page's master put its primary frame into the chain.
+            if self.chain_of(any).len() > before {
+                added += 1;
+                continue;
+            }
             let Some(span) = spans.last().cloned().map(|mut s| {
                 s.text.clear();
                 s

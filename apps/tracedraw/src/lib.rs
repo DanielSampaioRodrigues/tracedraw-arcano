@@ -122,6 +122,8 @@ mod mcp;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp_link;
 mod mcp_plus;
+mod mcp_prelo;
+mod mcp_prelo_fix;
 mod media;
 mod mesh_tool;
 mod mixed;
@@ -152,6 +154,7 @@ mod prefs;
 mod prelo_casa;
 mod prelo_quebras;
 mod masters;
+mod primary_frames;
 mod page_thumbs;
 mod print_merge;
 mod printers;

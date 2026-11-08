@@ -8790,6 +8790,7 @@ impl App {
         self.run(self.localized_page(size));
         if let (Some(from), Some(new)) = (from, self.doc().pages.last().map(|p| p.id)) {
             self.inherit_master(new, from);
+            self.add_primary_frame(new);
         }
         self.engine.end_group(mark, "Insert Page");
         if let Some(p) = self.doc().pages.last() {
@@ -8817,6 +8818,7 @@ impl App {
         }
         // Arcano edition: the new page keeps the current page's master.
         self.inherit_master(new, from);
+        self.add_primary_frame(new);
         self.engine.end_group(mark, "Insert Page");
         self.page = new;
         self.selection.clear();
@@ -8838,6 +8840,9 @@ impl App {
         // Arcano edition: the copy keeps the page's master.
         if let Some(copy) = new.and_then(|i| self.doc().pages.get(i)).map(|p| p.id) {
             self.inherit_master(copy, page);
+            if !contents {
+                self.add_primary_frame(copy);
+            }
         }
         self.engine.end_group(mark, "Duplicate Page");
         if let Some(i) = new {

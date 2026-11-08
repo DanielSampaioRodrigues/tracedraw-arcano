@@ -129,6 +129,11 @@ pub struct NewDocSettings {
     pub gray_profile: String,
     pub intent: String,
     pub saved_presets: Vec<SavedPreset>,
+    /// Arcano edition: the pages face each other in spreads.
+    pub facing: bool,
+    /// Arcano edition: master A gets a primary text frame in the house
+    /// margins and every page a frame threaded on into the next.
+    pub primary_frame: bool,
 }
 
 impl Default for NewDocSettings {
@@ -142,6 +147,8 @@ impl Default for NewDocSettings {
             gray_profile: GRAY_PROFILES[0].into(),
             intent: INTENTS[1].into(),
             saved_presets: Vec::new(),
+            facing: false,
+            primary_frame: false,
         }
     }
 }
@@ -183,6 +190,7 @@ impl NewDocSettings {
             }
         }
         let m = &mut doc.metadata;
+        m.facing_pages = self.facing;
         m.resolution_dpi = self.values.dpi;
         m.rgb_profile = self.rgb_profile.clone();
         m.cmyk_profile = self.cmyk_profile.clone();
@@ -296,7 +304,7 @@ const LABEL_RIGHT: f32 = 190.0;
 const FIELD_X: f32 = 195.0;
 const WIDE: f32 = 231.0;
 const NUMBER_W: f32 = 100.0;
-const BODY_COLLAPSED: f32 = 474.0;
+const BODY_COLLAPSED: f32 = 474.0 + 2.0 * 33.0;
 const COLOR_ROWS: f32 = 4.0;
 
 /// Draw the dialog; `close` is set when it should go away.
@@ -417,6 +425,20 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
                 &crate::ui::tips::keyed("newdoc.pages"),
             );
             y += ROW_PITCH;
+            // Arcano edition: facing pages and the primary text frame.
+            for (key, tip_key, value) in [
+                ("newdoc.facing", "newdoc.facing_desc", &mut st.settings.facing),
+                ("newdoc.primary_frame", "newdoc.primary_frame_desc", &mut st.settings.primary_frame),
+            ] {
+                chrome::label_right(ui, body.left() + LABEL_RIGHT, at(0.0, y + 14.0).y, &tr(key));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(field(FIELD_X, y, WIDE)), |ui| {
+                    ui.horizontal_centered(|ui| {
+                        ui.checkbox(value, "")
+                            .rich_tip(crate::ui::tips::pair(key, tip_key));
+                    });
+                });
+                y += ROW_PITCH;
+            }
             // Primary colour mode.
             chrome::label_right(
                 ui,
@@ -551,6 +573,9 @@ pub fn create(app: &mut App, st: &NewDocState) {
     // The name shown was the next Untitled-N: use it up.
     app.untitled_counter += 1;
     app.open_document(doc, None);
+    if st.settings.primary_frame {
+        app.start_with_primary_frames();
+    }
     app.units = Units::from_id(&st.settings.values.units);
     app.settings.new_document = st.settings.clone();
     if st.dont_show {
