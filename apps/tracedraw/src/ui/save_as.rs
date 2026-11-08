@@ -30,6 +30,7 @@ const TYPE_AHEAD_PAUSE: f64 = 1.0;
 /// The file types the drawing can be saved as.
 pub const TDRAW: &str = "tdraw";
 pub const CDR: &str = "cdr";
+pub const IDML: &str = "idml";
 
 /// The dialog's state.
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +43,8 @@ pub struct SaveAsState {
     pub name: String,
     /// `.cdr` rather than TraceDraw.
     pub cdr: bool,
+    /// An IDML package rather than TraceDraw or `.cdr`.
+    pub idml: bool,
     pub version: u16,
     /// The `.tdraw` format version.
     pub tdraw_version: u32,
@@ -142,6 +145,7 @@ impl SaveAsState {
             dir: dir.clone(),
             name: String::new(),
             cdr,
+            idml: false,
             // A drawing opened from a .cdr file starts at its own version,
             // as Save keeps it; any other at the version Options > Global >
             // File Formats sets (#613).
@@ -192,7 +196,9 @@ impl SaveAsState {
 
     /// The chosen type's extension.
     pub fn extension(&self) -> &'static str {
-        if self.cdr {
+        if self.idml {
+            IDML
+        } else if self.cdr {
             CDR
         } else {
             TDRAW
@@ -204,7 +210,7 @@ impl SaveAsState {
     pub fn file_name(&self) -> String {
         let name = self.name.trim();
         let lower = name.to_ascii_lowercase();
-        let stem = [TDRAW, CDR]
+        let stem = [TDRAW, CDR, IDML]
             .iter()
             .find_map(|ext| {
                 lower
@@ -237,7 +243,7 @@ impl SaveAsState {
     /// only (#1401): its Save As writes one document where the picker
     /// says.
     pub fn packaged(&self) -> bool {
-        self.package && !self.cdr && !files::WEB && !files::ANDROID
+        self.package && !self.cdr && !self.idml && !files::WEB && !files::ANDROID
     }
 
     /// Show `dir` (a folder that cannot be read shows empty).
@@ -401,6 +407,15 @@ impl SaveAsState {
     /// The type changed: the name takes its extension.
     pub fn set_cdr(&mut self, cdr: bool) {
         self.cdr = cdr;
+        self.idml = false;
+        self.name = self.file_name();
+        self.replace = None;
+    }
+
+    /// Choose an IDML package (or back to TraceDraw, with `on` false).
+    pub fn set_idml(&mut self, on: bool) {
+        self.idml = on;
+        self.cdr = false;
         self.name = self.file_name();
         self.replace = None;
     }
@@ -526,6 +541,7 @@ impl App {
         if files::ANDROID {
             self.apply_save_as_properties(st);
             let cdr = st.cdr;
+            let idml = st.idml;
             let version = st.version;
             let (embed_profile, embed_fonts) = (st.embed_profile, st.embed_fonts);
             let (tdraw_embed_fonts, tdraw_version) = (st.tdraw_embed_fonts, st.tdraw_version);
@@ -537,6 +553,8 @@ impl App {
                         app.cdr_embed_profile = embed_profile;
                         app.cdr_embed_fonts = embed_fonts;
                         app.save_cdr_to(path, version);
+                    } else if idml {
+                        app.save_to(path);
                     } else {
                         app.tdraw_embed_fonts = tdraw_embed_fonts;
                         app.tdraw_version = Some(tdraw_version);
@@ -558,6 +576,10 @@ impl App {
             self.cdr_embed_profile = st.embed_profile;
             self.cdr_embed_fonts = st.embed_fonts;
             self.save_cdr_to(path, st.version);
+        } else if st.idml {
+            // An IDML package: the pages, the text frames and the
+            // rectangles, written by the format crate.
+            self.save_to(path);
         } else {
             self.tdraw_embed_fonts = st.tdraw_embed_fonts;
             self.tdraw_version = Some(st.tdraw_version);
@@ -1020,27 +1042,36 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
         }
         ui.end_row();
         row_label(ui, &tr("dialog.save_as_type"));
-        let mut cdr = st.cdr;
+        // 0 TraceDraw, 1 `.cdr`, 2 IDML.
+        let mut kind = if st.idml {
+            2
+        } else if st.cdr {
+            1
+        } else {
+            0
+        };
         if combo(
             ui,
             "save_as_type",
-            &mut cdr,
-            &[false, true],
-            |cdr| {
-                if cdr {
-                    tr("file.cdr_files")
-                } else {
-                    "TraceDraw (*.tdraw)".to_string()
-                }
+            &mut kind,
+            &[0, 1, 2],
+            |k| match k {
+                1 => tr("file.cdr_files"),
+                2 => "IDML (*.idml)".to_string(),
+                _ => "TraceDraw (*.tdraw)".to_string(),
             },
             260.0,
         ) {
-            st.set_cdr(cdr);
+            match kind {
+                2 => st.set_idml(true),
+                1 => st.set_cdr(true),
+                _ => st.set_cdr(false),
+            }
         }
         ui.end_row();
         // With one .tdraw format version there is nothing to choose or to
         // tell: the row stays, empty, so the dialog keeps its size.
-        let one_tdraw = !st.cdr && tdraw_version_choices().len() == 1;
+        let one_tdraw = !st.cdr && !st.idml && tdraw_version_choices().len() == 1;
         if one_tdraw {
             ui.label("");
         } else {
@@ -1765,6 +1796,29 @@ mod tests {
         assert!(!state(&mut app).tdraw_embed_fonts);
         let _ = std::fs::remove_dir_all(&dir);
     }
+    /// Save As as IDML writes a package the reader opens.
+    #[test]
+    fn save_as_idml_writes_a_package() {
+        let dir = temp_dir("save-as-idml");
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.save_as_dialog();
+        let mut st = state(&mut app).clone();
+        st.open_dir(dir.clone());
+        st.name = "Pagina".into();
+        st.set_idml(true);
+        assert_eq!(st.extension(), "idml");
+        assert_eq!(st.file_name(), "Pagina.idml");
+        assert!(app.finish_save_as(&mut st));
+        app.dialog = Dialog::None;
+        let path = dir.join("Pagina.idml");
+        assert!(path.exists(), "{}", path.display());
+        let bytes = std::fs::read(&path).expect("read");
+        let imported = tracedraw_io::idml::open(&bytes).expect("the package reads");
+        assert_eq!(imported.document.pages.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Save As with Package ticked (#852): the drawing goes into a
     /// folder of its name, its linked picture into Pictures with the
     /// link pointing to the copy, and a report beside it; the drawing's
