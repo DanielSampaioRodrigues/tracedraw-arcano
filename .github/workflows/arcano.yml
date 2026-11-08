@@ -24,6 +24,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Added lines
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          FORBIDDEN_WORDS: ${{ vars.FORBIDDEN_WORDS }}
+        run: scripts/check_added_lines.sh ${{ github.event.before }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: System libraries
