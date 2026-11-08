@@ -180,6 +180,22 @@ pub fn open(bytes: &[u8]) -> Result<Imported, String> {
     Ok(Imported { document: doc, warnings })
 }
 
+/// Read a `.indd` file: the crate that knows that format turns it into an
+/// IDML package, which [`open`] then takes. Its warnings (what it could
+/// not carry over) come first, then ours.
+pub fn open_indd(bytes: &[u8], name: &str) -> Result<Imported, String> {
+    let conversion = indd::convert(bytes, name).map_err(|e| e.to_string())?;
+    let mut imported = open(&conversion.idml)?;
+    let mut warnings: Vec<String> = conversion
+        .warnings
+        .iter()
+        .map(|w| w.message().to_string())
+        .collect();
+    warnings.append(&mut imported.warnings);
+    imported.warnings = warnings;
+    Ok(imported)
+}
+
 /// One story: its text (paragraphs on new lines) and the font and size of
 /// its first character run.
 struct Story {
@@ -452,6 +468,13 @@ mod tests {
             other => panic!("a rectangle: {other:?}"),
         }
         assert!(matches!(shapes[1].fill, Fill::Solid(_)), "{:?}", shapes[1].fill);
+    }
+
+    /// A file that is not an INDD document is an error, never a panic.
+    #[test]
+    fn a_file_that_is_not_indd_is_an_error() {
+        let err = open_indd(b"not an INDD document at all", "sample.indd");
+        assert!(err.is_err());
     }
 
     /// A file that is not a package, and one missing the parts it needs,

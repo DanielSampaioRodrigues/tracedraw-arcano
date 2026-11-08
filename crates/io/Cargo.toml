@@ -15,6 +15,10 @@ tiny-skia.workspace = true
 usvg = { version = "0.48", default-features = false }
 lopdf = { version = "0.46", default-features = false }
 roxmltree = "0.21"
+# The `.indd` reader and its conversion to IDML: a whole crate of another
+# open-source project, MIT OR Apache-2.0, at a pinned commit (see
+# docs/third-party.md and licenses/indd-utils/).
+indd = { git = "https://github.com/storytold/indd-utils", rev = "136f973a9d5f1b3ef34e46e27f4a08af196efde7" }
 # Fonts embedded in PDF files: their tables (ttf-parser) and the subset of
 # glyphs a file uses (subsetter, MIT OR Apache-2.0).
 ttf-parser.workspace = true

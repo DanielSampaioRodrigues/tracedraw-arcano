@@ -34,7 +34,7 @@ photo, spreadsheets, slides) is `MIT OR Apache-2.0`, written in Rust:
 | VectorCraft (`storytold/vectorcraft`) | `0a702cc0a5f36346b420b7effc5698ef36b05b2d` | nothing yet | `licenses/vectorcraft/` |
 | PhotoCraft (`storytold/photocraft`) | `aae9b7ea61195eba0c43877d59654aefdc7c5576` | nothing yet | `licenses/photocraft/` |
 | craft-libs (`storytold/craft-libs`) | `058b047760dfe5ba51f6f526faa3b0c833552dfa` | nothing yet | `licenses/craft-libs/` |
-| indd-utils (`storytold/indd-utils`) | `136f973a9d5f1b3ef34e46e27f4a08af196efde7` | nothing yet | `licenses/indd-utils/` |
+| indd-utils (`storytold/indd-utils`) | `136f973a9d5f1b3ef34e46e27f4a08af196efde7` | the whole crate `indd`, as a pinned git dependency in `crates/io/Cargo.toml`, for `.indd` import; no file of it changed | `licenses/indd-utils/` |
 
 ## Planned, in the order the stages come
 

@@ -836,7 +836,7 @@ pub struct Pivots {
 
 /// The extensions File > Open reads.
 pub const OPEN_EXTENSIONS: &[&str] = &[
-    "cdr", "cdt", "cdrt", "cmx", "tdraw", "idml", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn",
+    "cdr", "cdt", "cdrt", "cmx", "tdraw", "idml", "indd", "svg", "svgz", "pdf", "ai", "eps", "ps", "prn",
     "dxf", "psd", "psb", "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
 ];
 
@@ -6636,6 +6636,7 @@ impl App {
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr", "cdt", "cdrt"])
             .add_filter("CMX (*.cmx)", &["cmx"])
             .add_filter("IDML (*.idml)", &["idml"])
+            .add_filter("INDD (*.indd)", &["indd"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file(self, |app, p| app.open_path(p));
     }
@@ -7022,6 +7023,40 @@ impl App {
                     )
                 })
                 .map_err(|e| e.to_string())
+        } else if ext == "indd" {
+            crate::files::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    tracedraw_io::idml::open_indd(&bytes, &name)
+                })
+                .map(|imported| {
+                    for w in &imported.warnings {
+                        log::warn!("indd: {w}");
+                    }
+                    let pages = imported.document.pages.len();
+                    let objects: usize = imported
+                        .document
+                        .pages
+                        .iter()
+                        .flat_map(|p| p.layers.iter())
+                        .map(|l| l.shapes.len())
+                        .sum();
+                    (
+                        imported.document,
+                        crate::i18n::trf(
+                            "status.opened_pages",
+                            &[
+                                ("format", "INDD"),
+                                ("pages", &pages.to_string()),
+                                ("objects", &objects.to_string()),
+                            ],
+                        ),
+                    )
+                })
         } else if ext == "idml" {
             crate::files::read(&path)
                 .map_err(|e| e.to_string())
@@ -7118,6 +7153,7 @@ impl App {
                 self.file = if matches!(
                     ext.as_str(),
                     "idml"
+                        | "indd"
                         | "cdr"
                         | "cmx"
                         | "svg"
@@ -8106,6 +8142,7 @@ impl App {
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr", "cdt", "cdrt"])
             .add_filter("CMX (*.cmx)", &["cmx"])
             .add_filter("IDML (*.idml)", &["idml"])
+            .add_filter("INDD (*.indd)", &["indd"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
             .add_filter("PostScript (*.ps, *.eps, *.prn)", &["ps", "eps", "prn"])

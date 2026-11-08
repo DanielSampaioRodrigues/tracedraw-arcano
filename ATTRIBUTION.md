@@ -38,3 +38,7 @@ Not bundled on purpose: licensed spot colour libraries, third-party
 clipart, templates, fonts other than the ones above, and colour profiles
 other than the ones a user loads. Test files that belong to someone else
 are never committed.
+
+## Code taken from other projects
+
+`indd` (from indd-utils, https://github.com/storytold/indd-utils), the reader that turns `.indd` documents into IDML, is used as a dependency at commit `136f973a9d5f1b3ef34e46e27f4a08af196efde7`. Copyright (c) the indd-utils contributors. Licensed under the MIT License or the Apache License, Version 2.0, at your option; its licence texts and NOTICE are kept verbatim in `licenses/indd-utils/`. No file of it was changed; the call into it is ours (`crates/io/src/idml.rs`). See `docs/third-party.md`.

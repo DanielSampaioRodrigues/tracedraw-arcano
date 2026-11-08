@@ -42,6 +42,20 @@ text and the rectangle (`idml::tests::a_package_gives_a_page_with_its_text_and_r
 a file that is not a package is an error, and one missing its spread
 opens with a warning (`idml::tests::a_broken_package_is_an_error_not_a_panic`).
 
+## INDD files
+
+File > Open also reads `.indd` documents, through the reader of another
+open-source project (`indd`, MIT OR Apache-2.0, pinned in
+`crates/io/Cargo.toml` and recorded in `docs/third-party.md`): it turns the
+file into an IDML package in memory, which the reader above then takes.
+Its own warnings (what it could not carry over) are logged first, then
+ours. An `.indd` that the reader cannot open is an error, and a file that
+is not one at all is refused without a panic
+(`idml::tests::a_file_that_is_not_indd_is_an_error`).
+
+Saving `.indd` is not planned: the format is undocumented and written by
+nobody else; Save offers IDML and the native format.
+
 ## Format notes
 
 The package layout above comes from the IDML interchange format's public
