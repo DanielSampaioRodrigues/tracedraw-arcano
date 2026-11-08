@@ -2322,6 +2322,56 @@ fn append_piece(
 }
 
 /// Union of one path with itself: removes self-overlaps (Simplify).
+/// Divide: every region where the shapes meet, each a path of its own.
+/// A region is what lies inside one combination of shapes and outside the
+/// others; with one shape it is the shape itself. The work grows with the
+/// number of shapes (2^n regions), so more than four shapes are left
+/// whole: `None` says so.
+pub fn divide(paths: &[BezPath]) -> Option<Vec<BezPath>> {
+    if paths.is_empty() {
+        return Some(Vec::new());
+    }
+    if paths.len() > 4 {
+        return None;
+    }
+    let n = paths.len();
+    let mut out: Vec<BezPath> = Vec::new();
+    for mask in 1u32..(1 << n) {
+        // The region: the intersection of the shapes in the mask...
+        let mut region: Option<BezPath> = None;
+        for (i, path) in paths.iter().enumerate() {
+            if mask & (1 << i) == 0 {
+                continue;
+            }
+            region = Some(match region {
+                None => path.clone(),
+                Some(acc) => overlay(&acc, path, Op::Intersect),
+            });
+        }
+        let Some(mut region) = region else {
+            continue;
+        };
+        // ...less the ones outside it.
+        for (i, path) in paths.iter().enumerate() {
+            if mask & (1 << i) != 0 {
+                continue;
+            }
+            region = overlay(&region, path, Op::Trim);
+        }
+        if region.elements().is_empty() {
+            continue;
+        }
+        // Each separate piece of the region is a shape of its own.
+        let parts = overlay_parts(&region, &region, Op::Intersect);
+        if parts.is_empty() {
+            out.push(region);
+        } else {
+            out.extend(parts);
+        }
+    }
+    Some(out)
+}
+
 pub fn simplify(path: &BezPath) -> BezPath {
     let subj = contours(path);
     let empty: Vec<Vec<[f64; 2]>> = Vec::new();
@@ -2404,6 +2454,40 @@ pub fn nonzero_as_even_odd(path: &BezPath) -> BezPath {
 
 #[cfg(test)]
 mod tests {
+
+    /// Divide: two overlapping squares give three regions, each a shape of
+    /// its own (the first without the second, both, the second without the
+    /// first); a single shape is one region, and more than four shapes are
+    /// left alone.
+    #[test]
+    fn divide_gives_a_shape_for_every_region() {
+        use super::divide;
+        use crate::geometry::BezPath;
+        let square = |x0: f64, x1: f64| -> BezPath {
+            use kurbo::Shape as _;
+            kurbo::Rect::new(x0, 0.0, x1, 10.0).to_path(0.001)
+        };
+        let a = square(0.0, 10.0);
+        let b = square(5.0, 15.0);
+        let regions = divide(&[a.clone(), b.clone()]).expect("two shapes divide");
+        assert_eq!(regions.len(), 3, "{regions:?}");
+        let mut spans: Vec<(f64, f64)> = regions
+            .iter()
+            .map(|r| {
+                let bb = kurbo::Shape::bounding_box(r);
+                (bb.x0, bb.x1)
+            })
+            .collect();
+        spans.sort_by(|p, q| p.0.partial_cmp(&q.0).unwrap_or(std::cmp::Ordering::Equal));
+        let want = [(0.0, 5.0), (5.0, 10.0), (10.0, 15.0)];
+        for ((got0, got1), (w0, w1)) in spans.iter().zip(want) {
+            assert!((got0 - w0).abs() < 0.2, "{spans:?}");
+            assert!((got1 - w1).abs() < 0.2, "{spans:?}");
+        }
+        assert_eq!(divide(&[a.clone()]).map(|r| r.len()), Some(1));
+        let many = [a.clone(), b.clone(), a.clone(), b.clone(), a];
+        assert!(divide(&many).is_none(), "more than four shapes");
+    }
 
     /// A contour of a circle is a circle made of a few curves, not a
     /// row of short straight pieces (#821), and stays at its distance.
