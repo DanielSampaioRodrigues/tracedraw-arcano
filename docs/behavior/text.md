@@ -23,8 +23,8 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 
 ## Property bar
 
-Text tool, and the Pick tool with only text selected (after the object
-fields): the bar takes two rows. The first row, the characters: the font
+Text tool, and while a text is edited: the bar takes two rows. The first
+row, the characters: the font
 list (below), the character style, the size in points (a field and an arrow
 dropping 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48,
 60, 72, 96, 144 and 288), the variable font's axes, Bold, Italic,
@@ -34,8 +34,10 @@ Ctrl+T) and Edit Text. The second row, the paragraph and its frame: the
 six alignments, the paragraph style, the left, right and first-line
 indents, the space before and after, the columns, hyphenation, balance
 lines, widows, orphans, keep with next, and Bullets, Tabs and Drop Cap (for
-paragraph text; they open their dialogs). Without text the bar is one row
-again, and the canvas takes the room back.
+paragraph text; they open their dialogs). A text selected with the Pick
+tool keeps the bar's one row (with the object fields on it), so selecting
+a text to move it does not move the drawing; leaving the text, or the
+Text tool, gives the bar its one row again and the canvas its room.
 
 Each change applies to the
 selected text objects at once as one "Text Style" undo step, and
