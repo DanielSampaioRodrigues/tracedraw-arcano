@@ -257,7 +257,7 @@ fn excerpt(text: &[char], s: usize, e: usize) -> String {
 
 /// The text `s` with every paragraph set flush left: laid out, its lines
 /// break where the justified ones do, with spaces of their own width.
-fn flush_left(s: &Shape) -> Option<tracedraw_text::TextLayout> {
+pub(crate) fn flush_left(s: &Shape) -> Option<tracedraw_text::TextLayout> {
     let mut s = s.clone();
     if let ShapeKind::Text { spans, align, .. } = &mut s.kind {
         *align = TextAlign::Left;
@@ -272,7 +272,7 @@ fn flush_left(s: &Shape) -> Option<tracedraw_text::TextLayout> {
 
 /// The total width of the spaces of a line from `start` to `end` (the
 /// characters `text` holds), read off its carets.
-fn space_width(text: &[char], b: &tracedraw_text::LineBox, end: usize) -> f64 {
+pub(crate) fn space_width(text: &[char], b: &tracedraw_text::LineBox, end: usize) -> f64 {
     (b.start_char..end)
         .filter(|&i| text.get(i) == Some(&' '))
         .filter_map(|i| {

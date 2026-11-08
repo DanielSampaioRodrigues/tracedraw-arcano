@@ -25,8 +25,16 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
 }
 
 /// The edition's tools, and its versions of `run_script` and
-/// `document_info`, which replace upstream's in the list.
+/// `document_info`, which replace upstream's in the list; then the book
+/// and page tools (`mcp_prelo.rs`).
 pub fn tools() -> Vec<Value> {
+    let mut v = base_tools();
+    v.extend(crate::mcp_prelo::tools());
+    v
+}
+
+/// The edition's own tools, without the book and page ones.
+pub fn base_tools() -> Vec<Value> {
     vec![
         tool(
             "run_script",
@@ -60,14 +68,15 @@ pub fn tools() -> Vec<Value> {
         ),
         tool(
             "render_area",
-            "Look closely at part of a page as a PNG on white. area: \"selection\" (default when something is selected: the selected objects), \"view\" (what the user sees in the window), \"page\", or give ids (objects) or rect_mm {x0, y0, x1, y1}. padding_mm around objects (default 3); max_px on the longer side (default 1024, 128 to 2048). Answers the area and its resolution.",
+            "Look closely at part of a page as a PNG on white. area: \"selection\" (default when something is selected: the selected objects), \"view\" (what the user sees in the window), \"page\", or give ids (objects) or rect_mm {x0, y0, x1, y1}. padding_mm around objects (default 3); max_px on the longer side (default 1024, 128 to 2048); save_to writes the PNG to a file too. Answers the area and its resolution.",
             json!({
                 "area": {"type": "string", "enum": ["selection", "view", "page"]},
                 "ids": {"type": "array", "items": {"type": "integer"}},
                 "rect_mm": {"type": "object", "properties": {"x0": {"type": "number"}, "y0": {"type": "number"}, "x1": {"type": "number"}, "y1": {"type": "number"}}},
                 "page_index": {"type": "integer"},
                 "padding_mm": {"type": "number"},
-                "max_px": {"type": "integer"}
+                "max_px": {"type": "integer"},
+                "save_to": {"type": "string", "description": "Path of a .png to write the picture to too (for compare_snapshots)."}
             }),
             &[],
         ),
@@ -119,7 +128,7 @@ pub fn call(app: &mut App, name: &str, args: &Value) -> Option<Result<Reply, Str
         "list_fonts" => text(Ok(list_fonts(args).to_string())),
         "switch_document" => text(switch_document(app, args)),
         "window_info" => text(Ok(window_info(app).to_string())),
-        _ => None,
+        _ => crate::mcp_prelo::call(app, name, args),
     }
 }
 
@@ -440,6 +449,9 @@ fn render_area(app: &App, args: &Value) -> Result<Reply, String> {
         None,
     );
     let png = white.encode_png().map_err(|e| e.to_string())?;
+    if let Some(p) = args.get("save_to").and_then(|v| v.as_str()).filter(|p| !p.trim().is_empty()) {
+        std::fs::write(p, &png).map_err(|e| format!("could not write {p}: {e}"))?;
+    }
     let index = doc.pages.iter().position(|p| p.id == page).unwrap_or(0);
     Ok(Reply::Image {
         png_base64: base64::engine::general_purpose::STANDARD.encode(png),

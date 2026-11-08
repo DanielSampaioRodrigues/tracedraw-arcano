@@ -48,7 +48,7 @@ pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
     split_spans_at, Baseline, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners,
     DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc,
-    FollowBlack, FontVariation, Layer, LeadingUnit, MasterPage, MasterScope, MasterView, Metadata, ObjectDefaults,
+    FollowBlack, FontVariation, Layer, LeadingUnit, MasterPage, MasterScope, MasterView, Metadata, ObjectDefaults, PrimaryFrame,
     PageMaster, NO_MASTER,
     ObjectStyle, Page, ParagraphStyle, PathTextOrientation, PathTextVertical, QrCode, QrKind,
     Shadow, Shape, ShapeKind, StyleParts, Symbol, TabAlign, TabDetail, Table, TableCell,

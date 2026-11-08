@@ -1,7 +1,7 @@
 //! Arcano edition: the bar over the drawing while a master page is edited
-//! (see `App::edit_master`): which master, its left-hand and right-hand
-//! page (with facing pages), and the way back to the pages. A click on
-//! the master's other page, shown beside the one edited, edits that side.
+//! (see `App::edit_master`): which master, and the way back to the pages.
+//! With facing pages both pages of the master's spread are at hand: a
+//! press on either works there (`App::master_press`).
 //! See docs/behavior/pages-panel.md.
 
 use crate::app::App;
@@ -18,18 +18,6 @@ pub fn master_bar(app: &mut App, ui: &mut Ui, canvas: Rect) {
         app.leave_master();
         return;
     };
-    // The other side, beside the page: a click edits it.
-    if let Some(r) = crate::canvas::master_companion_rect(app) {
-        let resp = ui
-            .interact(r, egui::Id::new("arcano_master_other_side"), egui::Sense::click())
-            .rich_tip(tr("master.other_side_desc"));
-        if resp.clicked() {
-            app.set_master_side(!v.left);
-            return;
-        }
-    }
-    let facing = app.doc().metadata.facing_pages;
-    let mut side = None;
     let mut back = false;
     egui::Area::new(egui::Id::new("arcano_master_bar"))
         .order(egui::Order::Middle)
@@ -48,18 +36,6 @@ pub fn master_bar(app: &mut App, ui: &mut Ui, canvas: Rect) {
                                 .font(crate::theme::bold(12.0))
                                 .color(Tokens::accent()),
                         );
-                        if facing {
-                            ui.separator();
-                            for (left, key) in [(true, "master.left"), (false, "master.right")] {
-                                if ui
-                                    .selectable_label(v.left == left, tr(key))
-                                    .rich_tip(pair(key, "master.side_desc"))
-                                    .clicked()
-                                {
-                                    side = Some(left);
-                                }
-                            }
-                        }
                         ui.separator();
                         if ui
                             .button(tr("master.back"))
@@ -71,9 +47,6 @@ pub fn master_bar(app: &mut App, ui: &mut Ui, canvas: Rect) {
                     });
                 });
         });
-    if let Some(left) = side {
-        app.set_master_side(left);
-    }
     if back {
         app.leave_master();
     }

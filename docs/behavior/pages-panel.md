@@ -28,9 +28,10 @@ The masters themselves are `MasterPage` records in the document
   that master's objects and its parents' (`layers_for_page_in` with a
   `MasterView`, a view the program keeps and exports never see), its
   number fields show the master's prefix, and a bar over the drawing names
-  the master, offers its Left page and Right page (with facing pages) and
-  Back to Pages. With facing pages the master's other page shows beside
-  the one edited, as a spread, under a light veil; a click on it edits it.
+  the master and offers Back to Pages. With facing pages both pages of
+  the master's spread are at hand: its other page shows beside the one
+  edited, and a press there makes it the one edited where it is on
+  screen and goes on there (drawing, picking: `App::master_press`).
   New objects go on the master's layer for the side shown (made, named
   "B-Master (left)" or "(right)", the first time a side is edited: on
   left-hand or right-hand pages only), or on its layer for every page
@@ -78,6 +79,47 @@ Master..., Numbering and Section Options..., Facing Pages, Thumbnail Size
 (small, medium, large; kept in the settings). Each is one undo step
 (`a_master_on_pages_and_new_pages_after_them_keep_it`,
 `the_panel_draws_and_a_master_dropped_on_a_page_applies_it`).
+
+## Colours
+
+Each master has a colour (one by its id unless chosen in Master Options:
+eight ready ones or any colour). Its pages show its prefix on a tag of that
+colour in their outer top corner, and its row in the panel a swatch of it.
+
+## Threaded text frames
+
+Page > Threaded Text Frames... (also in the panel's menus): on the pages
+from one to another, a paragraph text frame inside the margins (top,
+bottom, inside, outside; the house standard's to start with; inside and
+outside swap on left-hand pages with facing pages, the first page a
+right-hand one), with columns and gutter, each linked to the one before.
+Text put in the first runs on through the pages, and Text > Text Frame >
+Flow Into New Pages carries it on past the last. One undo step
+(`threaded_frames_sit_in_the_margins_and_carry_the_text_on`).
+
+## Primary text frame
+
+A master can have a primary text frame (Master Options > Primary text
+frame: margins, columns and gutter, the house standard's to start with).
+Every page then made with that master, by Add Page, Insert Page, Insert
+Pages, Duplicate Page without contents or Flow Into New Pages, gets a
+paragraph frame inside those margins (mirrored on left-hand pages with
+facing pages), marked as the page's primary frame and threaded between
+the primary frames of the nearest pages before and after it, so a text
+put in the first frame runs on through the pages and into pages added
+later, also in the middle of the book. Turning it on for a master that
+pages already use puts the frame on them too (unless "Also on the pages
+already using it" is off). In New Document, "Primary text frame" gives
+master A one in the house margins and every page its frame, as the
+drawing's starting state, and "Facing pages" makes the pages face. A
+master based on another takes its parent's primary frame when it has
+none. On a single-page drawing (facing pages off) a master is one page,
+the same on every page that uses it. Tests:
+`primary_frames::tests::pages_made_with_a_primary_master_get_threaded_frames`,
+`text_in_the_primary_frame_runs_on_into_new_pages`,
+`a_new_drawing_can_start_with_its_primary_frames`,
+`a_master_without_a_primary_frame_adds_none`,
+`masters::tests::single_pages_have_one_page_masters`.
 
 ## The panel beside a folded column
 

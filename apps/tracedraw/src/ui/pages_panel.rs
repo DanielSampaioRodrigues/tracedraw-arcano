@@ -49,10 +49,21 @@ enum Window {
     Master {
         master: MasterPage,
         new: bool,
+        /// Put the primary frame on the pages already using it too.
+        fill: bool,
     },
     Apply {
         master: u32,
         pages: String,
+    },
+    /// Threaded text frames: pages (1-based), margins [top, bottom,
+    /// inner, outer] mm, columns, gutter mm.
+    Thread {
+        from: usize,
+        to: usize,
+        margins: [f64; 4],
+        columns: u32,
+        gutter: f64,
     },
 }
 
@@ -166,6 +177,22 @@ pub fn pages_panel(app: &mut App, ui: &mut Ui) {
     ui.data_mut(|d| d.insert_temp(state_id(), st));
 }
 
+/// Page > Threaded Text Frames: its window, for every page, with the
+/// house margins.
+pub fn open_thread_window(app: &App, ctx: &egui::Context) {
+    let h = crate::prelo_casa::house_prefs(app);
+    let n = app.doc().pages.len().max(1);
+    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    st.window = Some(Window::Thread {
+        from: 1,
+        to: n,
+        margins: [h.top, h.bottom, h.inner, h.outer],
+        columns: 1,
+        gutter: 5.0,
+    });
+    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+}
+
 /// The panel's small windows (Insert Pages, Master Options...), drawn
 /// every frame whether the panel shows or not: a panel folded away by a
 /// click in its window must not take the window with it.
@@ -227,6 +254,14 @@ fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                     }
                     x += w;
                 }
+                // Its colour, as its pages' tags show it.
+                let [cr, cg, cb] = m.label_color();
+                ui.painter().rect_filled(
+                    Rect::from_center_size(pos2(x + 9.0, r.center().y), vec2(8.0, 8.0)),
+                    2.0,
+                    Color32::from_rgb(cr, cg, cb),
+                );
+                let x = x + 10.0;
                 ui.painter().text(
                     pos2(x + 8.0, r.center().y),
                     egui::Align2::LEFT_CENTER,
@@ -258,6 +293,7 @@ fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                         st.window = Some(Window::Master {
                             master: m.clone(),
                             new: false,
+                            fill: true,
                         });
                         ui.close();
                     }
@@ -362,16 +398,24 @@ fn pages_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                 ui.painter().rect_stroke(pr.expand(1.0), 0.0, Stroke::new(2.0, accent), egui::StrokeKind::Outside);
             }
             // The master's prefix in the outer top corner.
+            // The master's prefix on a tag of its colour, in the outer top
+            // corner.
             let m = app.doc().master_of(page.id);
             if m != NO_MASTER {
                 if let Some(mp) = app.doc().master_page(m) {
                     let left_page = facing && side == 0;
-                    let (at, align) = if left_page {
-                        (pos2(pr.left() + 3.0, pr.top() + 2.0), egui::Align2::LEFT_TOP)
+                    let [r, g, b] = mp.label_color();
+                    let font = egui::FontId::proportional(9.5);
+                    let galley = ui.painter().layout_no_wrap(mp.prefix.clone(), font, Color32::WHITE);
+                    let size = galley.size() + vec2(6.0, 2.0);
+                    let at = if left_page {
+                        pos2(pr.left() + 2.0, pr.top() + 2.0)
                     } else {
-                        (pos2(pr.right() - 3.0, pr.top() + 2.0), egui::Align2::RIGHT_TOP)
+                        pos2(pr.right() - 2.0 - size.x, pr.top() + 2.0)
                     };
-                    ui.painter().text(at, align, &mp.prefix, egui::FontId::proportional(10.0), Color32::from_gray(90));
+                    let tag = Rect::from_min_size(at, size);
+                    ui.painter().rect_filled(tag, 2.0, Color32::from_rgb(r, g, b));
+                    ui.painter().galley(tag.min + vec2(3.0, 1.0), galley, Color32::WHITE);
                 }
             }
             ui.painter().text(
@@ -548,8 +592,24 @@ fn page_menu(app: &mut App, ui: &mut Ui, st: &mut State, picked: &[usize], facin
                 prefix: crate::masters::free_prefix(&masters),
                 name: tr("master.default_name"),
                 based_on: None,
+                color: None,
+                primary: None,
             },
             new: true,
+            fill: true,
+        });
+        ui.close();
+    }
+    if ui.button(tr("pages.thread")).clicked() {
+        let h = crate::prelo_casa::house_prefs(app);
+        let (a, b) = (picked.first().copied().unwrap_or(0), picked.last().copied().unwrap_or(n.saturating_sub(1)));
+        let (a, b) = if a == b { (0, n.saturating_sub(1)) } else { (a, b) };
+        st.window = Some(Window::Thread {
+            from: a + 1,
+            to: b + 1,
+            margins: [h.top, h.bottom, h.inner, h.outer],
+            columns: 1,
+            gutter: 5.0,
         });
         ui.close();
     }
@@ -792,7 +852,7 @@ fn windows(app: &mut App, ctx: &egui::Context, st: &mut State) {
                 }
             });
         }
-        Window::Master { master, new } => {
+        Window::Master { master, new, fill } => {
             let title = if *new { tr("pages.new_master") } else { tr("pages.master_options") };
             crate::ui::dialogs::window(ctx, title).show(ctx, |ui| {
                 egui::Grid::new("arcano_master_options").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
@@ -818,16 +878,111 @@ fn windows(app: &mut App, ctx: &egui::Context, st: &mut State) {
                     });
                     master.based_on = (b != NO_MASTER).then_some(b);
                     ui.end_row();
+                    // The colour marking its pages.
+                    ui.label(tr("pages.color"));
+                    ui.horizontal_wrapped(|ui| {
+                        let now = master.label_color();
+                        for c in MasterPage::LABEL_COLORS {
+                            let (r, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
+                            ui.painter().rect_filled(r, 3.0, Color32::from_rgb(c[0], c[1], c[2]));
+                            if c == now {
+                                ui.painter().rect_stroke(r.expand(1.5), 4.0, Stroke::new(2.0, Tokens::text()), egui::StrokeKind::Outside);
+                            }
+                            if resp.rich_tip(tr("pages.color_desc")).clicked() {
+                                master.color = Some(c);
+                            }
+                        }
+                        let mut rgb = now;
+                        if ui
+                            .color_edit_button_srgb(&mut rgb)
+                            .rich_tip(crate::ui::tips::pair("pages.color_free", "pages.color_desc"))
+                            .changed()
+                        {
+                            master.color = Some(rgb);
+                        }
+                    });
+                    ui.end_row();
+                    // The primary text frame its pages get.
+                    ui.label(tr("pages.primary"));
+                    let mut on = master.primary.is_some();
+                    if ui
+                        .checkbox(&mut on, tr("pages.primary_on"))
+                        .rich_tip(crate::ui::tips::pair("pages.primary", "pages.primary_desc"))
+                        .changed()
+                    {
+                        master.primary = on.then(|| {
+                            let h = crate::prelo_casa::house_prefs(app);
+                            tracedraw_core::PrimaryFrame {
+                                margins: [h.top, h.bottom, h.inner, h.outer],
+                                columns: 1,
+                                gutter: 5.0,
+                            }
+                        });
+                    }
+                    ui.end_row();
+                    if let Some(p) = master.primary.as_mut() {
+                        for (k, key) in ["pages.margin_top", "pages.margin_bottom", "pages.margin_inner", "pages.margin_outer"].iter().enumerate() {
+                            ui.label(tr(key));
+                            ui.add(egui::DragValue::new(&mut p.margins[k]).range(0.0..=500.0).speed(0.5).suffix(" mm"))
+                                .rich_tip(crate::ui::tips::pair(key, "pages.margin_desc"));
+                            ui.end_row();
+                        }
+                        ui.label(tr("pages.columns"));
+                        ui.add(egui::DragValue::new(&mut p.columns).range(1..=20).speed(0.1))
+                            .rich_tip(tr("pages.columns"));
+                        ui.end_row();
+                        ui.label(tr("pages.gutter"));
+                        ui.add(egui::DragValue::new(&mut p.gutter).range(0.0..=100.0).speed(0.2).suffix(" mm"))
+                            .rich_tip(tr("pages.gutter"));
+                        ui.end_row();
+                        if !*new {
+                            ui.label("");
+                            ui.checkbox(fill, tr("pages.primary_fill"))
+                                .rich_tip(crate::ui::tips::pair("pages.primary_fill", "pages.primary_fill_desc"));
+                            ui.end_row();
+                        }
+                    }
                 });
                 ui.separator();
                 if crate::ui::dialogs::ok_cancel(ui, &mut close) {
-                    if *new {
-                        let id = app.new_master(&master.prefix, &master.name, master.based_on);
-                        st.master = id;
-                        close = true;
-                    } else {
-                        close = app.set_master(master.clone());
+                    close = app.master_options_ok(master.clone(), *new, *fill).inspect(|id| {
+                        if *new {
+                            st.master = Some(*id);
+                        }
+                    }).is_some();
+                }
+            });
+        }
+        Window::Thread { from, to, margins, columns, gutter } => {
+            crate::ui::dialogs::window(ctx, tr("pages.thread_title")).show(ctx, |ui| {
+                ui.label(egui::RichText::new(tr("pages.thread_intro")).color(Tokens::text_dim()));
+                ui.add_space(4.0);
+                egui::Grid::new("arcano_thread_frames").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                    ui.label(tr("pages.thread_pages"));
+                    ui.horizontal(|ui| {
+                        ui.add(egui::DragValue::new(from).range(1..=n.max(1)).speed(0.2));
+                        ui.label(tr("pages.thread_to"));
+                        ui.add(egui::DragValue::new(to).range(1..=n.max(1)).speed(0.2));
+                    });
+                    ui.end_row();
+                    for (k, key) in ["pages.margin_top", "pages.margin_bottom", "pages.margin_inner", "pages.margin_outer"].iter().enumerate() {
+                        ui.label(tr(key));
+                        ui.add(egui::DragValue::new(&mut margins[k]).range(0.0..=500.0).speed(0.5).suffix(" mm"))
+                            .rich_tip(crate::ui::tips::pair(key, "pages.margin_desc"));
+                        ui.end_row();
                     }
+                    ui.label(tr("pages.columns"));
+                    ui.add(egui::DragValue::new(columns).range(1..=20).speed(0.1));
+                    ui.end_row();
+                    ui.label(tr("pages.gutter"));
+                    ui.add(egui::DragValue::new(gutter).range(0.0..=100.0).speed(0.2).suffix(" mm"));
+                    ui.end_row();
+                });
+                ui.separator();
+                if crate::ui::dialogs::ok_cancel(ui, &mut close) {
+                    let (a, b) = ((*from).min(*to), (*from).max(*to));
+                    app.thread_page_frames(a.saturating_sub(1), b.saturating_sub(1), *margins, *columns, *gutter);
+                    close = true;
                 }
             });
         }
