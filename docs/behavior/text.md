@@ -13,13 +13,45 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 | Tracking (range kerning) | 0% of em |
 | Baseline shift | 0 pt |
 | Alignment | left; justify stretches the spaces and the gaps beside Chinese and Japanese characters (a line with neither, between its letters), last line left |
-| Hyphenation | off; when on, at least 2 letters before and 3 after a break, from a compact pattern set (a vowel and consonant rule for words it leaves whole); digraphs (ch, ck, gh, ph, sh, th, wh, qu) stay together; words with a capital letter (names, acronyms) are never broken. Options > Text > Paragraph Text > Hyphenation patterns picks a hyphenation dictionary instead (`hyph_*.dic`, found where the spelling dictionaries are, see `writing-tools.md`): its first line names the character set; `LEFTHYPHENMIN` and `RIGHTHYPHENMIN` set the minimums (else 2 and 3); `%` and `#` lines are comments; `NEXTLEVEL` starts a second level of patterns, a word breaking where either level allows; patterns with a replacement (`/`) are left out. With a dictionary a capital first letter no longer stops a break (nouns in some languages); other capitals still do. A dictionary that is gone at start-up leaves the built-in patterns and a status message (`hyphen::tests::pattern_files`, `spell::tests::real_hyphenation_files`, ignored, over English, Brazilian Portuguese, German and Italian files: hy-phen-ation, com-pu-ta-dor, Haus-tür, Schiff-fahrt, in-for-ma-zione). Punctuation before or after a word (a comma at a line's end, quotation marks) is left aside and the letters between break; an apostrophe inside a word (' or ’) is kept for the patterns, and without a pattern file only the part after the last apostrophe breaks (#255, `hyphen::tests::punctuation_round_a_word_and_apostrophes_inside_it`). Text > Use Hyphenation turns hyphenation on or off for the selected texts (off when they all have it); while a text is edited it is the setting of the paragraphs at the caret, its check following them; with no text selected it is the setting new text takes (`writing_tools::tests::use_hyphenation_acts_on_the_selected_text`). Typing keeps a text's own hyphenation; it took the setting for new text, so editing a text turned its hyphenation on or off (#470, `writing_tools::tests::editing_a_text_keeps_its_hyphenation`) |
+| Hyphenation | off; when on, words of 5 letters or more, 2 letters before and 2 after a break, at most 3 hyphens in a row, words in capitals and the paragraph's last word hyphenated (the Paragraph panel's options, see Hyphenation options below); from a compact pattern set (a vowel and consonant rule for words it leaves whole); digraphs (ch, ck, gh, ph, sh, th, wh, qu) stay together; words with a capital inside and words in capitals are never broken. Options > Text > Paragraph Text > Hyphenation patterns picks a hyphenation dictionary instead (`hyph_*.dic`, found where the spelling dictionaries are, see `writing-tools.md`): its first line names the character set; `LEFTHYPHENMIN` and `RIGHTHYPHENMIN` set the minimums (else 2 and 3); `%` and `#` lines are comments; `NEXTLEVEL` starts a second level of patterns, a word breaking where either level allows; patterns with a replacement (`/`) are left out. With a dictionary a capital first letter no longer stops a break (nouns in some languages); other capitals still do. A dictionary that is gone at start-up leaves the built-in patterns and a status message (`hyphen::tests::pattern_files`, `spell::tests::real_hyphenation_files`, ignored, over English, Brazilian Portuguese, German and Italian files: hy-phen-ation, com-pu-ta-dor, Haus-tür, Schiff-fahrt, in-for-ma-zione). Punctuation before or after a word (a comma at a line's end, quotation marks) is left aside and the letters between break; an apostrophe inside a word (' or ’) is kept for the patterns, and without a pattern file only the part after the last apostrophe breaks (#255, `hyphen::tests::punctuation_round_a_word_and_apostrophes_inside_it`). Text > Use Hyphenation turns hyphenation on or off for the selected texts (off when they all have it); while a text is edited it is the setting of the paragraphs at the caret, its check following them; with no text selected it is the setting new text takes (`writing_tools::tests::use_hyphenation_acts_on_the_selected_text`). Typing keeps a text's own hyphenation; it took the setting for new text, so editing a text turned its hyphenation on or off (#470, `writing_tools::tests::editing_a_text_keeps_its_hyphenation`) |
 | Chinese and Japanese line breaks | text written without spaces breaks between any two characters when one of them is Chinese or Japanese (ideographs, kana, full-width forms and their punctuation), except before a character that may not start a line (，。、；：？！ and their half-width forms, closing brackets and quotes such as ）」』】”’, iteration marks, ー and small kana) and after one that may not end a line (opening brackets and quotes such as （「『【“‘, and ￥ ＄ £ before a sum); the character before goes down to the next line with it. Latin text keeps breaking at spaces and hyphenation points (#847, `tests::cjk_punctuation_never_starts_a_line`) |
 | Columns | 1, gutter 5 mm |
 | Bullets | off; indent 5 mm, bullet "*" from the paragraph font |
 | Drop cap | off; 3 lines. The paragraph's first letter is scaled so it sits on the baseline of the last line it spans and its top meets the top of the first line's letters; the lines beside it are narrowed by its width plus 1 mm, so they wrap and justify inside the column |
 | Tabs | every 12.7 mm (0.5 in) |
 | Text on path | distance 0, offset 0, orientation "rotate letters" |
+
+## Hyphenation options
+
+A paragraph that hyphenates has its own settings, under Hyphenate in the
+Paragraph panel (`ParagraphStyle::hyphenation`, `Hyphenation` in
+`crates/core/src/document.rs`), carried by paragraph styles and written in
+the file only when they differ from the house's:
+
+- Min. letters (5): a shorter word is not hyphenated at all.
+- Before and After (2 and 2): the fewest letters left before the hyphen
+  and carried after it.
+- Max. hyphens in a row (3; 0 = no limit): how many lines one after
+  another may end with a hyphen; a break that would make one more is not
+  taken, and the word goes on or the text breaks elsewhere.
+- Capitalized words (on): a word that starts with a capital is
+  hyphenated ("Portugal"); words with a capital inside ("TraceDraw") and
+  words in capitals ("UNESCO") stay whole either way.
+- Last word (on): the paragraph's last word may be split, which leaves a
+  hyphen on the line before the last; off, it goes whole to the last
+  line.
+
+The dictionary's own minimums (LEFTHYPHENMIN, RIGHTHYPHENMIN) still hold
+when they are larger than the paragraph's.
+
+Checks: given a word of fewer letters than the option, then no break
+(`hyphen::tests::the_paragraph_options_limit_the_breaks`); given several
+narrow lines of long words, when the run is 1, then no two lines in a row
+end with a hyphen (`tests::the_hyphenation_limit_stops_a_run_of_hyphens`);
+given a paragraph whose last word is long, when Last word is off, then it
+is not split (`tests::the_last_word_hyphenates_only_when_asked`). The
+options travel with the paragraph (`paragraphs::tests::hyphenation_options_go_with_the_paragraph`)
+and are written only when set (`document::tests::hyphenation_options_are_written_only_when_they_differ`).
 
 ## Property bar
 

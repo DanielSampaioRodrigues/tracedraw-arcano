@@ -1,4 +1,4 @@
-﻿//! Arcano edition: the Character and Paragraph panels of the Page
+//! Arcano edition: the Character and Paragraph panels of the Page
 //! workspace, laid out as page layout work wants them: a small picture
 //! before every field, two fields to a row, the alignments and the
 //! character options as rows of buttons.
@@ -323,6 +323,49 @@ pub fn paragraph_panel(app: &mut App, ui: &mut Ui) {
     ui.checkbox(&mut p.balance_lines, tr("docker.balance_lines")).rich_tip(
         crate::ui::tips::pair("docker.balance_lines", "docker.balance_lines_desc"),
     );
+    // How the paragraph hyphenates: the letters a word needs, before and
+    // after the break, the hyphens in a row, words in capitals and the
+    // last word.
+    let hid = ui.make_persistent_id("tipo_hyphenation_options");
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), hid, false)
+        .show_header(ui, |ui| {
+            ui.label(tr("tipo.hyphenation"));
+        })
+        .body(|ui| {
+            egui::Grid::new("tipo_hyphenation_grid")
+                .num_columns(4)
+                .spacing([2.0, 4.0])
+                .show(ui, |ui| {
+                    let mut letters = p.hyphenation.min_word as f64;
+                    glyph_icon(ui, "Ab", "tipo.hyphen_min_word");
+                    if num(ui, &mut letters, 1.0..=30.0, "") {
+                        p.hyphenation.min_word = letters.round().max(1.0) as u8;
+                    }
+                    let mut before_ = p.hyphenation.min_before as f64;
+                    glyph_icon(ui, "-a", "tipo.hyphen_min_before");
+                    if num(ui, &mut before_, 1.0..=15.0, "") {
+                        p.hyphenation.min_before = before_.round().max(1.0) as u8;
+                    }
+                    ui.end_row();
+                    let mut after_ = p.hyphenation.min_after as f64;
+                    glyph_icon(ui, "a-", "tipo.hyphen_min_after");
+                    if num(ui, &mut after_, 1.0..=15.0, "") {
+                        p.hyphenation.min_after = after_.round().max(1.0) as u8;
+                    }
+                    let mut run = p.hyphenation.max_run as f64;
+                    glyph_icon(ui, "---", "tipo.hyphen_max_run");
+                    if num(ui, &mut run, 0.0..=15.0, "") {
+                        p.hyphenation.max_run = run.round().max(0.0) as u8;
+                    }
+                    ui.end_row();
+                });
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut p.hyphenation.capitals, tr("tipo.hyphen_capitals"))
+                    .rich_tip(crate::ui::tips::keyed("tipo.hyphen_capitals"));
+                ui.checkbox(&mut p.hyphenation.last_word, tr("tipo.hyphen_last_word"))
+                    .rich_tip(crate::ui::tips::keyed("tipo.hyphen_last_word"));
+            });
+        });
     if p != before {
         edit_format(app, &before, &p);
     }
