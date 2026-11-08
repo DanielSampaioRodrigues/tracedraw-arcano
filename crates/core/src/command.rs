@@ -3629,6 +3629,58 @@ mod tests {
     }
 
     #[test]
+    fn a_master_shown_for_editing_hides_the_page() {
+        use crate::document::MasterView;
+        let mut doc = Document::new("t", Size::new(100.0, 100.0));
+        let page = doc.pages[0].id;
+        Command::AddMasterLayer {
+            name: "A".into(),
+            scope: MasterScope::All,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        Command::NewMasterPage {
+            prefix: "B".into(),
+            name: String::new(),
+            based_on: Some(0),
+            layer_name: "B".into(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        Command::AddMasterLayer {
+            name: "B left".into(),
+            scope: MasterScope::Even,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let ids: Vec<LayerId> = doc.master.iter().map(|l| l.id).collect();
+        Command::SetLayerMasterPage {
+            layer: ids[2],
+            master: 1,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let shown = |view: Option<MasterView>| -> Vec<LayerId> {
+            doc.layers_for_page_in(page, view)
+                .unwrap()
+                .iter()
+                .map(|l| l.id)
+                .collect()
+        };
+        // B's right-hand page: A's layer and B's, no page layer, no left one.
+        let right = MasterView { master: 1, left: false };
+        assert_eq!(shown(Some(right)), vec![ids[0], ids[1]]);
+        // Its left-hand page shows the left layer too.
+        let left = MasterView { master: 1, left: true };
+        assert_eq!(shown(Some(left)), vec![ids[0], ids[1], ids[2]]);
+        // Without the view: the page's own layer and A only.
+        let back = shown(None);
+        assert!(back.contains(&ids[0]) && !back.contains(&ids[1]));
+        assert!(back.iter().any(|l| !ids.contains(l)));
+        assert_eq!(doc.layers_for_page(page).unwrap().len(), back.len());
+    }
+
+    #[test]
     fn named_master_pages_draw_on_their_pages_with_their_parents_behind() {
         let mut doc = Document::new("t", Size::new(100.0, 100.0));
         Command::AddPage {

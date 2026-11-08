@@ -1540,6 +1540,9 @@ pub struct App {
     /// while it is one of the current page's layers or a master layer
     /// showing on it, visible and unlocked (see [`App::active_layer`]).
     pub picked_layer: Option<LayerId>,
+    /// Arcano edition: the master page being edited in place of the
+    /// current page (Pages panel, a double click on a master).
+    pub master_view: Option<tracedraw_core::document::MasterView>,
     pub navigator_tex: Option<egui::TextureHandle>,
     pub options_label_index: usize,
     pub options_current_only: bool,
@@ -2786,6 +2789,7 @@ impl App {
             object_thumbs: Default::default(),
             objects_master_closed: false,
             picked_layer: None,
+            master_view: None,
             navigator_tex: None,
             options_label_index: 0,
             options_current_only: false,
@@ -4750,7 +4754,10 @@ impl App {
     /// layers showing on it, then its own. Clicks, marquees, snapping and
     /// Select All take objects from these.
     pub fn page_layers(&self) -> Vec<&tracedraw_core::Layer> {
-        self.doc().layers_for_page(self.page).unwrap_or_default()
+        // Arcano edition: a master being edited is what the page shows.
+        self.doc()
+            .layers_for_page_in(self.page, self.master_view)
+            .unwrap_or_default()
     }
 
     /// The selected objects, each in page space (an object inside a group
@@ -8887,6 +8894,10 @@ impl App {
     }
 
     pub fn goto_page(&mut self, idx: usize) {
+        // Arcano edition: going to a page leaves a master being edited.
+        if self.master_view.is_some() {
+            self.leave_master();
+        }
         if self.multipage {
             if let Some(id) = self.doc().pages.get(idx).map(|p| p.id) {
                 self.multipage_activate(id);

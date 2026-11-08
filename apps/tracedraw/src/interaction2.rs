@@ -402,7 +402,7 @@ impl App {
     pub fn area_fill_at(&mut self, p: Point) {
         let shapes: Vec<Shape> = self
             .doc()
-            .layers_for_page(self.page)
+            .layers_for_page_in(self.page, self.master_view)
             .unwrap_or_default()
             .iter()
             .filter(|l| l.visible)

@@ -88,9 +88,11 @@ current page's bottom-left corner is the origin.
 Page > Facing Pages (a check, one undo step, saved with the drawing as
 `Metadata::facing_pages`) lays the pages out as a book's spreads: the first
 page alone on the right of the first spread, then each left-hand page (2, 4,
-6...) against the right-hand page after it, the spine between them, two
-spreads to a row (`multipage::layout_spreads`). Spreads and rows are the page
-spacing apart; left-hand pages are aligned to the spine, so pages of other
+6...) against the right-hand page after it, the spine between them, one
+spread a row as a book is leafed (`multipage::layout_spreads`). Rows are the
+page spacing apart; every page shadow is drawn before the pages, so none
+falls across the spine; each page is labelled with its number (a name of
+its own after it); left-hand pages are aligned to the spine, so pages of other
 widths still meet it. Turning it on shows the Multipage View. The house
 standard's margins already put the inner margin at the spine of each page.
 

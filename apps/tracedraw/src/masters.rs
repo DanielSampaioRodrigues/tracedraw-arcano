@@ -6,7 +6,7 @@
 
 use crate::app::App;
 use crate::i18n::tr;
-use tracedraw_core::document::{MasterPage, NO_MASTER};
+use tracedraw_core::document::{MasterPage, MasterScope, MasterView, NO_MASTER};
 use tracedraw_core::{Command, PageId};
 
 /// The label of a master page as the panel shows it ("A-Master").
@@ -217,6 +217,92 @@ impl App {
         self.fit_pending = true;
     }
 
+    /// Edit master page `id` in place of the pages: the current page shows
+    /// only that master (its right-hand page first) and new objects go on
+    /// its layer for that side.
+    pub fn edit_master(&mut self, id: u32) {
+        if self.doc().master_page(id).is_none() || !self.has_document() {
+            return;
+        }
+        if self.multipage {
+            self.set_multipage(false);
+        }
+        self.selection.clear();
+        self.master_view = Some(MasterView { master: id, left: false });
+        self.pick_master_layer();
+        self.objects_master_closed = false;
+        self.fit_pending = true;
+        let m = self.doc().master_page(id).map(|m| label(&m)).unwrap_or_default();
+        self.status = crate::i18n::trf("status.editing_master", &[("m", &m)]);
+    }
+
+    /// Show the left-hand (true) or right-hand page of the master being
+    /// edited.
+    pub fn set_master_side(&mut self, left: bool) {
+        if let Some(v) = self.master_view.as_mut() {
+            if v.left != left {
+                v.left = left;
+                self.selection.clear();
+                self.pick_master_layer();
+            }
+        }
+    }
+
+    /// Back to the pages from a master being edited.
+    pub fn leave_master(&mut self) {
+        if self.master_view.take().is_some() {
+            self.selection.clear();
+            self.picked_layer = None;
+            self.fit_pending = true;
+            self.status.clear();
+        }
+    }
+
+    /// The layer new objects go to while a master is edited: with facing
+    /// pages, the master's layer for the side shown (made when it has
+    /// none: objects drawn on a left-hand master page are on left-hand
+    /// pages only); otherwise its layer for every page.
+    fn pick_master_layer(&mut self) {
+        let Some(v) = self.master_view else { return };
+        let facing = self.doc().metadata.facing_pages;
+        let want = if !facing {
+            MasterScope::All
+        } else if v.left {
+            MasterScope::Even
+        } else {
+            MasterScope::Odd
+        };
+        let find = |app: &App| {
+            app.doc()
+                .master
+                .iter()
+                .find(|l| l.master_page == v.master && l.scope == want)
+                .map(|l| l.id)
+        };
+        let mut layer = find(self);
+        if layer.is_none() {
+            let name = self.doc().master_page(v.master).map(|m| label(&m)).unwrap_or_default();
+            let name = match want {
+                MasterScope::Even => crate::i18n::trf("master.layer_left", &[("m", &name)]),
+                MasterScope::Odd => crate::i18n::trf("master.layer_right", &[("m", &name)]),
+                _ => name,
+            };
+            let before: Vec<tracedraw_core::LayerId> = self.doc().master.iter().map(|l| l.id).collect();
+            let mark = self.engine.begin_group();
+            self.run(Command::AddMasterLayer { name, scope: want });
+            let new = self.doc().master.iter().map(|l| l.id).find(|l| !before.contains(l));
+            if let Some(l) = new {
+                self.run(Command::SetLayerMasterPage {
+                    layer: l,
+                    master: v.master,
+                });
+            }
+            self.engine.end_group(mark, "Edit Master");
+            layer = find(self);
+        }
+        self.picked_layer = layer;
+    }
+
     /// Save page `page` as a new master: its objects copied onto the new
     /// master's layer; the page itself unchanged. Returns the master.
     pub fn page_as_master(&mut self, page: PageId) -> Option<u32> {
@@ -294,6 +380,55 @@ mod tests {
         // Deleting B leaves its pages with no master.
         app.delete_master(b);
         assert_eq!(app.doc().master_of(pages[1]), NO_MASTER);
+    }
+
+    #[test]
+    fn what_is_drawn_on_a_master_shows_on_its_pages_on_its_side() {
+        let mut app = App::headless();
+        for _ in 0..3 {
+            app.add_page();
+        }
+        app.set_facing_pages(true);
+        app.set_multipage(false);
+        let pages: Vec<PageId> = app.doc().pages.iter().map(|p| p.id).collect();
+        let b = app.new_master("", "Abertura", None).unwrap();
+        // B on pages 2 (left-hand) and 3 (right-hand).
+        app.apply_master(&pages[1..3], b);
+        let rect = |app: &mut App, x: f64| {
+            app.new_shape(tracedraw_core::ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(x, 10.0, x + 20.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .unwrap()
+        };
+        // Into the master: its right-hand page first.
+        app.edit_master(b);
+        assert!(app.master_view.is_some());
+        let right = rect(&mut app, 10.0);
+        app.set_master_side(true);
+        let left = rect(&mut app, 50.0);
+        // On the master's layers, not on a page.
+        let on_master = |app: &App, id| app.doc().master.iter().any(|l| l.shapes.iter().any(|s| s.id == id));
+        assert!(on_master(&app, right) && on_master(&app, left));
+        // While it is edited the page shows only the master.
+        let shown: Vec<_> = app.page_layers().iter().flat_map(|l| l.shapes.iter().map(|s| s.id)).collect();
+        assert!(shown.contains(&left) && !shown.contains(&right));
+        // Back to the pages: page 2 (left) shows the left object, page 3
+        // (right) the right one, page 1 (A) neither.
+        app.goto_page(0);
+        assert!(app.master_view.is_none());
+        let on = |app: &App, page: PageId| -> Vec<tracedraw_core::ShapeId> {
+            app.doc()
+                .layers_for_page(page)
+                .unwrap()
+                .iter()
+                .flat_map(|l| l.shapes.iter().map(|s| s.id))
+                .collect()
+        };
+        assert!(on(&app, pages[1]).contains(&left) && !on(&app, pages[1]).contains(&right));
+        assert!(on(&app, pages[2]).contains(&right) && !on(&app, pages[2]).contains(&left));
+        assert!(!on(&app, pages[0]).contains(&left) && !on(&app, pages[0]).contains(&right));
     }
 
     #[test]

@@ -3616,6 +3616,16 @@ impl MasterPage {
     }
 }
 
+/// Arcano edition: a master page shown for editing in place of the
+/// pages: the current page shows only that master's objects (and its
+/// parents'), as its left-hand or right-hand page. A view the program
+/// keeps, not part of the drawing: exports never see it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MasterView {
+    pub master: u32,
+    pub left: bool,
+}
+
 /// Arcano edition: a page whose master is not A.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PageMaster {
@@ -5069,7 +5079,25 @@ impl Document {
     /// applicable master layers in front of the page (#1132); what clicks
     /// and selections take objects from.
     pub fn layers_for_page(&self, page: PageId) -> Result<Vec<&Layer>> {
+        self.layers_for_page_in(page, None)
+    }
+
+    /// [`layers_for_page`](Self::layers_for_page), or with master page
+    /// `view` being edited: only that master's layers (and its parents'),
+    /// on the side asked for.
+    pub fn layers_for_page_in(&self, page: PageId, view: Option<MasterView>) -> Result<Vec<&Layer>> {
         let idx = self.page_index(page)?;
+        if let Some(v) = view {
+            let chain = self.master_chain(v.master);
+            let side = if v.left { 1 } else { 0 };
+            let mut ls: Vec<&Layer> = self
+                .master
+                .iter()
+                .filter(|l| l.scope.applies(side) && chain.contains(&l.master_page))
+                .collect();
+            ls.sort_by_key(|l| (chain.iter().position(|m| *m == l.master_page), l.in_front));
+            return Ok(ls);
+        }
         // The page's master and the masters it is based on, parents first
         // (behind).
         let chain = self.master_chain(self.master_of(page));
@@ -5149,17 +5177,35 @@ impl Document {
     /// master layer holding a page number field comes as a copy showing
     /// this page's number (#807).
     pub fn layers_drawn_for_page(&self, page: PageId) -> Result<Vec<std::borrow::Cow<'_, Layer>>> {
+        self.layers_drawn_for_page_in(page, None)
+    }
+
+    /// [`layers_drawn_for_page`](Self::layers_drawn_for_page) with master
+    /// page `view` being edited (see [`MasterView`]).
+    pub fn layers_drawn_for_page_in(
+        &self,
+        page: PageId,
+        view: Option<MasterView>,
+    ) -> Result<Vec<std::borrow::Cow<'_, Layer>>> {
         use std::borrow::Cow;
         let idx = self.page_index(page)?;
         Ok(self
-            .layers_for_page(page)?
+            .layers_for_page_in(page, view)?
             .into_iter()
             .map(|l| {
                 let master = self.master.iter().any(|m| m.id == l.id);
                 if master && l.shapes.iter().any(Shape::holds_page_number) {
                     let mut l = l.clone();
+                    // A master being edited shows its prefix where the
+                    // page number goes.
+                    let prefix = view
+                        .and_then(|v| self.master_page(v.master))
+                        .map(|m| m.prefix);
                     for s in &mut l.shapes {
-                        s.show_fields(&|f| self.field_text(f, idx));
+                        s.show_fields(&|f| match (&prefix, f.show) {
+                            (Some(p), 0) => p.clone(),
+                            _ => self.field_text(f, idx),
+                        });
                     }
                     Cow::Owned(l)
                 } else {

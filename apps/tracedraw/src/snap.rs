@@ -944,7 +944,8 @@ impl App {
             } else {
                 Vec2::new(r.x0, r.y0)
             };
-            let layers = doc.layers_for_page(*id).unwrap_or_default();
+            let view = if *id == self.page { self.master_view } else { None };
+            let layers = doc.layers_for_page_in(*id, view).unwrap_or_default();
             for sh in layers
                 .into_iter()
                 .filter(|l| l.visible)

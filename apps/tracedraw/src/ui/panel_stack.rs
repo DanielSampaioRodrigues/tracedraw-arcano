@@ -367,7 +367,12 @@ fn group_head(
         p.circle_filled(more.center() + vec2(dx, 0.0), 1.4, Tokens::text_dim());
     }
     let resp = resp.rich_tip(tr("docker.add_docker"));
-    crate::ui::dockers::panels_menu(app, &resp, place);
+    crate::ui::dockers::panels_menu(
+        app,
+        &resp,
+        place,
+        crate::ui::dockers::group_menu_id(place, gi),
+    );
     if gi == 0 {
         let fold = Rect::from_center_size(
             pos2(head.right() - 39.0, head.center().y + 2.0),
@@ -582,7 +587,12 @@ pub fn strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
             .circle_filled(more.center() + vec2(dx, 0.0), 1.4, Tokens::text_dim());
     }
     let resp = resp.rich_tip(tr("docker.add_docker"));
-    crate::ui::dockers::panels_menu(app, &resp, place);
+    crate::ui::dockers::panels_menu(
+        app,
+        &resp,
+        place,
+        crate::ui::dockers::more_menu_id(place),
+    );
     if let Some((q, tab)) = app.stack_flyout {
         if q == place {
             flyout(app, ui.ctx(), place, tab, full, at_left);
@@ -680,6 +690,28 @@ fn flyout(
                 hide = true;
                 app.set_docker_column(place, true, Some(tab));
             }
+            // Arcano edition: pin it open (a click on the drawing then
+            // leaves it), or let it fold away again.
+            let pin = Rect::from_center_size(
+                pos2(head.right() - 63.0, head.center().y),
+                vec2(22.0, 22.0),
+            );
+            let pinned = app.settings.flyout_pinned;
+            let resp = ui
+                .interact(pin, id.with("pin"), Sense::click())
+                .rich_tip(crate::ui::tips::pair(
+                    if pinned { "docker.unpin" } else { "docker.pin" },
+                    "docker.pin_desc",
+                ));
+            if pinned {
+                ui.painter().rect_filled(pin, 5.0, Tokens::selected_row());
+            } else if resp.hovered() {
+                ui.painter().rect_filled(pin, 5.0, Tokens::tool_hover());
+            }
+            paint_pin(ui.painter(), pin.shrink(5.0), if pinned { Tokens::accent() } else { Tokens::text_dim() });
+            if resp.clicked() {
+                app.settings.flyout_pinned = !pinned;
+            }
             let body = Rect::from_min_max(pos2(rect.left(), head.bottom()), rect.max);
             let inner = body.shrink2(vec2(8.0, 8.0));
             let mut page = ui.new_child(
@@ -709,9 +741,25 @@ fn flyout(
     });
     let outside = at.is_some_and(|q| !rect.contains(q) && !strip.contains(q));
     let popup = egui::Popup::is_any_open(ctx);
-    if hide || esc || (clicked && outside && !popup) {
+    // A click in a window over the drawing (a dialog the panel opened)
+    // is not a click on the drawing.
+    let on_window = at.is_some_and(|q| {
+        ctx.layer_id_at(q)
+            .is_some_and(|l| matches!(l.order, egui::Order::Foreground | egui::Order::Tooltip) && l.id != id)
+    });
+    let pinned = app.settings.flyout_pinned;
+    if hide || (esc && !pinned) || (clicked && outside && !popup && !on_window && !pinned) {
         app.stack_flyout = None;
     }
+}
+
+/// A pin.
+fn paint_pin(p: &egui::Painter, r: Rect, c: egui::Color32) {
+    let s = egui::Stroke::new(1.3, c);
+    let head = Rect::from_center_size(pos2(r.center().x, r.top() + 3.5), vec2(7.0, 6.0));
+    p.rect_stroke(head, 1.0, s, egui::StrokeKind::Inside);
+    p.line_segment([pos2(r.left() + 1.0, head.bottom()), pos2(r.right() - 1.0, head.bottom())], s);
+    p.line_segment([pos2(r.center().x, head.bottom()), pos2(r.center().x, r.bottom())], s);
 }
 
 #[cfg(test)]

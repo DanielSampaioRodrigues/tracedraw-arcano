@@ -168,6 +168,7 @@ mod tests {
                 origin_y: 40.0,
             },
             focus,
+            master_view: None,
             ..Default::default()
         };
         let img =

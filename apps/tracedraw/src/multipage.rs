@@ -73,7 +73,7 @@ pub fn layout(pages: &[(PageId, Size)], active: PageId, gap: f64) -> Vec<(PageId
 }
 
 /// Spreads in a row of the facing pages layout.
-pub const SPREADS_PER_ROW: usize = 2;
+pub const SPREADS_PER_ROW: usize = 1;
 
 /// The pages' places as facing pages, in the current page's coordinates
 /// (mm, Y up): the first page alone on the right of the first spread,
@@ -347,11 +347,27 @@ pub fn draw_other_pages(
     let mut rasters = app.page_rasters.borrow_mut();
     rasters.retain(|id, _| doc.pages.iter().any(|p| p.id == *id));
     let mut rendered = rendered;
+    // Facing pages: every shadow first, so no page's shadow falls on the
+    // page beside it at the spine.
+    let facing = doc.metadata.facing_pages;
+    if facing && app.show_page_border {
+        for (_, r) in &placed {
+            let paper = app.view.rect_to_screen(*r);
+            let paper = ERect::from_min_max(paper.min.round(), paper.max.round());
+            if paper.expand(30.0).intersects(rect) {
+                painter.rect_filled(
+                    paper.expand(1.0).translate(crate::theme::Tokens::PAGE_SHADOW_OFFSET),
+                    0.0,
+                    crate::theme::Tokens::page_shadow(),
+                );
+            }
+        }
+    }
     for (index, (id, r)) in placed.iter().enumerate() {
         let paper = app.view.rect_to_screen(*r);
         let paper = ERect::from_min_max(paper.min.round(), paper.max.round());
         if *id != app.page && paper.expand(30.0).intersects(rect) {
-            if app.show_page_border {
+            if app.show_page_border && !facing {
                 painter.rect_filled(
                     paper
                         .expand(1.0)
@@ -422,14 +438,27 @@ pub fn draw_other_pages(
             }
         }
         if paper.expand(30.0).intersects(rect) {
-            let name = doc
+            // Arcano edition: the page's number (its section's numbering),
+            // as the Pages panel shows it; a name of its own after it.
+            let number = doc.field_text(
+                &tracedraw_core::document::PageNumberField {
+                    start_at: 1,
+                    style: 0,
+                    prefix: String::new(),
+                    suffix: String::new(),
+                    show: 0,
+                },
+                index,
+            );
+            let own = doc
                 .pages
                 .get(index)
                 .map(|p| p.name.clone())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| {
-                    crate::i18n::trf("doc.page_n", &[("n", &(index + 1).to_string())])
-                });
+                .filter(|n| !n.is_empty() && !is_default_name(n));
+            let label = match own {
+                Some(n) => format!("{number}: {n}"),
+                None => number,
+            };
             let color = if *id == app.page {
                 crate::theme::Tokens::text()
             } else {
@@ -438,7 +467,7 @@ pub fn draw_other_pages(
             painter.text(
                 paper.left_bottom() + egui::vec2(0.0, 6.0),
                 egui::Align2::LEFT_TOP,
-                format!("{}: {name}", index + 1),
+                label,
                 egui::FontId::proportional(12.0),
                 color,
             );
@@ -446,13 +475,31 @@ pub fn draw_other_pages(
     }
 }
 
+/// Whether `name` is a page name the program gave ("Page 3" in any of
+/// the interface's languages, or as a new page is named), which the view
+/// leaves out: the number says it.
+fn is_default_name(name: &str) -> bool {
+    let digits = name.trim_end().rsplit(' ').next().is_some_and(|w| !w.is_empty() && w.chars().all(|c| c.is_ascii_digit()));
+    let first = crate::i18n::trf("doc.page_n", &[("n", "1")]);
+    let stem = first.trim_end_matches('1').trim();
+    digits && (name.starts_with(stem) || name.split(' ').count() == 2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn page_labels_leave_out_the_names_given_by_the_program() {
+        assert!(is_default_name("Página 6"));
+        assert!(is_default_name("Page 12"));
+        assert!(!is_default_name("Capa"));
+        assert!(!is_default_name("Sumário"));
+    }
+
     /// Facing pages: the first page alone on the right, then left-hand
-    /// pages against the right-hand page after them at the spine, two
-    /// spreads a row; turning it on is one undo step and shows the pages.
+    /// pages against the right-hand page after them at the spine, one
+    /// spread a row; turning it on is one undo step and shows the pages.
     #[test]
     fn facing_pages_lay_the_pages_out_in_spreads() {
         let a5 = Size::new(148.0, 210.0);
@@ -461,14 +508,16 @@ mod tests {
         let r = |i: usize| placed[i].1;
         // Page 1 on the right of the spine (x = 0 for it).
         assert_eq!((r(0).x0, r(0).y0), (0.0, 0.0));
-        // Pages 2 and 3: the second spread, 2 ending where 3 begins.
+        // One spread a row, as a book is leafed: pages 2 and 3 under page
+        // 1, meeting at the same spine (x = 0), 2 ending where 3 begins.
         assert!((r(1).x1 - r(2).x0).abs() < 1e-9);
-        assert!((r(1).x0 - (148.0 + 10.0)).abs() < 1e-9, "{:?}", r(1));
-        assert_eq!(r(1).y0, r(0).y0);
-        // Pages 4 and 5 start the next row; 6 is the left of the fourth spread.
-        assert!((r(3).y0 - (-(210.0 + 10.0))).abs() < 1e-9, "{:?}", r(3));
+        assert!(r(1).x1.abs() < 1e-9 && r(2).x0.abs() < 1e-9, "{:?}", r(1));
+        assert!((r(1).y0 - (-(210.0 + 10.0))).abs() < 1e-9, "{:?}", r(1));
+        assert_eq!(r(1).y0, r(2).y0);
+        // Pages 4 and 5 the row after; 6 alone on the left of the last.
+        assert!((r(3).y0 - (-2.0 * (210.0 + 10.0))).abs() < 1e-9, "{:?}", r(3));
         assert!((r(3).x1 - r(4).x0).abs() < 1e-9);
-        assert!(r(5).x1 > r(4).x1);
+        assert!(r(5).x1.abs() < 1e-9 && r(5).y1 < r(3).y0);
         let mut app = App::headless();
         app.add_page();
         let steps = app.engine.history_labels().0.len();
@@ -477,7 +526,8 @@ mod tests {
         assert_eq!(app.engine.history_labels().0.len(), steps + 1);
         assert!(app.multipage);
         let placed = app.multipage_layout();
-        assert!(placed[1].1.x0 > placed[0].1.x1, "page 2 is the next spread's left-hand page");
+        assert!(placed[1].1.y1 <= placed[0].1.y0, "page 2 begins the next spread, under page 1");
+        assert!(placed[1].1.x1 <= placed[0].1.x0 + 1e-9, "on the left of the spine");
     }
 
     /// The space between pages of a drawing that sets none.

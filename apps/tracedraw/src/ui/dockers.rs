@@ -203,7 +203,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
             );
         }
         let resp = resp.rich_tip(tr("docker.add_docker"));
-        panels_menu(app, &resp, place);
+        panels_menu(app, &resp, place, more_menu_id(place));
     });
 }
 
@@ -212,9 +212,12 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
 /// panel open anywhere, the panel's picture (the one its tab shows, or a
 /// blank where it has none), its name; ticking opens it in front of this
 /// column, unticking closes it.
-pub(crate) fn panels_menu(app: &mut App, resp: &egui::Response, place: DockerPlace) {
+/// The panel list under `resp`, as popup `menu`: every button that opens
+/// it needs its own id (stacked groups in one column each have one, and
+/// sharing an id made each close the other's at once).
+pub(crate) fn panels_menu(app: &mut App, resp: &egui::Response, place: DockerPlace, menu: egui::Id) {
     egui::Popup::menu(resp)
-        .id(more_menu_id(place))
+        .id(menu)
         .style(crate::ui::menus::menu_popup_style)
         .show(|ui| {
             crate::ui::menus::body(ui, |ui| {
@@ -256,6 +259,11 @@ pub fn more_button_id(place: DockerPlace) -> egui::Id {
 /// The panel list the three-dot button of the column at `place` opens.
 pub fn more_menu_id(place: DockerPlace) -> egui::Id {
     egui::Id::new(("docker_add_menu", place as u8))
+}
+
+/// The panel list of stacked group `gi` in the column at `place`.
+pub fn group_menu_id(place: DockerPlace, gi: usize) -> egui::Id {
+    more_menu_id(place).with(("group", gi))
 }
 
 /// A column's tab strip as last drawn: the part of it on screen and its

@@ -23,10 +23,23 @@ The masters themselves are `MasterPage` records in the document
   changes its prefix, name and parent; Delete Master (never A) deletes its
   layers too and leaves its pages with no master; masters based on it take
   its parent.
-- Edit Master goes to the first page using the master and makes its layer
-  the one new objects go to; the Objects panel shows the master layers of
-  the current page's master (and its parents) as shown, the others as not
-  shown. A new master layer made on a page belongs to that page's master.
+- A double click on a master (or Edit Master in its right-click menu)
+  opens it for editing in place of the pages: the current page shows only
+  that master's objects and its parents' (`layers_for_page_in` with a
+  `MasterView`, a view the program keeps and exports never see), its
+  number fields show the master's prefix, and a bar over the drawing names
+  the master, offers its Left page and Right page (with facing pages) and
+  Back to Pages. With facing pages the master's other page shows beside
+  the one edited, as a spread, under a light veil; a click on it edits it.
+  New objects go on the master's layer for the side shown (made, named
+  "B-Master (left)" or "(right)", the first time a side is edited: on
+  left-hand or right-hand pages only), or on its layer for every page
+  without facing pages. Going to a page (a double click on it in the
+  panel, the page tabs) leaves the master
+  (`what_is_drawn_on_a_master_shows_on_its_pages_on_its_side`).
+- The Objects panel shows the master layers of the current page's master
+  (and its parents) as shown, the others as not shown. A new master layer
+  made on a page belongs to that page's master.
 - Pages made after a page (New Page, Insert Page, Duplicate Page, the
   pages Flow Into New Pages adds) take its master in the same undo step.
 
@@ -36,6 +49,10 @@ The masters themselves are `MasterPage` records in the document
   right, then pairs), one page a row otherwise; under each its number (the
   section's numbering), in its outer top corner its master's prefix. The
   current page has an accent outline, picked pages an accent background.
+- With facing pages the Multipage View shows one spread a row (page 1
+  alone on the right on top), each page labelled with its number (a name
+  of its own after it), the shadows drawn before the pages so none falls
+  across the spine.
 - Click picks a page, Shift+click a run, Ctrl+click one more; a double
   click goes to the page. Dragging pages moves them before or after the
   page they are let go on (a bar shows where), or to the end on the space
@@ -62,8 +79,17 @@ Master..., Numbering and Section Options..., Facing Pages, Thumbnail Size
 (`a_master_on_pages_and_new_pages_after_them_keep_it`,
 `the_panel_draws_and_a_master_dropped_on_a_page_applies_it`).
 
+## The panel beside a folded column
+
+- Shown beside a column folded to pictures, the panel folds away at a
+  click on the drawing; a click in a window it opened (Master Options,
+  Insert Pages) does not fold it, and those windows stay up whether the
+  panel shows or not. The pin in its title keeps it open (kept in the
+  settings) until its cross hides it.
+- Each panel group's three-dot button has a menu of its own (they shared
+  one, and opening one closed it at once).
+
 ## Not yet
 
-- Editing a master on its own spread (the canvas showing only the master).
 - Overriding a master object on one page.
 - Several page sizes in one spread, and spreads of more than two pages.
