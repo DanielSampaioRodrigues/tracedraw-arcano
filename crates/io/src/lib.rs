@@ -9,6 +9,7 @@ pub mod eps;
 pub mod eps_import;
 pub mod ggr;
 pub mod html;
+pub mod idml;
 pub mod pdf;
 pub mod pdf_crypt;
 pub(crate) mod pdf_glyphs;
