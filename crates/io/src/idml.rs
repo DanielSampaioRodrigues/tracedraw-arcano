@@ -92,7 +92,6 @@ pub fn open(bytes: &[u8]) -> Result<Imported, String> {
         warnings.push("no spread in the design map".into());
         return Ok(Imported { document: doc, warnings });
     }
-    let page_h = size.height;
     for (si, spread_id) in spread_ids.iter().enumerate() {
         let path = format!("Spreads/{spread_id}.xml");
         let xml = match part(&mut zip, &path) {
@@ -106,10 +105,15 @@ pub fn open(bytes: &[u8]) -> Result<Imported, String> {
             warnings.push(format!("{path}: not XML"));
             continue;
         };
+        let page_size = items
+            .descendants()
+            .find(|n| n.has_tag_name("Page"))
+            .and_then(|n| page_size_of(&n))
+            .unwrap_or(size);
         let mut ids = IdSource::default();
         let shapes = shapes_of(
             &items.root_element(),
-            page_h,
+            page_size.height,
             &stories,
             &colours,
             &mut ids,
@@ -122,7 +126,7 @@ pub fn open(bytes: &[u8]) -> Result<Imported, String> {
             doc.pages.push(Page {
                 id: page_id,
                 name,
-                size,
+                size: page_size,
                 layers: vec![Layer::new(layer_id, "Layer 1")],
                 guides: Vec::new(),
                 background: None,
@@ -152,60 +156,20 @@ pub fn save(doc: &Document) -> Result<Vec<u8>, String> {
     for (pi, page) in doc.pages.iter().enumerate() {
         let mut items = String::new();
         for layer in &page.layers {
-            for shape in &layer.shapes {
-                match &shape.kind {
-                    ShapeKind::Text {
-                        spans,
-                        origin,
-                        frame: Some(frame),
-                        ..
-                    } => {
-                        let text = tracedraw_core::spans_text(spans);
-                        let (font, size_pt) = spans
-                            .first()
-                            .map(|s| (s.font_family.clone(), s.size_pt))
-                            .unwrap_or_else(|| (DEFAULT_FONT.to_string(), DEFAULT_SIZE_PT));
-                        let id = format!("Story_{}", stories.len() + 1);
-                        stories.push((id.clone(), story_xml(&text, &font, size_pt)));
-                        items.push_str(&format!(
-                            "<TextFrame Self=\"tf{pi}_{}\" ParentStory=\"{id}\" \
-ItemTransform=\"1 0 0 1 {tx} {ty}\" GeometricBounds=\"0 0 {h} {w}\"/>",
-                            items.len(),
-                            tx = pt(origin.x),
-                            ty = pt(page_h - origin.y - frame.height),
-                            h = pt(frame.height),
-                            w = pt(frame.width),
-                        ));
-                    }
-                    ShapeKind::Rect { rect, .. } => {
-                        let fill = match &shape.fill {
-                            Fill::Solid(c) => {
-                                let rgb = c.to_rgb8();
-                                let id = format!("Color/{}", colours.len() + 1);
-                                colours.push((id.clone(), rgb));
-                                format!(" FillColor=\"{id}\"")
-                            }
-                            _ => String::new(),
-                        };
-                        items.push_str(&format!(
-                            "<Rectangle Self=\"r{pi}_{}\" ItemTransform=\"1 0 0 1 {tx} {ty}\" \
-GeometricBounds=\"0 0 {h} {w}\"{fill}/>",
-                            items.len(),
-                            tx = pt(rect.x0),
-                            ty = pt(page_h - rect.y1),
-                            h = pt(rect.height()),
-                            w = pt(rect.width()),
-                        ));
-                    }
-                    _ => {}
-                }
-            }
+            write_shapes(
+                &layer.shapes,
+                page.size.height,
+                pi,
+                &mut stories,
+                &mut colours,
+                &mut items,
+            );
         }
         spreads.push(format!(
             "<SpreadPackage DOMVersion=\"18.0\"><Spread Self=\"Spread_{n}\">\
 <Page Self=\"Page_{n}\" GeometricBounds=\"0 0 {h} {w}\"/>{items}</Spread></SpreadPackage>",
             n = pi + 1,
-            h = pt(page_h),
+            h = pt(page.size.height),
             w = pt(page.size.width),
         ));
     }
@@ -259,6 +223,69 @@ GeometricBounds=\"0 0 {h} {w}\"{fill}/>",
     }
     let cursor = zip.finish().map_err(|e| e.to_string())?;
     Ok(cursor.into_inner())
+}
+
+/// The items of `shapes` as the format's elements, groups written as
+/// groups with their items inside them.
+fn write_shapes(
+    shapes: &[Shape],
+    page_h: f64,
+    pi: usize,
+    stories: &mut Vec<(String, String)>,
+    colours: &mut Vec<(String, [u8; 3])>,
+    out: &mut String,
+) {
+    for (k, shape) in shapes.iter().enumerate() {
+        match &shape.kind {
+            ShapeKind::Text {
+                spans,
+                origin,
+                frame: Some(frame),
+                ..
+            } => {
+                let text = tracedraw_core::spans_text(spans);
+                let (font, size_pt) = spans
+                    .first()
+                    .map(|s| (s.font_family.clone(), s.size_pt))
+                    .unwrap_or_else(|| (DEFAULT_FONT.to_string(), DEFAULT_SIZE_PT));
+                let id = format!("Story_{}", stories.len() + 1);
+                stories.push((id.clone(), story_xml(&text, &font, size_pt)));
+                out.push_str(&format!(
+                    "<TextFrame Self=\"tf{pi}_{k}\" ParentStory=\"{id}\" \
+ItemTransform=\"1 0 0 1 {tx} {ty}\" GeometricBounds=\"0 0 {h} {w}\"/>",
+                    tx = pt(origin.x),
+                    ty = pt(page_h - origin.y - frame.height),
+                    h = pt(frame.height),
+                    w = pt(frame.width),
+                ));
+            }
+            ShapeKind::Rect { rect, .. } => {
+                let fill = match &shape.fill {
+                    Fill::Solid(c) => {
+                        let rgb = c.to_rgb8();
+                        let id = format!("Color/{}", colours.len() + 1);
+                        colours.push((id.clone(), rgb));
+                        format!(" FillColor=\"{id}\"")
+                    }
+                    _ => String::new(),
+                };
+                out.push_str(&format!(
+                    "<Rectangle Self=\"r{pi}_{k}\" ItemTransform=\"1 0 0 1 {tx} {ty}\" \
+GeometricBounds=\"0 0 {h} {w}\"{fill}/>",
+                    tx = pt(rect.x0),
+                    ty = pt(page_h - rect.y1),
+                    h = pt(rect.height()),
+                    w = pt(rect.width()),
+                ));
+            }
+            ShapeKind::Group { children } => {
+                out.push_str(&format!("<Group Self=\"g{pi}_{k}\">"));
+                write_shapes(children, page_h, pi, stories, colours, out);
+                out.push_str("</Group>");
+            }
+            _ => {}
+        }
+    }
 }
 
 /// A story of `text`'s paragraphs, all in one character run.
@@ -481,6 +508,23 @@ fn box_of(node: &roxmltree::Node, page_h_mm: f64) -> Option<Place> {
         origin_top_left: Point::new(x_mm.max(0.0), (page_h_mm - y_mm - h_mm).max(0.0)),
         size: Size::new(w_mm.max(1.0), h_mm.max(1.0)),
     })
+}
+
+/// A page's own size, from its `GeometricBounds` (top left bottom right,
+/// in points).
+fn page_size_of(node: &roxmltree::Node) -> Option<Size> {
+    let bounds: Vec<f64> = node
+        .attribute("GeometricBounds")?
+        .split_whitespace()
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    let [top, left, bottom, right] = bounds.as_slice() else {
+        return None;
+    };
+    Some(Size::new(
+        (right - left) * MM_PER_PT,
+        (bottom - top) * MM_PER_PT,
+    ))
 }
 
 /// The columns of a text frame, from its `TextFramePreference`.
@@ -709,7 +753,10 @@ mod tests {
             },
         );
         rect.fill = Fill::Solid(Color::rgb8(200, 30, 40));
-        doc.pages[0].layers[0].shapes = vec![text, rect];
+        // The rectangle inside a group: the group goes as a group, with
+        // its items inside it.
+        let group = Shape::new(ShapeId(9), ShapeKind::Group { children: vec![rect] });
+        doc.pages[0].layers[0].shapes = vec![text, group];
         // A second page with a rectangle of its own: every page goes as a
         // spread of its own, and comes back on its own page.
         let page_id = doc.ids_mut().page();
@@ -726,7 +773,7 @@ mod tests {
         doc.pages.push(Page {
             id: page_id,
             name: "Page 2".into(),
-            size: Size::new(210.0, 297.0),
+            size: Size::new(148.0, 210.0),
             layers: vec![Layer::new(layer_id, "Layer 1")],
             guides: Vec::new(),
             background: None,
@@ -749,11 +796,25 @@ mod tests {
         let frame = frame.expect("a frame");
         assert!((frame.width - 150.0).abs() < 0.1, "{frame:?}");
         assert!((frame.height - 60.0).abs() < 0.1, "{frame:?}");
-        let ShapeKind::Rect { rect, .. } = &shapes[1].kind else {
-            panic!("a rectangle: {:?}", shapes[1].kind);
+        let ShapeKind::Group { children } = &shapes[1].kind else {
+            panic!("a group: {:?}", shapes[1].kind);
+        };
+        assert_eq!(children.len(), 1, "{}", children.len());
+        let ShapeKind::Rect { rect, .. } = &children[0].kind else {
+            panic!("a rectangle in the group: {:?}", children[0].kind);
         };
         assert!((rect.width() - 60.0).abs() < 0.1, "{rect:?}");
-        assert!(matches!(shapes[1].fill, Fill::Solid(_)), "{:?}", shapes[1].fill);
+        assert!(
+            matches!(children[0].fill, Fill::Solid(_)),
+            "{:?}",
+            children[0].fill
+        );
+        // The second page keeps its own size.
+        assert!(
+            (back.document.pages[1].size.width - 148.0).abs() < 0.05,
+            "{:?}",
+            back.document.pages[1].size
+        );
         let second = &back.document.pages[1].layers[0].shapes;
         assert_eq!(second.len(), 1, "{}", second.len());
         match &second[0].kind {
