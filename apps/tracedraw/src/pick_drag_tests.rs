@@ -17566,11 +17566,19 @@ fn zoom_keys_work_while_editing_text() {
     assert!(app.view.zoom < zoom * 0.95, "{} {}", app.view.zoom, zoom);
     assert!(app.text_edit.is_some());
 
-    // Shift+F4: the page again (the setup zoomed to it); F4: all
-    // objects, closer (the rectangle and the text are small).
+    // Shift+F4: the page again, fitted to the canvas the bar's two text
+    // rows leave while a text is edited (a little shorter than the canvas
+    // the setup fitted, so a little further out); F4: all objects, closer
+    // (the rectangle and the text are small).
     press(&ctx, &mut app, egui::Key::F4, Modifiers::SHIFT);
     let page = app.view.zoom;
-    assert!((page - zoom).abs() < 1e-6, "{page} {zoom}");
+    assert!(page > 0.0 && page < zoom, "{page} {zoom}");
+    press(&ctx, &mut app, egui::Key::F4, Modifiers::SHIFT);
+    assert!(
+        (app.view.zoom - page).abs() < 1e-6,
+        "{} {page}",
+        app.view.zoom
+    );
     press(&ctx, &mut app, egui::Key::F4, Modifiers::NONE);
     assert!(app.view.zoom > page * 1.2, "{} {}", app.view.zoom, page);
     assert!(app.text_edit.is_some());

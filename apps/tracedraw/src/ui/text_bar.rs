@@ -1,7 +1,9 @@
 //! The text rows of the property bar: the Character and the Paragraph
-//! controls, in two rows while text is the context (the Text tool, a text
-//! selected, or the caret in one), so the work of setting text happens at
-//! the top of the window and not only in the panels.
+//! controls, in two rows with the Text tool and while a text is edited, so
+//! the work of setting text happens at the top of the window and not only
+//! in the panels. A text selected with the Pick tool keeps the bar's one
+//! row, so selecting a text to move it does not change the room the
+//! drawing has.
 //!
 //! Row 1 holds the characters' look: font, character style, size, the
 //! variable font's axes, bold, italic and underline, tracking, line
@@ -35,16 +37,11 @@ use tracedraw_core::{LeadingUnit, ParagraphStyle, ShapeKind, TextAlign};
 pub(crate) const ROWS_H: f32 = 56.0;
 
 /// Whether the property bar shows the two text rows: the Text tool, the
-/// caret in a text, or every selected object a text.
+/// caret in a text, or a table cell being edited. Text selected with the
+/// Pick tool keeps the bar's one row, so selecting a text to move it does
+/// not change the room the drawing has.
 pub(crate) fn two_rows(app: &App) -> bool {
-    if matches!(app.tool, Tool::Text) {
-        return true;
-    }
-    if app.text_edit.is_some() || app.table_edit.is_some() {
-        return true;
-    }
-    let shapes = app.selected_rc();
-    !shapes.is_empty() && shapes.iter().all(|s| matches!(s.kind, ShapeKind::Text { .. }))
+    matches!(app.tool, Tool::Text) || app.text_edit.is_some() || app.table_edit.is_some()
 }
 
 /// A number field of the row, under `key`'s tip; true when changed.
@@ -94,6 +91,12 @@ fn dist(ui: &mut Ui, app: &App, key: &str, mm: &mut f64) -> bool {
 /// Row 1: the characters' look, and the paragraph's word and letter
 /// spacing.
 pub(crate) fn characters(app: &mut App, ui: &mut Ui) {
+    // With no text to change the bar shows the font and size of new text,
+    // not those of the text selected last (#449).
+    if !app.has_text_target() && app.live_font.is_none() {
+        app.text_font = app.text_default_font.clone();
+        app.text_size_pt = app.text_default_size;
+    }
     let first = painel_tipo::first_text(app);
     let span = first.as_ref().and_then(|t| app.shown_span(t));
     let mut changed = false;
@@ -390,31 +393,25 @@ mod tests {
         id
     }
 
-    /// The two rows come with text: the Text tool, a text selected, the
-    /// caret in one; a shape selected keeps the bar as it was.
+    /// The two rows come with the Text tool and while a text is being
+    /// edited; a text selected with the Pick tool keeps the bar's one row,
+    /// so selecting it to move it does not change the room of the drawing.
     #[test]
     fn the_two_rows_show_with_text() {
         let mut app = App::headless();
         assert!(!two_rows(&app), "nothing selected, the Pick tool");
-        let id = with_text(&mut app);
-        assert!(two_rows(&app), "a text selected");
-        app.set_tool(crate::tools::Tool::Rectangle);
+        with_text(&mut app);
+        assert!(!two_rows(&app), "a text selected with the Pick tool");
         app.set_tool(crate::tools::Tool::Text);
         assert!(two_rows(&app), "the Text tool");
         app.select(Vec::new());
         assert!(two_rows(&app), "the Text tool with nothing selected");
         app.set_tool(crate::tools::Tool::Pick);
-        let r = app
-            .new_shape(ShapeKind::Rect {
-                rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, 20.0, 20.0),
-                radius: 0.0,
-                corners: None,
-            })
-            .expect("rect");
-        app.select(vec![r]);
-        assert!(!two_rows(&app), "a shape selected");
-        app.select(vec![id, r]);
-        assert!(!two_rows(&app), "a text and a shape together");
+        app.start_text(Point::new(30.0, 50.0), None);
+        assert!(app.text_edit.is_some());
+        assert!(two_rows(&app), "the caret in a text");
+        app.finish_text();
+        assert!(!two_rows(&app), "the editing over, the Pick tool");
     }
 
     /// The property bar's band grows for the two rows and comes back.
@@ -424,6 +421,7 @@ mod tests {
         let one = crate::ui::bars::Bar::Property.row_height();
         assert_eq!(crate::ui::bars::Bar::Property.row_height_for(&app), one);
         with_text(&mut app);
+        app.set_tool(crate::tools::Tool::Text);
         let two = crate::ui::bars::Bar::Property.row_height_for(&app);
         assert!(two > one + 10.0, "{two} {one}");
         assert_eq!(two, ROWS_H + 16.0);
@@ -459,6 +457,7 @@ mod tests {
         frame(&mut app);
         let one = property_row(&app).expect("the property bar in a row");
         with_text(&mut app);
+        app.set_tool(crate::tools::Tool::Text);
         frame(&mut app);
         let two = property_row(&app).expect("the property bar in a row");
         assert!(two > one + 10.0, "{two} {one}");
@@ -474,6 +473,7 @@ mod tests {
     fn the_rows_draw_and_keep_the_bar_height() {
         let mut app = App::headless();
         with_text(&mut app);
+        app.set_tool(crate::tools::Tool::Text);
         let ctx = egui::Context::default();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 1000.0));
         for _ in 0..3 {
