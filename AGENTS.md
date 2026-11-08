@@ -33,7 +33,17 @@ The product name is **TraceDraw** in prose; machine names are `tracedraw`
    Format readers come from public format notes and from inspecting files
    we own; never port code from libcdr or any other implementation.
    Record each piece of format knowledge, its source and date in
-   `CLEANROOM.md` and the details in `docs/cdr-format.md`. Bundle only
+   `CLEANROOM.md` and the details in `docs/cdr-format.md`.
+   **One exception, granted by the project's owner (2026-11-08):** code
+   taken whole from another open-source project under a licence that
+   allows it (MIT, Apache-2.0 or their dual form, as ours), with its
+   copyright notice and `NOTICE` kept verbatim in `licenses/<project>/`,
+   recorded in `ATTRIBUTION.md` and `docs/third-party.md` at a pinned
+   commit, may keep that project's name in its own headers and licence
+   files, and may be used for a format reader too. The names stay out of
+   the interface, the prose, the menu, file names and commit messages.
+   The licence's own terms come first: its copyright notices, its
+   `NOTICE` and a statement of our changes travel with the code. Bundle only
    original or openly licensed assets and list them in `ATTRIBUTION.md`.
 4. **Layering is enforced by review.** `core` and `cdr-format` have no
    workspace deps; `cdr` depends on `cdr-format` and `core`; `text` and

@@ -8,6 +8,7 @@ set -euo pipefail
 base="${1:?usage: check_added_lines.sh BASE}"
 added=$(git diff --unified=0 "$base" HEAD -- . ':(exclude)ATTRIBUTION.md' \
     ':(exclude)CLEANROOM.md' ':(exclude)README.md' ':(exclude)PRIVACY.md' \
+    ':(exclude)licenses' ':(exclude)docs/third-party.md' \
     | grep -E '^\+[^+]' || true)
 status=0
 if [ -n "${FORBIDDEN_WORDS:-}" ]; then
