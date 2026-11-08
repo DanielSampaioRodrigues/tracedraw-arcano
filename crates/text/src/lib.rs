@@ -30,6 +30,7 @@ pub mod traits;
 pub const PT_MM: f64 = 25.4 / 72.0;
 
 use tracedraw_core::document::text_outline::{GlyphLayout, PlacedGlyph};
+use tracedraw_core::document::Hyphenation;
 
 pub struct FontSystem {
     /// Installed fonts, then the fonts documents brought (see
@@ -3997,7 +3998,7 @@ impl FontSystem {
                     glyph_advance: g.advance,
                 }
             });
-            let mut br = Breaker::new(glyphs, ps.hyphenate, metrics, pi, para_start);
+            let mut br = Breaker::new(glyphs, ps.hyphenate, ps.hyphenation, metrics, pi, para_start);
             // Balance Lines: the narrowest measure that keeps the
             // paragraph's number of lines, so its lines end near the same
             // place (docs/behavior/text.md). Objects the text wraps around
@@ -4013,7 +4014,7 @@ impl FontSystem {
             {
                 let rest_w = (w - indent_rest - ps.right_indent).max(1.0);
                 let first_w = (w - indent_first - ps.right_indent).max(1.0);
-                balanced_measure(glyphs, ps.hyphenate, first_w, rest_w)
+                balanced_measure(glyphs, ps.hyphenate, &ps.hyphenation, first_w, rest_w)
             } else {
                 f64::INFINITY
             };
@@ -4940,6 +4941,11 @@ struct Breaker<'a> {
     /// An empty paragraph still owes its one empty line.
     empty_pending: bool,
     hyphenate: bool,
+    /// How the paragraph hyphenates: the fewest letters, before and after,
+    /// words in capitals and the last word (see [`Hyphenation`]).
+    opts: Hyphenation,
+    /// The hyphens of the lines in a row, for the paragraph's limit.
+    hyphens_in_a_row: usize,
     metrics: &'a [Metrics],
     pi: usize,
     para_start: usize,
@@ -4949,6 +4955,7 @@ impl<'a> Breaker<'a> {
     fn new(
         glyphs: &[Glyph],
         hyphenate: bool,
+        opts: Hyphenation,
         metrics: &'a [Metrics],
         pi: usize,
         para_start: usize,
@@ -4977,6 +4984,8 @@ impl<'a> Breaker<'a> {
             tail: None,
             first: true,
             hyphenate,
+            opts,
+            hyphens_in_a_row: 0,
             metrics,
             pi,
             para_start,
@@ -4997,6 +5006,12 @@ impl<'a> Breaker<'a> {
 
     fn line(&mut self, mut glyphs: Vec<Glyph>, hyphen: Option<Arc<HyphenGlyph>>) -> Line {
         self.first = false;
+        // Hyphens in a row, for the paragraph's limit.
+        if hyphen.is_some() {
+            self.hyphens_in_a_row += 1;
+        } else {
+            self.hyphens_in_a_row = 0;
+        }
         let start_char = glyphs
             .first()
             .map(|g| g.char_idx)
@@ -5057,11 +5072,20 @@ impl<'a> Breaker<'a> {
                 self.i += 1;
                 continue;
             }
+            // The paragraph's last word, for its "hyphenate the last word"
+            // rule, and whether a hyphen is still allowed in this line.
+            let last_word = self.tail.is_none() && self.i + 1 >= self.words.len();
+            let hyphens_left =
+                self.opts.max_run == 0 || self.hyphens_in_a_row < self.opts.max_run as usize;
             // Try hyphenating the word.
             if self.hyphenate || line.is_empty() {
                 let text: String = word.iter().map(|g| g.ch).collect();
                 let points = if self.hyphenate {
-                    hyphen::break_points(text.trim_end())
+                    if (!self.opts.last_word && last_word) || !hyphens_left {
+                        Vec::new()
+                    } else {
+                        hyphen::break_points_opt(text.trim_end(), &self.opts)
+                    }
                 } else {
                     // Forced break inside an over-long word: any position.
                     (1..word.len()).collect()
@@ -5125,7 +5149,7 @@ fn run_width(glyphs: &[Glyph], a: usize, b: usize) -> f64 {
 /// (hyphenation, the forced break inside a word that does not fit alone,
 /// Chinese and Japanese) without building the lines, so Balance Lines can
 /// search the measures that keep the count.
-fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
+fn lines_at(glyphs: &[Glyph], hyphenate: bool, opts: &Hyphenation, first: f64, rest: f64) -> usize {
     if glyphs.is_empty() {
         return 1;
     }
@@ -5152,11 +5176,14 @@ fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
     }
     let mut lines = 0usize;
     let mut i = 0usize;
+    // The hyphens of the lines in a row, for the paragraph's limit.
+    let mut hyphens_in_a_row = 0usize;
     // A word cut at a hyphenation point: where what is left of it starts.
     let mut tail: Option<usize> = None;
     while i < words.len() || tail.is_some() {
         let avail = if lines == 0 { first } else { rest };
         let mut line_w = 0.0f64;
+        let mut ends_with_hyphen = false;
         while let Some(&(wa, wb)) = words.get(i) {
             let ws = tail.unwrap_or(wa);
             let w = run_width(glyphs, ws, wb);
@@ -5173,6 +5200,8 @@ fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
             }
             // The word does not fit: hyphenate it, or break it anywhere
             // when nothing is on the line yet.
+            let last_word = tail.is_none() && i + 1 >= words.len();
+            let hyphens_left = opts.max_run == 0 || hyphens_in_a_row < opts.max_run as usize;
             if hyphenate || line_w <= 0.0 {
                 let text: String = glyphs
                     .get(ws..wb)
@@ -5181,7 +5210,11 @@ fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
                     .map(|g| g.ch)
                     .collect();
                 let points = if hyphenate {
-                    hyphen::break_points(text.trim_end())
+                    if (!opts.last_word && last_word) || !hyphens_left {
+                        Vec::new()
+                    } else {
+                        hyphen::break_points_opt(text.trim_end(), opts)
+                    }
                 } else {
                     (1..wb.saturating_sub(ws)).collect()
                 };
@@ -5206,6 +5239,7 @@ fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
                 }
                 if let Some(p) = best {
                     tail = Some(ws + p);
+                    ends_with_hyphen = true;
                     break;
                 }
             }
@@ -5215,6 +5249,11 @@ fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
                 tail = None;
             }
             break;
+        }
+        if ends_with_hyphen {
+            hyphens_in_a_row += 1;
+        } else {
+            hyphens_in_a_row = 0;
         }
         lines += 1;
         if lines > 100_000 {
@@ -5229,11 +5268,17 @@ fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
 /// place. `first` is the room of the paragraph's first line, `rest` of
 /// the others. The count never changes: a paragraph of one line, or one
 /// where no narrower measure keeps its lines, keeps `rest`.
-fn balanced_measure(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> f64 {
+fn balanced_measure(
+    glyphs: &[Glyph],
+    hyphenate: bool,
+    opts: &Hyphenation,
+    first: f64,
+    rest: f64,
+) -> f64 {
     if !rest.is_finite() || rest <= 0.0 {
         return rest;
     }
-    let lines = lines_at(glyphs, hyphenate, first, rest);
+    let lines = lines_at(glyphs, hyphenate, opts, first, rest);
     if lines < 2 {
         return rest;
     }
@@ -5251,14 +5296,14 @@ fn balanced_measure(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) ->
             break;
         }
         let mid = (lo + hi) / 2.0;
-        if lines_at(glyphs, hyphenate, first.min(mid), mid) == lines {
+        if lines_at(glyphs, hyphenate, opts, first.min(mid), mid) == lines {
             hi = mid;
         } else {
             lo = mid;
         }
     }
     // A measure that changes the number of lines is no measure at all.
-    if lines_at(glyphs, hyphenate, first.min(hi), hi) == lines {
+    if lines_at(glyphs, hyphenate, opts, first.min(hi), hi) == lines {
         hi
     } else {
         rest
@@ -5466,7 +5511,7 @@ mod tests {
             })
             .collect();
         let metrics = [Metrics::default()];
-        let mut br = Breaker::new(&glyphs, false, &metrics, 0, 0);
+        let mut br = Breaker::new(&glyphs, false, Hyphenation::default(), &metrics, 0, 0);
         let mut out = Vec::new();
         while !br.done() {
             out.push(
@@ -6027,8 +6072,91 @@ mod tests {
     /// The lines a [`Breaker`] makes of `glyphs` at `avail`, each one as
     /// wide as the text it ends.
     fn broken_lines(glyphs: &[Glyph], avail: f64, hyphenate: bool) -> Vec<f64> {
+        broken_lines_with(glyphs, avail, hyphenate, &Hyphenation::default())
+    }
+
+    /// [roken_lines] under a paragraph's hyphenation options.
+    /// [`fake_run`] whose glyphs carry a hyphen, so a line broken inside a
+    /// word shows it.
+    fn fake_run_with_hyphens(text: &str, advance: f64) -> Vec<Glyph> {
+        let hyphen = Arc::new(HyphenGlyph {
+            path: BezPath::new(),
+            advance: 0.0,
+        });
+        fake_run(text, advance)
+            .into_iter()
+            .map(|g| Glyph {
+                hyphen_after: Some(hyphen.clone()),
+                ..g
+            })
+            .collect()
+    }
+
+    /// The lines `glyphs` take at `avail` under a paragraph's hyphenation
+    /// options, each one saying whether it ends with a hyphen.
+    fn hyphenated_lines(
+        glyphs: &[Glyph],
+        avail: f64,
+        opts: &Hyphenation,
+    ) -> Vec<bool> {
         let metrics = [Metrics::default()];
-        let mut br = Breaker::new(glyphs, hyphenate, &metrics, 0, 0);
+        let mut br = Breaker::new(glyphs, true, *opts, &metrics, 0, 0);
+        let mut out = Vec::new();
+        while !br.done() && out.len() < 10_000 {
+            let line = br.next(avail.max(1.0));
+            out.push(line.hyphen.is_some());
+        }
+        out
+    }
+
+    /// The most hyphens in a row (`Hyphenation::max_run`): with 1, no two
+    /// lines one after the other end with a hyphen; 0 leaves no limit.
+    #[test]
+    fn the_hyphenation_limit_stops_a_run_of_hyphens() {
+        // Long words that must be cut on every line of a narrow measure.
+        let glyphs = fake_run_with_hyphens(
+            "hyphenation information achievement hyphenation information",
+            5.0,
+        );
+        let mut opts = Hyphenation::default();
+        opts.max_run = 0;
+        let free = hyphenated_lines(&glyphs, 40.0, &opts);
+        assert!(
+            free.windows(2).any(|w| w[0] && w[1]),
+            "no run of hyphens to cut: {free:?}"
+        );
+        opts.max_run = 1;
+        let limited = hyphenated_lines(&glyphs, 40.0, &opts);
+        assert!(
+            !limited.windows(2).any(|w| w[0] && w[1]),
+            "two hyphens in a row: {limited:?}"
+        );
+        assert!(limited.iter().any(|h| *h), "{limited:?}");
+    }
+
+    /// The paragraph's last word is hyphenated, unless the option says it
+    /// is not: the word is split, which leaves a hyphen on the line before
+    /// the last; with the option off it goes whole to the last line.
+    #[test]
+    fn the_last_word_hyphenates_only_when_asked() {
+        let glyphs = fake_run_with_hyphens("um texto administrativamente", 5.0);
+        let mut opts = Hyphenation::default();
+        let with = hyphenated_lines(&glyphs, 60.0, &opts);
+        assert!(with.contains(&true), "the last word split: {with:?}");
+        assert_eq!(with.last().copied(), Some(false), "{with:?}");
+        opts.last_word = false;
+        let without = hyphenated_lines(&glyphs, 60.0, &opts);
+        assert!(!without.contains(&true), "no hyphen at all: {without:?}");
+    }
+
+    fn broken_lines_with(
+        glyphs: &[Glyph],
+        avail: f64,
+        hyphenate: bool,
+        opts: &Hyphenation,
+    ) -> Vec<f64> {
+        let metrics = [Metrics::default()];
+        let mut br = Breaker::new(glyphs, hyphenate, *opts, &metrics, 0, 0);
         let mut out = Vec::new();
         while !br.done() && out.len() < 10_000 {
             let line = br.next(avail);
@@ -6059,7 +6187,7 @@ mod tests {
                 while avail < 140.0 {
                     let lines = broken_lines(&glyphs, avail, hyphenate);
                     assert_eq!(
-                        lines_at(&glyphs, hyphenate, avail, avail),
+                        lines_at(&glyphs, hyphenate, &Hyphenation::default(), avail, avail),
                         lines.len().max(1),
                         "{text:?} at {avail} with hyphenate {hyphenate}"
                     );
@@ -6078,7 +6206,7 @@ mod tests {
         let mut rest = 30.0;
         while rest < 200.0 {
             let plain = broken_lines(&glyphs, rest, false);
-            let m = balanced_measure(&glyphs, false, rest, rest);
+            let m = balanced_measure(&glyphs, false, &Hyphenation::default(), rest, rest);
             let balanced = broken_lines(&glyphs, m, false);
             assert!(m <= rest + 1e-9, "{m} wider than {rest}");
             assert_eq!(balanced.len(), plain.len(), "line count at {rest}");

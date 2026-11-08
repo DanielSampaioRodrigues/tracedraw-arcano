@@ -38,6 +38,8 @@ pub struct ParagraphFormat {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tab_details: Vec<crate::document::TabDetail>,
     pub hyphenate: bool,
+    /// How the paragraph hyphenates (see [Hyphenation]).
+    pub hyphenation: crate::document::Hyphenation,
     /// Balance Lines: the paragraph breaks at the narrowest measure that
     /// keeps its number of lines (see [`ParagraphStyle::balance_lines`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -87,6 +89,7 @@ impl ParagraphFormat {
             tabs: p.tabs.clone(),
             tab_details: p.tab_details.clone(),
             hyphenate: p.hyphenate,
+            hyphenation: p.hyphenation,
             balance_lines: p.balance_lines,
             orphans: 1,
             widows: 1,
@@ -114,6 +117,7 @@ impl ParagraphFormat {
         p.tabs = self.tabs.clone();
         p.tab_details = self.tab_details.clone();
         p.hyphenate = self.hyphenate;
+        p.hyphenation = self.hyphenation;
         p.balance_lines = self.balance_lines;
         self.align
     }
@@ -145,6 +149,7 @@ impl ParagraphFormat {
             bullet_indent,
             drop_cap_lines,
             hyphenate,
+            hyphenation,
             balance_lines,
             orphans,
             widows,
@@ -503,6 +508,22 @@ mod tests {
         // formatting again and stops carrying its own.
         edit_paragraph_formats(&mut k, None, |f| f.balance_lines = false);
         assert!(spans(&k).iter().all(|s| s.paragraph.is_none()));
+    }
+
+    /// The hyphenation options go with the paragraph's own formatting too.
+    #[test]
+    fn hyphenation_options_go_with_the_paragraph() {
+        let mut k = text("one\ntwo");
+        let old = ParagraphFormat::default();
+        let mut new = old.clone();
+        new.hyphenation.max_run = 1;
+        let mut other = ParagraphFormat::default();
+        other.take_changes(&old, &new);
+        assert_eq!(other.hyphenation.max_run, 1);
+        edit_paragraph_formats(&mut k, Some((5, 5)), |f| f.hyphenation.max_run = 1);
+        let st = styles(&k);
+        assert_eq!(st[0].1.hyphenation.max_run, 3);
+        assert_eq!(st[1].1.hyphenation.max_run, 1);
     }
 
     #[test]

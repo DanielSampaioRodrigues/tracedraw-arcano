@@ -1364,6 +1364,9 @@ pub struct ParagraphStyle {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tab_details: Vec<TabDetail>,
     pub hyphenate: bool,
+    /// How the paragraph hyphenates, when it does (see [`Hyphenation`]).
+    #[serde(default, skip_serializing_if = "is_default_hyphenation")]
+    pub hyphenation: Hyphenation,
     /// Balance Lines: a paragraph set flush left, centred or flush right
     /// breaks at the narrowest measure that keeps its number of lines, so
     /// its lines end near the same place. It never adds a line and the
@@ -1420,6 +1423,45 @@ impl LeadingUnit {
     ];
 }
 
+/// How a paragraph hyphenates (Text > Hyphenation, and the Paragraph
+/// panel): the house's defaults are words of five letters or more, two
+/// letters before and after the break, at most three hyphens in a row,
+/// words in capitals hyphenated and the paragraph's last word too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Hyphenation {
+    /// The fewest letters a word needs to be hyphenated at all.
+    pub min_word: u8,
+    /// The fewest letters of the word left before the hyphen.
+    pub min_before: u8,
+    /// The fewest letters carried after the hyphen.
+    pub min_after: u8,
+    /// The most lines in a row that may end with a hyphen; 0 = no limit.
+    pub max_run: u8,
+    /// Hyphenate words with a capital letter (names, acronyms included).
+    pub capitals: bool,
+    /// Hyphenate the paragraph's last word (it leaves a hyphen on the
+    /// last line).
+    pub last_word: bool,
+}
+
+impl Default for Hyphenation {
+    fn default() -> Self {
+        Hyphenation {
+            min_word: 5,
+            min_before: 2,
+            min_after: 2,
+            max_run: 3,
+            capitals: true,
+            last_word: true,
+        }
+    }
+}
+
+fn is_default_hyphenation(h: &Hyphenation) -> bool {
+    *h == Hyphenation::default()
+}
+
 impl ParagraphStyle {
     /// The distance from one baseline to the next, mm, for a line whose
     /// font has `line_height_mm` from ascent to descent plus gap at a size
@@ -1466,6 +1508,7 @@ impl Default for ParagraphStyle {
             tabs: Vec::new(),
             tab_details: Vec::new(),
             hyphenate: false,
+            hyphenation: Hyphenation::default(),
             balance_lines: false,
             fit_to_frame: false,
             baseline_grid_mm: 0.0,
@@ -6469,6 +6512,23 @@ mod tests {
         assert!(back.balance_lines);
         let old: ParagraphStyle = serde_json::from_str(r#"{"hyphenate":true}"#).expect("old");
         assert!(!old.balance_lines);
+    }
+
+    /// The hyphenation options are written only when they differ from the
+    /// house's, so drawings made before them open as they were.
+    #[test]
+    fn hyphenation_options_are_written_only_when_they_differ() {
+        let plain = ParagraphStyle::default();
+        let json = serde_json::to_string(&plain).expect("json");
+        assert!(!json.contains("hyphenation"), "{json}");
+        let mut on = ParagraphStyle::default();
+        on.hyphenation.min_after = 4;
+        let json = serde_json::to_string(&on).expect("json");
+        assert!(json.contains("\"hyphenation\""), "{json}");
+        let back: ParagraphStyle = serde_json::from_str(&json).expect("load");
+        assert_eq!(back.hyphenation.min_after, 4);
+        let old: ParagraphStyle = serde_json::from_str(r#"{"hyphenate":true}"#).expect("old");
+        assert_eq!(old.hyphenation, Hyphenation::default());
     }
 
     #[test]

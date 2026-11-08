@@ -8,6 +8,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
+use tracedraw_core::document::Hyphenation;
+
 /// Patterns read from a hyphenation dictionary: one or two levels (the
 /// second after `NEXTLEVEL`; a word breaks where either level allows it),
 /// and the fewest letters before and after a break.
@@ -206,15 +208,22 @@ fn patterns(lang: &str) -> &'static Patterns {
     }
 }
 
+/// The break points of `word` for a paragraph that hyphenates, with the
+/// house defaults (see [`Hyphenation`]).
+pub fn break_points_lang(word: &str, lang: &str) -> Vec<usize> {
+    break_points_lang_opt(word, lang, &Hyphenation::default())
+}
+
 /// Liang's algorithm over the pattern set, then the heuristic for words
-/// the patterns leave unbroken.
-/// Words with a capital letter (names, acronyms) are not broken.
+/// the patterns leave unbroken: the break points of `word` under the
+/// paragraph's `opts` (the fewest letters of the word, before and after a
+/// break, and whether words with a capital letter break).
 /// Punctuation before or after the word ("parola," at a line's end, a
 /// quotation) is left aside and the letters between broken; an apostrophe
 /// inside the word ("dell'anno", "l’università") is kept for the patterns
 /// that know it, and without a pattern file only the part after the last
 /// one breaks (#255).
-pub fn break_points_lang(word: &str, lang: &str) -> Vec<usize> {
+pub fn break_points_lang_opt(word: &str, lang: &str, opts: &Hyphenation) -> Vec<usize> {
     let all: Vec<char> = word.chars().collect();
     // The user's own hyphens win, capitals or not.
     let mine = |w: &str| {
@@ -270,11 +279,11 @@ pub fn break_points_lang(word: &str, lang: &str) -> Vec<usize> {
         // last one.
         if let Some(a) = chars.iter().rposition(|c| is_apostrophe(*c)) {
             let after = a + 1;
-            let p = break_points_with(&chars[after..], &lower[after..], lang, None);
+            let p = break_points_with(&chars[after..], &lower[after..], lang, None, opts);
             return shift(p.into_iter().map(|i| i + after).collect());
         }
     }
-    shift(break_points_with(chars, &lower, lang, set.as_deref()))
+    shift(break_points_with(chars, &lower, lang, set.as_deref(), opts))
 }
 
 /// A straight or a typographic apostrophe.
@@ -283,26 +292,42 @@ fn is_apostrophe(c: char) -> bool {
 }
 
 /// The break points of a word of letters (`chars`, and `lower` in small
-/// letters) with the pattern file `set`, else the built-in patterns.
+/// letters) with the pattern file `set`, else the built-in patterns, under
+/// the paragraph's `opts`.
 fn break_points_with(
     chars: &[char],
     lower: &[char],
     lang: &str,
     set: Option<&PatternSet>,
+    opts: &Hyphenation,
 ) -> Vec<usize> {
+    let left = opts.min_before as usize;
+    let right = opts.min_after as usize;
+    // Words in capitals (an acronym) and words with a capital inside
+    // ("TraceDraw", "McDonald") are not broken; with the paragraph not
+    // hyphenating capitalised words, neither is one that starts with a
+    // capital ("Zebracorn").
+    if chars.iter().skip(1).any(|c| c.is_uppercase())
+        || (!opts.capitals && chars.first().is_some_and(|c| c.is_uppercase()))
+    {
+        return Vec::new();
+    }
     if let Some(set) = set {
-        if chars.iter().skip(1).any(|c| c.is_uppercase()) || lower.len() != chars.len() {
+        if lower.len() != chars.len() {
             return Vec::new();
         }
-        return set.points(lower);
+        let mut out = set.points(lower);
+        out.retain(|&i| i >= left && lower.len().saturating_sub(i) >= right);
+        return out;
     }
-    if chars.len() < MIN_BEFORE + MIN_AFTER || chars.iter().any(|c| c.is_uppercase()) {
+    if chars.len() < (left + right).max(opts.min_word as usize) {
         return Vec::new();
     }
     let pats = patterns(lang);
-    let mut out = liang(lower, pats, 8, MIN_BEFORE, MIN_AFTER);
+    let mut out = liang(lower, pats, 8, left, right);
     if out.is_empty() {
         out = heuristic(lower);
+        out.retain(|&i| i >= left && lower.len().saturating_sub(i) >= right);
     }
     out.sort_unstable();
     out.dedup();
@@ -312,6 +337,12 @@ fn break_points_with(
 /// Default language: English patterns.
 pub fn break_points(word: &str) -> Vec<usize> {
     break_points_lang(word, "en")
+}
+
+/// [reak_points_lang_opt] in the default language, under the
+/// paragraph's opts.
+pub fn break_points_opt(word: &str, opts: &Hyphenation) -> Vec<usize> {
+    break_points_lang_opt(word, "en", opts)
 }
 
 fn is_vowel(c: char) -> bool {
@@ -385,9 +416,16 @@ mod tests {
 
     #[test]
     fn names_and_acronyms_are_not_broken() {
+        // Words with a capital inside, and words in capitals, keep whole.
         assert!(break_points("TraceDraw").is_empty());
-        assert!(break_points("Portugal").is_empty());
         assert!(break_points("UNESCO").is_empty());
+        // A word that starts with a capital breaks: the house hyphenates
+        // capitalised words (see [`Hyphenation::capitals`]).
+        assert!(!break_points("Portugal").is_empty());
+        let mut opts = Hyphenation::default();
+        opts.capitals = false;
+        assert!(break_points_opt("Portugal", &opts).is_empty());
+        assert!(break_points_opt("UNESCO", &opts).is_empty());
     }
 
     /// A hyphenation dictionary: the minimums, comments, a second level,
@@ -412,15 +450,48 @@ mod tests {
         let with = |w: &str| {
             let chars: Vec<char> = w.chars().collect();
             let lower: Vec<char> = w.to_lowercase().chars().collect();
-            break_points_with(&chars, &lower, "en", Some(&set))
+            break_points_with(&chars, &lower, "en", Some(&set), &Hyphenation::default())
         };
         assert_eq!(with("Banana"), vec![2, 4]);
         assert!(with("BANANA").is_empty());
         assert!(with("baNana").is_empty());
+        let mut no_caps = Hyphenation::default();
+        no_caps.capitals = false;
         assert!(
-            break_points("Banana").is_empty(),
-            "built-in: names stay whole"
+            break_points_opt("Banana", &no_caps).is_empty(),
+            "built-in, capitalised words off"
         );
+    }
+
+    /// The paragraph's options: the fewest letters of the word, before and
+    /// after the break, and words in capitals.
+    #[test]
+    fn the_paragraph_options_limit_the_breaks() {
+        let all = Hyphenation::default();
+        // "information" breaks after 7 letters ("informa-tion" is one of
+        // its points); a word of fewer letters than the option wants does
+        // not break at all.
+        let mut opts = all;
+        opts.min_word = 20;
+        assert!(break_points_opt("information", &opts).is_empty());
+        opts.min_word = 5;
+        assert!(!break_points_opt("information", &opts).is_empty());
+        // Two letters before the hyphen, at least.
+        opts.min_before = 6;
+        assert!(break_points_opt("information", &opts)
+            .iter()
+            .all(|&p| p >= 6));
+        // Two letters after it, at least.
+        let mut opts = all;
+        opts.min_after = 8;
+        assert!(break_points_opt("information", &opts)
+            .iter()
+            .all(|&p| 11 - p >= 8));
+        // A capitalised word, hyphenated or not.
+        assert!(!break_points_opt("Portugal", &all).is_empty());
+        let mut opts = all;
+        opts.capitals = false;
+        assert!(break_points_opt("Portugal", &opts).is_empty());
     }
 
     /// A word with punctuation round it breaks between its letters, the
@@ -443,7 +514,7 @@ mod tests {
         // A pattern set that knows the apostrophe breaks before it.
         let set = PatternSet::parse("UTF-8\n1l'\n").expect("set");
         let w: Vec<char> = "dell'anno".chars().collect();
-        assert_eq!(break_points_with(&w, &w, "it", Some(&set)), vec![3]);
+        assert_eq!(break_points_with(&w, &w, "it", Some(&set), &Hyphenation::default()), vec![3]);
     }
 
     #[test]
