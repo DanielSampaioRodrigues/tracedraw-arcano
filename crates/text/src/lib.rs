@@ -3950,7 +3950,7 @@ impl FontSystem {
         let mut y = 0.0f64; // top of the frame or baseline of artistic text
         let mut prev_para: Option<usize> = None;
         'paragraphs: for (pi, glyphs) in paragraphs.iter().enumerate() {
-            let (_, ps) = style_of(pi);
+            let (p_align, ps) = style_of(pi);
             let m_para = glyphs
                 .first()
                 .map(|g| metrics[g.span])
@@ -3998,6 +3998,25 @@ impl FontSystem {
                 }
             });
             let mut br = Breaker::new(glyphs, ps.hyphenate, metrics, pi, para_start);
+            // Balance Lines: the narrowest measure that keeps the
+            // paragraph's number of lines, so its lines end near the same
+            // place (docs/behavior/text.md). Objects the text wraps around
+            // and a drop cap change the room of its lines, so a paragraph
+            // with them keeps the frame's width.
+            let balance = if ps.balance_lines
+                && matches!(
+                    p_align,
+                    TextAlign::Left | TextAlign::Center | TextAlign::Right | TextAlign::None
+                )
+                && wrap.is_empty()
+                && cap.is_none()
+            {
+                let rest_w = (w - indent_rest - ps.right_indent).max(1.0);
+                let first_w = (w - indent_first - ps.right_indent).max(1.0);
+                balanced_measure(glyphs, ps.hyphenate, first_w, rest_w)
+            } else {
+                f64::INFINITY
+            };
             let mut row = 0usize;
             // How far a line moves down from the one before it.
             let advance_of = |m: &Metrics, first: bool, prev: Option<usize>| -> f64 {
@@ -4036,7 +4055,7 @@ impl FontSystem {
                     } else {
                         base
                     };
-                    let line = br.next(avail);
+                    let line = br.next(avail.min(balance));
                     let m = line.metrics;
                     let (c, ny) = row_at(y, col, advance_of(&m, first, prev_para), &m);
                     row_col = c;
@@ -4116,7 +4135,7 @@ impl FontSystem {
                         } else {
                             (e - s).max(1.0)
                         };
-                        let line = br.next(avail);
+                        let line = br.next(avail.min(balance));
                         row_lines.push(Line {
                             x0: *s,
                             avail: e - s,
@@ -5090,6 +5109,162 @@ impl<'a> Breaker<'a> {
     }
 }
 
+/// The width of the glyphs `a..b` of a paragraph, a tab counted as one of
+/// its default width, as [`Breaker`] measures them.
+fn run_width(glyphs: &[Glyph], a: usize, b: usize) -> f64 {
+    glyphs
+        .get(a..b)
+        .unwrap_or(&[])
+        .iter()
+        .map(|g| if g.ch == '\t' { 12.7 } else { g.advance })
+        .sum()
+}
+
+/// How many lines the glyphs of a paragraph take with `first` for its
+/// first line and `rest` for the others: [`Breaker`]'s own breaking
+/// (hyphenation, the forced break inside a word that does not fit alone,
+/// Chinese and Japanese) without building the lines, so Balance Lines can
+/// search the measures that keep the count.
+fn lines_at(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> usize {
+    if glyphs.is_empty() {
+        return 1;
+    }
+    // The runs the breaker cuts the paragraph into: one ending at each
+    // space or tab, and at each place Chinese and Japanese break between
+    // characters.
+    let mut words: Vec<(usize, usize)> = Vec::new();
+    let mut start = 0usize;
+    for (k, g) in glyphs.iter().enumerate() {
+        let sep = g.ch == ' ' || g.ch == '\t';
+        let cjk = glyphs
+            .get(k + 1)
+            .is_some_and(|n| !n.joins && n.ch != ' ' && n.ch != '\t' && cjk_break(g.ch, n.ch));
+        if sep || cjk {
+            words.push((start, k + 1));
+            start = k + 1;
+        }
+    }
+    if start < glyphs.len() {
+        words.push((start, glyphs.len()));
+    }
+    if words.is_empty() {
+        return 1;
+    }
+    let mut lines = 0usize;
+    let mut i = 0usize;
+    // A word cut at a hyphenation point: where what is left of it starts.
+    let mut tail: Option<usize> = None;
+    while i < words.len() || tail.is_some() {
+        let avail = if lines == 0 { first } else { rest };
+        let mut line_w = 0.0f64;
+        while let Some(&(wa, wb)) = words.get(i) {
+            let ws = tail.unwrap_or(wa);
+            let w = run_width(glyphs, ws, wb);
+            // A line does not count the space that ends it.
+            let space = glyphs
+                .get(wb.saturating_sub(1))
+                .filter(|g| g.ch == ' ')
+                .map_or(0.0, |g| g.advance);
+            if line_w + w - space <= avail {
+                line_w += w;
+                i += 1;
+                tail = None;
+                continue;
+            }
+            // The word does not fit: hyphenate it, or break it anywhere
+            // when nothing is on the line yet.
+            if hyphenate || line_w <= 0.0 {
+                let text: String = glyphs
+                    .get(ws..wb)
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|g| g.ch)
+                    .collect();
+                let points = if hyphenate {
+                    hyphen::break_points(text.trim_end())
+                } else {
+                    (1..wb.saturating_sub(ws)).collect()
+                };
+                let mut best: Option<usize> = None;
+                for p in points {
+                    if p == 0 || glyphs.get(ws + p).is_none_or(|g| g.joins) {
+                        continue;
+                    }
+                    let hy = glyphs
+                        .get(ws + p - 1)
+                        .and_then(|g| g.hyphen_after.as_ref())
+                        .map(|h| h.advance)
+                        .unwrap_or(0.0);
+                    let w = line_w
+                        + run_width(glyphs, ws, ws + p)
+                        + if hyphenate { hy } else { 0.0 };
+                    if w <= avail {
+                        best = Some(p);
+                    } else {
+                        break;
+                    }
+                }
+                if let Some(p) = best {
+                    tail = Some(ws + p);
+                    break;
+                }
+            }
+            if line_w <= 0.0 {
+                // Nothing fits at all: the word goes on anyway.
+                i += 1;
+                tail = None;
+            }
+            break;
+        }
+        lines += 1;
+        if lines > 100_000 {
+            break;
+        }
+    }
+    lines.max(1)
+}
+
+/// Balance Lines: the narrowest measure that still breaks the paragraph
+/// into as many lines as `rest` does, so its lines end near the same
+/// place. `first` is the room of the paragraph's first line, `rest` of
+/// the others. The count never changes: a paragraph of one line, or one
+/// where no narrower measure keeps its lines, keeps `rest`.
+fn balanced_measure(glyphs: &[Glyph], hyphenate: bool, first: f64, rest: f64) -> f64 {
+    if !rest.is_finite() || rest <= 0.0 {
+        return rest;
+    }
+    let lines = lines_at(glyphs, hyphenate, first, rest);
+    if lines < 2 {
+        return rest;
+    }
+    // No measure can hold the text in fewer lines than the text needs
+    // when it can end a line at will: the paragraph's own width over its
+    // number of lines is the least room each line can have.
+    let total: f64 = glyphs
+        .iter()
+        .map(|g| if g.ch == '\t' { 12.7 } else { g.advance })
+        .sum();
+    let mut lo = (total / lines as f64).clamp(0.0, rest);
+    let mut hi = rest;
+    for _ in 0..14 {
+        if hi - lo <= 0.05 {
+            break;
+        }
+        let mid = (lo + hi) / 2.0;
+        if lines_at(glyphs, hyphenate, first.min(mid), mid) == lines {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    // A measure that changes the number of lines is no measure at all.
+    if lines_at(glyphs, hyphenate, first.min(hi), hi) == lines {
+        hi
+    } else {
+        rest
+    }
+}
+
 /// The room a drop cap takes from the lines of its paragraph.
 #[derive(Debug, Clone, Copy)]
 struct DropCap {
@@ -5824,6 +5999,183 @@ mod tests {
         });
         assert!(wrapped.bounds.height() > one_line.bounds.height() * 2.0);
         assert!(!wrapped.overflow);
+    }
+
+    /// Glyphs of a run of plain text with the same advance for each
+    /// character: the line breaking tests that need no font.
+    fn fake_run(text: &str, advance: f64) -> Vec<Glyph> {
+        text.chars()
+            .enumerate()
+            .map(|(i, c)| Glyph {
+                path: Arc::new(BezPath::new()),
+                advance,
+                x_offset: 0.0,
+                y_offset: 0.0,
+                ch: c,
+                char_idx: i,
+                char_end: i + 1,
+                rtl: false,
+                level: 0,
+                span: 0,
+                joins: false,
+                hyphen_after: None,
+                src: None,
+            })
+            .collect()
+    }
+
+    /// The lines a [`Breaker`] makes of `glyphs` at `avail`, each one as
+    /// wide as the text it ends.
+    fn broken_lines(glyphs: &[Glyph], avail: f64, hyphenate: bool) -> Vec<f64> {
+        let metrics = [Metrics::default()];
+        let mut br = Breaker::new(glyphs, hyphenate, &metrics, 0, 0);
+        let mut out = Vec::new();
+        while !br.done() && out.len() < 10_000 {
+            let line = br.next(avail);
+            out.push(
+                line.glyphs
+                    .iter()
+                    .map(|g| if g.ch == '\t' { 12.7 } else { g.advance })
+                    .sum(),
+            );
+        }
+        out
+    }
+
+    /// The line counting of Balance Lines agrees with the breaker it
+    /// stands for, at every measure: it never adds a line by accident.
+    #[test]
+    fn the_line_counting_agrees_with_the_breaker() {
+        for text in [
+            "one two three four five six seven eight",
+            "a bb ccc dddd eeeee ffffff ggggggg",
+            "hy-phen-ation and words that fit",
+            "short",
+            "",
+        ] {
+            let glyphs = fake_run(text, 5.0);
+            for hyphenate in [false, true] {
+                let mut avail = 4.0;
+                while avail < 140.0 {
+                    let lines = broken_lines(&glyphs, avail, hyphenate);
+                    assert_eq!(
+                        lines_at(&glyphs, hyphenate, avail, avail),
+                        lines.len().max(1),
+                        "{text:?} at {avail} with hyphenate {hyphenate}"
+                    );
+                    avail += 1.5;
+                }
+            }
+        }
+    }
+
+    /// Balance Lines: the lines of a ragged paragraph end near the same
+    /// place and the paragraph never gains a line.
+    #[test]
+    fn balance_lines_even_the_lines_and_never_add_one() {
+        let glyphs = fake_run("Balance these two lines of a title", 5.0);
+        let mut two_line_titles = 0;
+        let mut rest = 30.0;
+        while rest < 200.0 {
+            let plain = broken_lines(&glyphs, rest, false);
+            let m = balanced_measure(&glyphs, false, rest, rest);
+            let balanced = broken_lines(&glyphs, m, false);
+            assert!(m <= rest + 1e-9, "{m} wider than {rest}");
+            assert_eq!(balanced.len(), plain.len(), "line count at {rest}");
+            if plain.len() == 2 {
+                two_line_titles += 1;
+                let (small, big) = {
+                    let a = balanced.first().copied().unwrap_or(0.0);
+                    let b = balanced.get(1).copied().unwrap_or(0.0);
+                    (a.min(b), a.max(b))
+                };
+                assert!(
+                    big - small < 0.25 * big,
+                    "lines {small} and {big} at {rest}"
+                );
+            }
+            rest += 1.0;
+        }
+        assert!(two_line_titles > 5, "two-line titles: {two_line_titles}");
+    }
+
+    /// A request laying one span out in a frame `w` wide.
+    fn frame_req<'a>(
+        spans: &'a [TextSpan],
+        p: &'a ParagraphStyle,
+        align: TextAlign,
+        w: f64,
+    ) -> TextRequest<'a> {
+        TextRequest {
+            spans,
+            frame: Some(Size::new(w, 100.0)),
+            align,
+            para: p,
+            on_path: None,
+        }
+    }
+
+    /// Balance Lines in a frame: a title of two lines gets its two lines
+    /// closer in width, and keeping them two.
+    #[test]
+    fn balance_lines_even_a_two_line_title_in_a_frame() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("Balance these two lines of a title");
+        let spans = std::slice::from_ref(&s);
+        let mut para = ParagraphStyle::default();
+        let naturals = f.outline(spans).bounds.width();
+        let width = |l: &LineBox| {
+            let a = l.edges.first().copied().unwrap_or(0.0);
+            let b = l.edges.last().copied().unwrap_or(0.0);
+            (b - a).abs()
+        };
+        // The narrowest frames that still take the title in two lines.
+        let two = (50..90).find_map(|pct| {
+            let w = naturals * pct as f64 / 100.0;
+            let l = f.layout(&frame_req(spans, &para, TextAlign::Left, w));
+            (l.lines.len() == 2).then_some(w)
+        });
+        let Some(w) = two else {
+            return;
+        };
+        let before = f.layout(&frame_req(spans, &para, TextAlign::Left, w));
+        para.balance_lines = true;
+        let after = f.layout(&frame_req(spans, &para, TextAlign::Left, w));
+        assert_eq!(before.lines.len(), after.lines.len());
+        let (a, b) = (width(&after.lines[0]), width(&after.lines[1]));
+        assert!(
+            (a - b).abs() < 0.25 * a.max(b),
+            "the balanced lines are {a} and {b} wide"
+        );
+        // The frame keeps its width: no line reaches past it.
+        assert!(after.lines.iter().all(|l| width(l) <= w + 0.01));
+    }
+
+    /// Justified paragraphs are not balanced: justification fills them
+    /// already, and the frame's width is what they are set to.
+    #[test]
+    fn balance_lines_leave_justified_and_one_line_text_alone() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("Balance these two lines of a title");
+        let spans = std::slice::from_ref(&s);
+        let mut para = ParagraphStyle::default();
+        let naturals = f.outline(spans).bounds.width();
+        let w = naturals * 0.6;
+        let justified = f.layout(&frame_req(spans, &para, TextAlign::Justify, w));
+        para.balance_lines = true;
+        let still = f.layout(&frame_req(spans, &para, TextAlign::Justify, w));
+        assert_eq!(justified.path, still.path);
+        // One line only: nothing to balance.
+        let single = f.layout(&frame_req(spans, &para, TextAlign::Left, naturals * 2.0));
+        para.balance_lines = false;
+        let plain = f.layout(&frame_req(spans, &para, TextAlign::Left, naturals * 2.0));
+        assert_eq!(single.path, plain.path);
     }
 
     /// A text laid out in another frame is shaped once: the second
