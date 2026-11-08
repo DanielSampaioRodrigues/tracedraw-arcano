@@ -82,6 +82,19 @@ pub fn page_screen_rect(app: &App) -> ERect {
     ERect::from_min_max(r.min.round(), r.max.round())
 }
 
+/// Arcano edition: where the other side of a master being edited shows
+/// (facing pages): beside the page, left of a right-hand page, right of a
+/// left-hand one, touching it at the spine.
+pub fn master_companion_rect(app: &App) -> Option<ERect> {
+    let v = app.master_view?;
+    if !app.doc().metadata.facing_pages || app.multipage {
+        return None;
+    }
+    let paper = page_screen_rect(app);
+    let dx = if v.left { paper.width() } else { -paper.width() };
+    Some(paper.translate(egui::vec2(dx, 0.0)))
+}
+
 /// True when a screen point is on the page border (within 3 px) or on
 /// its shadow: double-clicking there opens the page size options.
 pub fn on_page_frame(app: &App, s: Pos2) -> bool {
@@ -464,7 +477,12 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
             1u64 << 62
         } else {
             0
-        };
+        }
+        // A master being edited: a picture of its own.
+        ^ app.master_view.map_or(0, |v| {
+            ((v.master as u64 + 1) << 40) | ((v.left as u64) << 39)
+        });
+    app.raster.borrow_mut().master_view = app.master_view;
     // Paragraph text being resized keeps its letters while the frame
     // follows the drag (the drag outline shows the text flowed anew).
     let preview_ids = preview.map(|t| {
@@ -507,7 +525,8 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         let r = view.rect_to_screen(shown);
         ERect::from_min_max(r.min.round(), r.max.round())
     };
-    if app.show_page_border {
+    // With facing pages the Multipage View has drawn every shadow first.
+    if app.show_page_border && !(app.multipage && app.doc().metadata.facing_pages) {
         painter.rect_filled(
             paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
             0.0,
@@ -522,6 +541,32 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
             EStroke::new(1.0, Tokens::page_border()),
             epaint::StrokeKind::Outside,
         );
+    }
+    // Arcano edition: a master being edited with facing pages shows its
+    // other side beside this one, as a spread (a click there edits it).
+    if let Some(r) = master_companion_rect(app) {
+        let v = app.master_view.unwrap_or(tracedraw_core::document::MasterView { master: 0, left: false });
+        painter.rect_filled(
+            ERect::from_min_max(egui::pos2(r.left(), r.bottom()), egui::pos2(r.right(), r.bottom() + Tokens::PAGE_SHADOW_OFFSET.y))
+                .translate(egui::vec2(Tokens::PAGE_SHADOW_OFFSET.x, 0.0)),
+            0.0,
+            Tokens::page_shadow(),
+        );
+        painter.rect_filled(r, 0.0, Tokens::PAGE);
+        let px = (r.height() * painter.ctx().pixels_per_point()).clamp(16.0, 2400.0) as u32;
+        let drawing = (app.engine.instance(), app.engine.revision());
+        if let Some(t) = crate::page_thumbs::get(
+            painter.ctx(),
+            app.doc(),
+            drawing,
+            crate::page_thumbs::Of::Master(v.master, !v.left),
+            px,
+        ) {
+            painter.image(t, r, ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+        }
+        // Not the side being edited: a light veil over it.
+        painter.rect_filled(r, 0.0, Color32::from_black_alpha(18));
+        painter.rect_stroke(r, 0.0, EStroke::new(1.0, Tokens::page_border()), epaint::StrokeKind::Outside);
     }
     if app.show_bleed {
         let b = app.doc().metadata.bleed.max(0.0);

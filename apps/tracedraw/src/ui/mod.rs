@@ -29,6 +29,7 @@ pub mod comments_docker;
 pub mod connector_bar;
 pub mod context;
 pub mod context_bar;
+pub mod master_bar;
 pub mod pages_panel;
 pub mod contour_bar;
 pub mod convert_colors;
@@ -655,6 +656,10 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     palette_bars::drag_overlay(app, &ctx, 24.0);
     bar_items::drop_overlay(app, &ctx);
     dockers::floating_dockers(app, &ctx);
+    if crate::page_thumbs::begin_frame() {
+        ctx.request_repaint();
+    }
+    pages_panel::pages_windows(app, &ctx);
     dockers::drag_overlay(app, &ctx, 24.0);
 
     // Document tabs above the rulers.
@@ -1002,6 +1007,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     app.draw_right_drag(&painter);
     context::context_menu(app, ui, &response);
     context_bar::context_bar(app, ui, canvas_rect);
+    master_bar::master_bar(app, ui, canvas_rect);
     crate::drop_menu::drop_menu_ui(app, ui);
     crate::fill_tool::node_bar(app, ui);
 

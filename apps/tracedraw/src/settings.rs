@@ -309,6 +309,10 @@ pub struct Settings {
     /// 1 medium, 2 large).
     #[serde(default = "default_one_u8")]
     pub pages_thumb: u8,
+    /// Arcano edition: a panel opened beside a folded column stays open
+    /// when the drawing is clicked (pinned), until it is hidden.
+    #[serde(default)]
+    pub flyout_pinned: bool,
     /// Customization > Appearance > Theme: "light", "medium_light",
     /// "medium_dark" or "dark".
     #[serde(default)]
@@ -1865,6 +1869,7 @@ impl Default for Settings {
             context_bar: !cfg!(test),
             context_bar_at: None,
             pages_thumb: 1,
+            flyout_pinned: false,
             theme: String::new(),
             bars: crate::ui::bars::BarLayout::default(),
             bar_items: Default::default(),

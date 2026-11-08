@@ -2029,6 +2029,7 @@ impl App {
                 anti_alias,
                 draft: false,
                 focus: None,
+                master_view: None,
                 ..tracedraw_render::RenderOptions::default()
             },
         )?;

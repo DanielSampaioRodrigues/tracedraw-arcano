@@ -149,6 +149,9 @@ fn program_turns() -> &'static Turns {
 
 #[derive(Default)]
 pub struct Raster {
+    /// Arcano edition: the master page being edited, drawn in place of the
+    /// page (set by the canvas before each picture).
+    pub master_view: Option<tracedraw_core::document::MasterView>,
     texture: Option<TextureHandle>,
     key: Option<Key>,
     /// The part of the page the texture shows, page mm.
@@ -542,6 +545,7 @@ impl Raster {
             anti_alias: true,
             draft: true,
             focus,
+            master_view: self.master_view,
         };
         let lut = proof.then(|| {
             self.proof
@@ -719,6 +723,7 @@ impl Raster {
             anti_alias: true,
             draft: true,
             focus: None,
+            master_view: self.master_view,
         };
         let lut = proof.then(|| {
             self.proof

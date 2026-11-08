@@ -87,6 +87,9 @@ pub struct RenderOptions {
     /// Focus mode: these objects drawn as they are and everything else
     /// faded to the given visibility (0 to 1).
     pub focus: Option<(Vec<tracedraw_core::ShapeId>, f32)>,
+    /// On screen (Arcano edition): the master page being edited, shown in
+    /// place of the page. Exports leave it at `None`.
+    pub master_view: Option<tracedraw_core::document::MasterView>,
 }
 
 impl Default for RenderOptions {
@@ -106,6 +109,7 @@ impl Default for RenderOptions {
             anti_alias: true,
             draft: false,
             focus: None,
+            master_view: None,
         }
     }
 }
@@ -481,7 +485,7 @@ fn render_page_whole(doc: &Document, page: PageId, opts: &RenderOptions) -> Opti
         r.draw_shape(&bg_shape, Affine::IDENTITY);
     }
     let visible = visible_page_rect(opts);
-    let layers = doc.layers_drawn_for_page(page.id).ok()?;
+    let layers = doc.layers_drawn_for_page_in(page.id, opts.master_view).ok()?;
     for layer in layers {
         if !layer.visible {
             continue;
@@ -3343,6 +3347,7 @@ pub fn render_page_image_with(
             anti_alias: opts.anti_alias,
             draft: false,
             focus: None,
+            master_view: opts.master_view,
         },
     )?;
     let mut out = Pixmap::new(w, h)?;

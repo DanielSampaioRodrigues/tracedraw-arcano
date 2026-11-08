@@ -305,6 +305,7 @@ pub fn render(doc: &Document, shape: &Shape, px: u32) -> Option<(Vec<u8>, u32, u
             anti_alias: true,
             draft: true,
             focus: None,
+            master_view: None,
             ..tracedraw_render::RenderOptions::default()
         },
     )?;

@@ -151,9 +151,6 @@ pub fn pages_panel(app: &mut App, ui: &mut Ui) {
     let mut st: State = ui.data(|d| d.get_temp(state_id())).unwrap_or_default();
     let ids: Vec<PageId> = app.doc().pages.iter().map(|p| p.id).collect();
     st.picked.retain(|p| ids.contains(p));
-    if page_thumbs::begin_frame() {
-        ui.ctx().request_repaint();
-    }
     let facing = app.doc().metadata.facing_pages;
     masters_part(app, ui, &mut st, facing);
     ui.separator();
@@ -166,8 +163,19 @@ pub fn pages_panel(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| pages_part(app, ui, &mut st, facing));
     ui.separator();
     footer(app, ui, &mut st, facing);
-    windows(app, ui.ctx(), &mut st);
     ui.data_mut(|d| d.insert_temp(state_id(), st));
+}
+
+/// The panel's small windows (Insert Pages, Master Options...), drawn
+/// every frame whether the panel shows or not: a panel folded away by a
+/// click in its window must not take the window with it.
+pub fn pages_windows(app: &mut App, ctx: &egui::Context) {
+    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    if st.window.is_none() || !app.has_document() {
+        return;
+    }
+    windows(app, ctx, &mut st);
+    ctx.data_mut(|d| d.insert_temp(state_id(), st));
 }
 
 fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
@@ -197,7 +205,8 @@ fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                 let row_h = MASTER_H + 6.0;
                 let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
                 let resp = ui.interact(r, egui::Id::new(("arcano_master_row", m.id)), Sense::click_and_drag());
-                let picked = st.master == Some(m.id);
+                let editing = app.master_view.is_some_and(|v| v.master == m.id);
+                let picked = st.master == Some(m.id) || editing;
                 if picked {
                     ui.painter().rect_filled(r, 3.0, Tokens::selected_row());
                 } else if resp.hovered() {
@@ -236,11 +245,10 @@ fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                 if resp.clicked() {
                     st.master = Some(m.id);
                 }
+                // As in a layout program: a double click opens the master
+                // for editing.
                 if resp.double_clicked() {
-                    st.window = Some(Window::Master {
-                        master: m.clone(),
-                        new: false,
-                    });
+                    app.edit_master(m.id);
                 }
                 if resp.drag_started() {
                     resp.dnd_set_drag_payload(MasterDrag(m.id));
@@ -261,7 +269,7 @@ fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                         ui.close();
                     }
                     if ui.button(tr("pages.edit_master")).clicked() {
-                        edit_master(app, m.id);
+                        app.edit_master(m.id);
                         ui.close();
                     }
                     if ui
@@ -274,31 +282,6 @@ fn masters_part(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                 });
             }
         });
-}
-
-/// Show master `id`: the first page with it becomes current and its first
-/// layer the one new objects go to.
-pub fn edit_master(app: &mut App, id: u32) {
-    let page = app
-        .doc()
-        .pages
-        .iter()
-        .position(|p| app.doc().master_of(p.id) == id);
-    match page {
-        Some(i) => {
-            app.goto_page(i);
-            app.picked_layer = app
-                .doc()
-                .master
-                .iter()
-                .find(|l| l.master_page == id)
-                .map(|l| l.id);
-            app.objects_master_closed = false;
-            let m = app.doc().master_page(id).map(|m| label(&m)).unwrap_or_default();
-            app.status = trf("status.editing_master", &[("m", &m)]);
-        }
-        None => app.status = tr("status.master_unused"),
-    }
 }
 
 fn picked_indices(app: &App, st: &State) -> Vec<usize> {
