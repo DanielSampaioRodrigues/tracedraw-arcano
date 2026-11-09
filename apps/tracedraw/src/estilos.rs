@@ -4,8 +4,11 @@
 //! the selection touches, or the selected characters) or to the selected
 //! text objects; the style at the caret is marked. New takes the look of
 //! the text at the caret, Redefine gives a style the look of the text at
-//! the caret, and every text linked to a style follows its changes. See
-//! docs/behavior/text-styles.md.
+//! the caret, Reset to base leaves it as the style it is based on, and
+//! every text linked to a style follows its changes. A paragraph style
+//! names the style of the paragraph after it, any style may carry a
+//! shortcut, and under its settings the panel shows a summary of what the
+//! style sets. See docs/behavior/text-styles.md.
 
 use crate::app::App;
 use tracedraw_core::paragraphs::ParagraphFormat;
@@ -28,6 +31,15 @@ impl App {
             .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
             .map(|s| (s.id, self.paragraph_range(s.id)))
             .collect()
+    }
+
+    /// The style whose shortcut is `text` ("Ctrl+3"), if any.
+    pub fn style_for_shortcut(&self, text: &str) -> Option<&TextStyle> {
+        self.doc().text_styles.iter().find(|s| {
+            s.shortcut
+                .as_deref()
+                .is_some_and(|c| crate::shortcuts::same(c, text))
+        })
     }
 
     /// The paragraph style and character style where the caret is (else
@@ -176,6 +188,7 @@ impl App {
                 based_on,
                 para,
                 chars,
+                ..Default::default()
             });
             next
         };
@@ -200,7 +213,7 @@ impl App {
                 ..Default::default()
             },
         );
-        add(
+        let first = add(
             &mut styles,
             "tstyle.book_first",
             TextStyleKind::Paragraph,
@@ -211,7 +224,7 @@ impl App {
             }),
             CharFormat::default(),
         );
-        add(
+        let chapter = add(
             &mut styles,
             "tstyle.book_chapter",
             TextStyleKind::Paragraph,
@@ -231,7 +244,7 @@ impl App {
                 ..Default::default()
             },
         );
-        add(
+        let subtitle = add(
             &mut styles,
             "tstyle.book_subtitle",
             TextStyleKind::Paragraph,
@@ -250,7 +263,7 @@ impl App {
                 ..Default::default()
             },
         );
-        add(
+        let quote = add(
             &mut styles,
             "tstyle.book_quote",
             TextStyleKind::Paragraph,
@@ -301,6 +314,19 @@ impl App {
                 ..Default::default()
             },
         );
+        // A chapter title falls into a first paragraph, that into the body
+        // text, and a subtitle or a quotation back into the body: their
+        // next styles.
+        for (id, after) in [
+            (chapter, first),
+            (subtitle, first),
+            (first, body),
+            (quote, body),
+        ] {
+            if let Some(s) = styles.iter_mut().find(|s| s.id == id) {
+                s.next = Some(after);
+            }
+        }
         self.set_text_styles(styles);
     }
 }
@@ -484,6 +510,72 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
                 styles[i].based_on = parent;
                 app.set_text_styles(styles.clone());
             }
+            // Next style: the style the paragraph after this one takes when
+            // a paragraph ends with Enter.
+            if st.kind == TextStyleKind::Paragraph {
+                let mut next = st.next;
+                let shown = next
+                    .and_then(|n| ts::find(&styles, n))
+                    .filter(|n| n.kind == TextStyleKind::Paragraph)
+                    .map(|n| n.name.clone())
+                    .unwrap_or_else(|| tr("tstyle.next_same"));
+                ui.horizontal(|ui| {
+                    ui.label(tr("tstyle.next"));
+                    crate::ui::combo::from_id_salt(("tstyle_next", st.id))
+                        .selected_text(shown)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut next, None, tr("tstyle.next_same"));
+                            for o in styles
+                                .iter()
+                                .filter(|o| o.kind == TextStyleKind::Paragraph && o.id != st.id)
+                            {
+                                ui.selectable_value(&mut next, Some(o.id), &o.name);
+                            }
+                        })
+                        .response
+                        .rich_tip(pair("tstyle.next", "tstyle.next_desc"));
+                });
+                if next != st.next {
+                    styles[i].next = next;
+                    app.set_text_styles(styles.clone());
+                }
+            }
+            // The shortcut that applies the style, typed as the others are
+            // written ("Ctrl+3").
+            let short_id = egui::Id::new(("tstyle_shortcut", st.id));
+            let mut typed = ui
+                .data(|d| d.get_temp::<String>(short_id))
+                .unwrap_or_else(|| st.shortcut.clone().unwrap_or_default());
+            ui.horizontal(|ui| {
+                ui.label(tr("tstyle.shortcut"));
+                let r = ui
+                    .add(
+                        egui::TextEdit::singleline(&mut typed)
+                            .desired_width(90.0)
+                            .hint_text(tr("tstyle.shortcut_none")),
+                    )
+                    .rich_tip(pair("tstyle.shortcut", "tstyle.shortcut_desc"));
+                if r.changed() {
+                    ui.data_mut(|d| d.insert_temp(short_id, typed.clone()));
+                }
+                if r.lost_focus() {
+                    ui.data_mut(|d| d.remove::<String>(short_id));
+                    let text = typed.trim().to_string();
+                    let valid = text.is_empty()
+                        || crate::shortcuts::parse(&text).is_some_and(|(m, k)| {
+                            (m.command || m.alt) && crate::shortcuts::allowed(m, k)
+                        });
+                    if !valid {
+                        app.status = tr("tstyle.shortcut_bad");
+                    } else {
+                        let value = (!text.is_empty()).then_some(text);
+                        if value != st.shortcut {
+                            styles[i].shortcut = value;
+                            app.set_text_styles(styles.clone());
+                        }
+                    }
+                }
+            });
             ui.horizontal_wrapped(|ui| {
                 if ui
                     .add_enabled(has_text, egui::Button::new(tr("tstyle.redefine")).small())
@@ -498,6 +590,15 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
                     .clicked()
                 {
                     app.apply_named_style(st.kind, Some(st.id));
+                }
+                if ui
+                    .button(tr("tstyle.reset"))
+                    .rich_tip(pair("tstyle.reset", "tstyle.reset_desc"))
+                    .clicked()
+                {
+                    styles[i].reset_to_base();
+                    app.set_text_styles(styles.clone());
+                    app.status = trf("tstyle.reset_done", &[("name", &st.name)]);
                 }
                 if ui
                     .button(tr("tstyle.delete"))
@@ -519,9 +620,101 @@ fn row(app: &mut App, ui: &mut egui::Ui, st: &TextStyle, current: bool, has_text
                     app.status = trf("tstyle.deleted", &[("name", &gone.name)]);
                 }
             });
+            // What the style sets, as the text on the page looks.
+            for line in summary(&styles, st) {
+                ui.label(
+                    egui::RichText::new(line)
+                        .small()
+                        .color(crate::theme::Tokens::text_dim()),
+                );
+            }
         });
 }
 
+
+/// A short account of a style, as the text on the page looks: its
+/// characters, its paragraph, the look of the two lines and the style that
+/// follows it.
+fn summary(styles: &[TextStyle], st: &TextStyle) -> Vec<String> {
+    use crate::i18n::trf;
+    let (para, chars) = ts::resolve(styles, st.id);
+    let mut out: Vec<String> = Vec::new();
+    let mut text: Vec<String> = Vec::new();
+    if let Some(family) = chars.font_family.as_ref().filter(|f| !f.is_empty()) {
+        text.push(family.clone());
+    }
+    if let Some(size) = chars.size_pt {
+        text.push(trf("tstyle.sum_size", &[("v", &format!("{size:.1}"))]));
+    }
+    for (on, key) in [
+        (chars.bold, "tstyle.sum_bold"),
+        (chars.italic, "tstyle.sum_italic"),
+        (chars.underline, "tstyle.sum_underline"),
+        (chars.strikethrough, "tstyle.sum_strike"),
+    ] {
+        if on == Some(true) {
+            text.push(trf(key, &[]));
+        }
+    }
+    if let Some(tracedraw_core::Fill::Solid(c)) = chars.fill.clone().flatten() {
+        let [r, g, b] = c.to_rgb8();
+        text.push(format!("#{r:02X}{g:02X}{b:02X}"));
+    }
+    if !text.is_empty() {
+        out.push(text.join(" \u{00B7} "));
+    }
+    if let Some(p) = &para {
+        let mut bits: Vec<String> = Vec::new();
+        bits.push(trf(
+            match p.align {
+                TextAlign::Center => "docker.align_center_short",
+                TextAlign::Right => "docker.align_right_short",
+                TextAlign::Justify | TextAlign::ForceJustify => "docker.align_justify_short",
+                TextAlign::Left | TextAlign::None => "docker.align_left_short",
+            },
+            &[],
+        ));
+        if p.first_line_indent.abs() > 1e-9 {
+            bits.push(trf(
+                "tstyle.sum_first_line",
+                &[("v", &format!("{:.1}", p.first_line_indent))],
+            ));
+        }
+        out.push(bits.join(" \u{00B7} "));
+    }
+    for (on, style, name) in [
+        (
+            chars.underline,
+            chars.underline_style.clone(),
+            trf("toolbar.underline", &[]),
+        ),
+        (
+            chars.strikethrough,
+            chars.strike_style.clone(),
+            trf("docker.strikethrough", &[]),
+        ),
+    ] {
+        let Some(style) = style.filter(|s| !s.is_plain()) else {
+            continue;
+        };
+        if on != Some(true) {
+            continue;
+        }
+        let mut kind = crate::ui::text_docker::line_kind_name(style.kind);
+        if let Some(thick) = style.thickness_pt {
+            kind.push_str(&format!(", {thick:.1} pt"));
+        }
+        out.push(trf("tstyle.sum_line", &[("line", &name), ("kind", &kind)]));
+    }
+    if let Some(next) = st
+        .next
+        .and_then(|n| ts::find(styles, n))
+        .filter(|n| n.kind == TextStyleKind::Paragraph)
+    {
+        out.push(trf("tstyle.sum_next", &[("name", &next.name)]));
+    }
+    out
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,6 +805,145 @@ mod tests {
             .any(|sp| sp.text.starts_with("Cap") && sp.size_pt == 20.0));
         assert_eq!(uses(&app, body), 1);
         assert_eq!(uses(&app, chapter), 1);
+    }
+
+
+    /// The id of the style named `key` (an interface text).
+    fn style_id(app: &App, key: &str) -> u32 {
+        let name = crate::i18n::tr(key);
+        app.doc()
+            .text_styles
+            .iter()
+            .find(|s| s.name == name)
+            .expect("a style")
+            .id
+    }
+
+    fn caret(app: &mut App, shape: ShapeId, at: usize) {
+        app.text_edit = Some(crate::text_editing::TextEdit {
+            shape,
+            caret: at,
+            anchor: at,
+            goal_x: None,
+            step: None,
+            created: None,
+        });
+    }
+
+    /// Enter at the end of a chapter title gives the paragraph it opens the
+    /// next style of the title, and that one gives the body text: what is
+    /// typed goes on in the new style look.
+    #[test]
+    fn the_next_style_follows_a_paragraph_break() {
+        let mut app = App::headless();
+        let id = with_text(&mut app, "Capitulo");
+        app.add_book_styles();
+        let body = style_id(&app, "tstyle.book_body");
+        let first = style_id(&app, "tstyle.book_first");
+        let chapter = style_id(&app, "tstyle.book_chapter");
+        app.apply_named_style(TextStyleKind::Paragraph, Some(chapter));
+        // The caret at the end and Enter: the new paragraph is a first
+        // paragraph.
+        caret(&mut app, id, 8);
+        app.text_paragraph_break();
+        assert_eq!(app.text_styles_here().0, Some(first));
+        app.text_insert("Era");
+        let typed = spans(&app, id)
+            .into_iter()
+            .find(|sp| sp.text.contains("Era"))
+            .expect("typed");
+        assert_eq!(typed.size_pt, 11.0);
+        assert!(!typed.bold);
+        // Enter after it: the paragraph after a first paragraph is body text.
+        caret(&mut app, id, 11);
+        app.text_paragraph_break();
+        assert_eq!(app.text_styles_here().0, Some(body));
+        app.text_insert("vez");
+        let typed = spans(&app, id)
+            .into_iter()
+            .find(|sp| sp.text.contains("vez"))
+            .expect("typed");
+        assert_eq!(typed.size_pt, 11.0);
+    }
+
+    /// A shortcut names its style, whatever the case of the modifiers.
+    #[test]
+    fn a_style_shortcut_finds_the_style() {
+        let mut app = App::headless();
+        with_text(&mut app, "Um texto");
+        app.add_book_styles();
+        let body = style_id(&app, "tstyle.book_body");
+        assert!(app.style_for_shortcut("Ctrl+3").is_none());
+        let mut styles = app.doc().text_styles.clone();
+        if let Some(s) = styles.iter_mut().find(|s| s.id == body) {
+            s.shortcut = Some("Ctrl+3".into());
+        }
+        app.set_text_styles(styles);
+        assert_eq!(app.style_for_shortcut("Ctrl+3").map(|s| s.id), Some(body));
+        assert_eq!(app.style_for_shortcut("ctrl+3").map(|s| s.id), Some(body));
+        assert!(app.style_for_shortcut("Ctrl+4").is_none());
+        assert!(app.style_for_shortcut("F3").is_none());
+    }
+
+    /// Reset to base gives back everything the style set: the text takes
+    /// the look of the style it is based on, the name and the parent stay.
+    #[test]
+    fn reset_to_base_gives_the_text_the_look_of_the_base() {
+        let mut app = App::headless();
+        let id = with_text(&mut app, "Um texto");
+        app.add_book_styles();
+        let body = style_id(&app, "tstyle.book_body");
+        let chapter = style_id(&app, "tstyle.book_chapter");
+        app.apply_named_style(TextStyleKind::Paragraph, Some(chapter));
+        assert!(spans(&app, id).iter().all(|sp| sp.size_pt == 20.0));
+        let mut styles = app.doc().text_styles.clone();
+        if let Some(s) = styles.iter_mut().find(|s| s.id == chapter) {
+            s.reset_to_base();
+        }
+        app.set_text_styles(styles);
+        assert!(
+            spans(&app, id).iter().all(|sp| sp.size_pt == 11.0),
+            "{:?}",
+            spans(&app, id)
+        );
+        let st = app
+            .doc()
+            .text_styles
+            .iter()
+            .find(|s| s.id == chapter)
+            .expect("the style");
+        assert_eq!(st.based_on, Some(body));
+        assert_eq!(st.name, crate::i18n::tr("tstyle.book_chapter"));
+    }
+
+    /// The summary tells what the style looks like and which style follows
+    /// it.
+    #[test]
+    fn the_summary_says_what_the_style_sets() {
+        let mut app = App::headless();
+        app.add_book_styles();
+        let styles = app.doc().text_styles.clone();
+        let chapter = style_id(&app, "tstyle.book_chapter");
+        let st = styles.iter().find(|s| s.id == chapter).expect("a style");
+        let text = summary(&styles, st).join(" / ");
+        assert!(text.contains("20.0 pt"), "{text}");
+        assert!(text.contains(&crate::i18n::tr("tstyle.sum_bold")), "{text}");
+        assert!(
+            text.contains(&crate::i18n::tr("docker.align_center_short")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&crate::i18n::tr("tstyle.book_first")),
+            "the next style is named: {text}"
+        );
+        // The book body text is justified and sets no font.
+        let body = style_id(&app, "tstyle.book_body");
+        let st = styles.iter().find(|s| s.id == body).expect("a style");
+        let text = summary(&styles, st).join(" / ");
+        assert!(
+            text.contains(&crate::i18n::tr("docker.align_justify_short")),
+            "{text}"
+        );
     }
 
     #[test]

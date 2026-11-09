@@ -508,7 +508,7 @@ impl App {
                         Key::Num2 if ctrl => self.step_text_size(false),
                         Key::Backspace => self.text_delete_backward(),
                         Key::Delete => self.text_delete_forward(),
-                        Key::Enter if !shift => self.text_insert("\n"),
+                        Key::Enter if !shift => self.text_paragraph_break(),
                         Key::Enter => self.text_insert("\u{2028}"),
                         Key::Tab => self.text_insert("\t"),
                         Key::ArrowUp if vertical && !ctrl => self.text_move(CaretMove::Left, shift),
@@ -775,6 +775,63 @@ impl App {
                 te.anchor = te.caret;
             }
         }
+    }
+
+    /// Enter: a paragraph break. The paragraph after it takes the style the
+    /// one left names as its next style, when it names another
+    /// (docs/behavior/text-styles.md).
+    pub(crate) fn text_paragraph_break(&mut self) {
+        let Some(te) = self.text_edit.clone() else {
+            return;
+        };
+        let Some(spans) = self.edit_spans() else {
+            return;
+        };
+        let (a, _) = te.selection();
+        let next = self.next_style_after(&spans, a);
+        self.text_insert("\n");
+        let Some(next) = next else {
+            return;
+        };
+        let Some(mut kind) = self.doc().find_shape(te.shape).map(|s| s.kind.clone()) else {
+            return;
+        };
+        let Some(now) = self.edit_spans() else {
+            return;
+        };
+        if let ShapeKind::Text { spans, .. } = &mut kind {
+            *spans = now;
+        }
+        let styles = self.doc().text_styles.clone();
+        // The paragraph that starts after the break, even when it is empty
+        // (its newline carries the style, and the look of what is typed).
+        tracedraw_core::text_styles::apply_paragraph_style(
+            &mut kind,
+            Some((a + 1, a + 1)),
+            &styles,
+            Some(next),
+        );
+        if let ShapeKind::Text { spans, .. } = kind {
+            self.set_edit_spans(spans);
+        }
+    }
+
+    /// The style the paragraph at character `at` is followed by, when that
+    /// style names one other than itself.
+    fn next_style_after(&self, spans: &[TextSpan], at: usize) -> Option<u32> {
+        use tracedraw_core::paragraphs::{paragraph_format, paragraph_of};
+        use tracedraw_core::text_styles as ts;
+        let te = self.text_edit.as_ref()?;
+        let ShapeKind::Text { align, para, .. } = self.doc().find_shape(te.shape)?.kind.clone()
+        else {
+            return None;
+        };
+        let styles = &self.doc().text_styles;
+        let i = paragraph_of(spans, at);
+        let here = paragraph_format(spans, align, &para, i).style;
+        let st = ts::find(styles, here?)?;
+        let next = st.next_style(styles)?;
+        (Some(next) != here).then_some(next)
     }
 
     /// Type `s` at the caret, replacing the selection. Autocorrect acts

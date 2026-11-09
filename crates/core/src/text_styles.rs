@@ -10,6 +10,11 @@
 //! A style can be based on another: what it does not set it takes from
 //! that one, and changing the parent changes it too.
 //!
+//! A paragraph style also names the style of the paragraph after it
+//! (`next_style`), which a paragraph break takes, and any style may carry
+//! a keyboard shortcut that applies it; `reset_to_base` takes off what a
+//! style sets, leaving it as the style it is based on.
+//!
 //! Applying a paragraph style gives the paragraphs its format and its
 //! characters its character properties, with any character style linked
 //! to them on top. Changing a style (`Command::SetTextStyles`) applies
@@ -257,6 +262,40 @@ pub struct TextStyle {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub para: Option<ParagraphFormat>,
     pub chars: CharFormat,
+    /// The style the paragraph after this one takes when a paragraph ends
+    /// with a break (Enter): a title falls into the text that follows it.
+    /// `None` = the same style. Paragraph styles only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next: Option<u32>,
+    /// A shortcut that applies the style to the selection, written as the
+    /// others are ("Ctrl+3"; see `shortcuts::parse`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shortcut: Option<String>,
+}
+
+impl TextStyle {
+    /// The style a paragraph of this style is followed by: its own next
+    /// style, when that one exists and is a paragraph style, else this one.
+    pub fn next_style(&self, styles: &[TextStyle]) -> Option<u32> {
+        match self.next {
+            Some(n)
+                if n != self.id
+                    && find(styles, n).is_some_and(|s| s.kind == TextStyleKind::Paragraph) =>
+            {
+                Some(n)
+            }
+            _ if self.kind == TextStyleKind::Paragraph => Some(self.id),
+            _ => None,
+        }
+    }
+
+    /// Back to what it is based on: the paragraph format and the character
+    /// properties go, so the style sets nothing of its own (its name, its
+    /// parent, its next style and its shortcut stay).
+    pub fn reset_to_base(&mut self) {
+        self.para = None;
+        self.chars = CharFormat::default();
+    }
 }
 
 /// The style `id` in `styles`.
@@ -345,8 +384,15 @@ pub fn apply_paragraph_style(
         let Some(&(s, e)) = ranges.get(i) else {
             continue;
         };
-        let end = (e + 1).min(total);
-        spans_apply(spans, s, end.max(s), |sp| {
+        // An empty paragraph (the last, after a line break) has only its
+        // newline, which takes the look, so the first character typed
+        // there goes on in it.
+        let (from, to) = if e > s {
+            (s, (e + 1).min(total))
+        } else {
+            (s.saturating_sub(1), s.min(total))
+        };
+        spans_apply(spans, from, to, |sp| {
             chars.apply(sp);
             if let Some(c) = sp.char_style {
                 resolve(styles, c).1.apply(sp);
@@ -457,6 +503,7 @@ pub fn paragraph_style_from(kind: &ShapeKind, at: usize, name: String) -> Option
         based_on: None,
         para: Some(f),
         chars: CharFormat::of(first),
+        ..Default::default()
     })
 }
 
@@ -500,6 +547,7 @@ pub fn char_style_from(
         based_on: None,
         para: None,
         chars,
+        ..Default::default()
     })
 }
 
@@ -656,6 +704,7 @@ mod tests {
                 size_pt: Some(11.5),
                 ..Default::default()
             },
+            ..Default::default()
         }
     }
 
@@ -675,6 +724,7 @@ mod tests {
                 bold: Some(true),
                 ..Default::default()
             },
+            ..Default::default()
         }
     }
 
@@ -849,6 +899,91 @@ mod tests {
         assert!(!plain.contains("text_styles"));
     }
 
+
+    /// A style names the style of the paragraph after it: another
+    /// paragraph style, itself when it names nothing else, and only for
+    /// paragraph styles.
+    #[test]
+    fn a_style_names_the_style_that_follows_it() {
+        let mut a = corpo();
+        let b = titulo();
+        let c = enfase();
+        let mut styles = vec![a.clone(), b, c];
+        // Nothing said: the same style follows.
+        assert_eq!(styles[0].next_style(&styles), Some(1));
+        // Another paragraph style.
+        a.next = Some(2);
+        styles[0] = a.clone();
+        assert_eq!(styles[0].next_style(&styles), Some(2));
+        // Itself, a character style or a style that is gone: its own.
+        for lost in [Some(1), Some(3), Some(99)] {
+            a.next = lost;
+            styles[0] = a.clone();
+            assert_eq!(styles[0].next_style(&styles), Some(1), "{lost:?}");
+        }
+        // A character style has no next style.
+        assert_eq!(styles[2].next_style(&styles), None);
+    }
+
+    /// Reset to base takes off everything the style sets, its own name,
+    /// parent, next style and shortcut staying: the text then looks like
+    /// the style it is based on.
+    #[test]
+    fn reset_to_base_leaves_the_name_the_parent_and_the_next() {
+        let mut st = titulo();
+        st.next = Some(1);
+        st.shortcut = Some("Ctrl+3".into());
+        let mut styles = vec![corpo(), st.clone()];
+        st.reset_to_base();
+        styles[1] = st.clone();
+        assert!(st.para.is_none() && st.chars.is_empty());
+        assert_eq!(st.name, "Título");
+        assert_eq!(st.based_on, Some(1));
+        assert_eq!(st.next, Some(1));
+        assert_eq!(st.shortcut.as_deref(), Some("Ctrl+3"));
+        let (para, chars) = resolve(&styles, st.id);
+        assert_eq!(para.expect("the base's").first_line_indent, 5.0);
+        assert_eq!(chars.size_pt, Some(11.5));
+    }
+
+    /// The next style and the shortcut are saved only when set, and old
+    /// files read without them.
+    #[test]
+    fn the_next_style_and_the_shortcut_are_saved() {
+        let mut st = corpo();
+        let json = serde_json::to_string(&st).expect("json");
+        assert!(!json.contains("\"next\"") && !json.contains("shortcut"), "{json}");
+        st.next = Some(2);
+        st.shortcut = Some("Ctrl+3".into());
+        let json = serde_json::to_string(&st).expect("json");
+        assert!(json.contains("\"next\":2") && json.contains("Ctrl+3"), "{json}");
+        let back: TextStyle = serde_json::from_str(&json).expect("back");
+        assert_eq!(back.next, Some(2));
+        assert_eq!(back.shortcut.as_deref(), Some("Ctrl+3"));
+        let old: TextStyle =
+            serde_json::from_str(r#"{"id":1,"name":"x","kind":"paragraph"}"#).expect("old");
+        assert_eq!(old.next, None);
+        assert_eq!(old.shortcut, None);
+    }
+
+    /// The empty paragraph after a line break takes the style on its own
+    /// newline, and the look with it, so the first character typed there
+    /// goes on in it.
+    #[test]
+    fn an_empty_last_paragraph_takes_the_look_on_its_newline() {
+        let styles = vec![corpo(), titulo()];
+        let mut k = text("Um\n");
+        apply_paragraph_style(&mut k, Some((3, 3)), &styles, Some(2));
+        let s = spans(&k);
+        let last = s.last().expect("a span");
+        assert_eq!(last.text, "\n");
+        assert_eq!(last.paragraph.as_deref().and_then(|p| p.style), Some(2));
+        assert_eq!(last.size_pt, 18.0);
+        // The paragraph before keeps its own.
+        assert_eq!(s[0].text, "Um");
+        assert!(s[0].paragraph.is_none());
+        assert_eq!(s[0].size_pt, 11.0);
+    }
     /// A style carries the look of the underline and of the strike line,
     /// for a character style made from text too.
     #[test]

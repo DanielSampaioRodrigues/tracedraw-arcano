@@ -3605,6 +3605,16 @@ impl App {
             }
         }
 
+        // A text style's own shortcut applies it to the selection (the
+        // Text Styles panel, docs/behavior/text-styles.md).
+        for (key, mods) in &presses {
+            let text = crate::shortcuts::format(*mods, *key);
+            let Some(st) = self.style_for_shortcut(&text).cloned() else {
+                continue;
+            };
+            self.apply_named_style(st.kind, Some(st.id));
+            return;
+        }
         // Tools > Macros > Run Macro (Alt+Shift+F8: Alt+F8 is the
         // Transformations panel's Rotate) and Macro Editor.
         if pressed(Key::F8, Modifiers::ALT | Modifiers::SHIFT) {

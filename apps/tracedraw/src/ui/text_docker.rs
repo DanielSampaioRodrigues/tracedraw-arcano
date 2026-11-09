@@ -909,7 +909,7 @@ pub(crate) enum Line {
 }
 
 /// The name of a kind of line.
-fn line_kind_name(kind: LineKind) -> String {
+pub(crate) fn line_kind_name(kind: LineKind) -> String {
     tr(match kind {
         LineKind::Single => "docker.line_single",
         LineKind::Double => "docker.line_double",
