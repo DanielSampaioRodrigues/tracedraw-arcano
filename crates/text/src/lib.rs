@@ -5501,7 +5501,7 @@ fn line_band(
     let c = y + style.offset_pt.map(|p| p * PT_MM).unwrap_or(place);
     let (x0, x1) = (x0.min(x1), x0.max(x1));
     let mut out = BezPath::new();
-    if !(t.is_finite() && t > 0.0) || !(x1 - x0 > 1e-9) {
+    if !t.is_finite() || t <= 0.0 || x1 - x0 <= 1e-9 {
         return out;
     }
     // One bar of the line: \`thick\` deep, centred on \`at\`.
@@ -5540,21 +5540,23 @@ fn line_band(
             let period = len / crests;
             let amp = t * 0.75;
             let w = (t * 0.6).max(size * 0.004);
-            let n = ((crests * 12.0).ceil() as usize).clamp(4, 4096);
-            let wave = |i: usize| -> (f64, f64) {
+            let n = ((crests * 24.0).ceil() as usize).clamp(8, 4096);
+            // One closed band: the crest side out and the trough side back,
+            // so its sides are smooth where they meet (a band of separate
+            // pieces would show a notch at every join).
+            let wave = |i: usize, dy: f64| -> Point {
                 let x = x0 + len * i as f64 / n as f64;
                 let phase = std::f64::consts::TAU * (x - x0) / period;
-                (x, c + amp * phase.sin())
+                Point::new(x, c + amp * phase.sin() + dy)
             };
-            for i in 0..n {
-                let (xa, ya) = wave(i);
-                let (xb, yb) = wave(i + 1);
-                out.move_to(Point::new(xa, ya + w / 2.0));
-                out.line_to(Point::new(xb, yb + w / 2.0));
-                out.line_to(Point::new(xb, yb - w / 2.0));
-                out.line_to(Point::new(xa, ya - w / 2.0));
-                out.close_path();
+            out.move_to(wave(0, w / 2.0));
+            for i in 1..=n {
+                out.line_to(wave(i, w / 2.0));
             }
+            for i in (0..=n).rev() {
+                out.line_to(wave(i, -w / 2.0));
+            }
+            out.close_path();
         }
     }
     out
