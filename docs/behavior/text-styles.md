@@ -75,8 +75,10 @@ objects.
 
 - A key without Ctrl or Alt is refused, so the typing keys stay free; the
   field says so and the shortcut is not kept.
-- A shortcut the user gives a command (Options > Customization >
-  Commands) is read first, as built-in shortcuts are.
+- The keys come in this order: the shortcuts the user gives commands
+  (Options > Customization > Commands), then the styles' shortcuts, then
+  the built-in keys, so a style may take a built-in key over. Pick one
+  that no command and no built-in key uses.
 - While a text is being typed the keys go to the text, as always: a style
   shortcut acts when a text object is selected.
 - Checked by `text_styles::tests::the_next_style_and_the_shortcut_are_saved`
