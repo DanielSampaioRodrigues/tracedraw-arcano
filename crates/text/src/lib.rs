@@ -7042,6 +7042,7 @@ mod tests {
                 thickness_pt,
                 offset_pt,
                 color: None,
+                ..Default::default()
             };
             f.outline(&[s]).path
         };
@@ -7084,6 +7085,7 @@ mod tests {
             letters: true,
             underline: false,
             strike: false,
+            ..tracedraw_core::document::Marks::NONE
         };
         assert!(f.outline(&[hidden]).path.elements().is_empty());
     }

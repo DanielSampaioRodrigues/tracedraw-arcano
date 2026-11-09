@@ -1196,13 +1196,15 @@ pub struct Marks {
 }
 
 impl Default for Marks {
+    /// The whole text as one part: the letters and their lines, the gaps
+    /// included (they are only cut out for a part of their own).
     fn default() -> Self {
         Marks {
             letters: true,
             underline: true,
             strike: true,
-            underline_gap: true,
-            strike_gap: true,
+            underline_gap: false,
+            strike_gap: false,
         }
     }
 }
