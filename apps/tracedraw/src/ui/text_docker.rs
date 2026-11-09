@@ -1834,6 +1834,7 @@ mod tests {
             thickness_pt: Some(2.0),
             offset_pt: Some(-4.0),
             color: Some(Color::rgb8(200, 0, 0)),
+            ..Default::default()
         };
         let style_of = |app: &App, which: Line| match &app.doc().find_shape(id).expect("t").kind {
             ShapeKind::Text { spans, .. } => match which {

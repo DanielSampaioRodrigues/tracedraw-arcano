@@ -995,6 +995,7 @@ mod tests {
             thickness_pt: Some(1.5),
             offset_pt: Some(-3.0),
             color: Some(Color::rgb8(200, 0, 0)),
+            ..Default::default()
         };
         let mut sp = TextSpan::new("a", "Sans", 11.0);
         sp.underline = true;

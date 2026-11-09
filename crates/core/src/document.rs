@@ -1080,9 +1080,11 @@ impl LineKind {
 }
 
 /// The look of an underline or a strike line: its kind, its thickness,
-/// where it sits and a colour of its own. What it leaves unset comes
-/// from the font, which draws the line where it says it goes.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+/// where it sits, a colour of its own at a tint, the colour of the gaps of
+/// a dashed or dotted line, and whether the line prints over what is under
+/// it. What it leaves unset comes from the font, which draws the line
+/// where it says it goes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LineStyle {
     pub kind: LineKind,
@@ -1097,6 +1099,54 @@ pub struct LineStyle {
     /// A colour of its own; `None` = the characters' colour.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
+    /// The tint of `color`, 0 to 100: the ink thinned towards the paper.
+    /// Ignored without a colour of its own.
+    #[serde(default = "full_tint", skip_serializing_if = "is_full_tint")]
+    pub tint: f64,
+    /// The colour of the gaps between the dashes or dots; `None` = the
+    /// gaps show what is under the line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gap_color: Option<Color>,
+    /// The tint of `gap_color`.
+    #[serde(default = "full_tint", skip_serializing_if = "is_full_tint")]
+    pub gap_tint: f64,
+    /// Print the line over what is under it instead of knocking it out.
+    #[serde(skip_serializing_if = "is_false")]
+    pub overprint: bool,
+    /// Print the gaps over what is under them too.
+    #[serde(skip_serializing_if = "is_false")]
+    pub gap_overprint: bool,
+}
+
+/// A tint of the whole ink, as a line without one is drawn.
+fn full_tint() -> f64 {
+    100.0
+}
+
+impl Default for LineStyle {
+    /// A line as the font draws it: solid, no colour of its own, both
+    /// tints full.
+    fn default() -> Self {
+        LineStyle {
+            kind: LineKind::Single,
+            thickness_pt: None,
+            offset_pt: None,
+            color: None,
+            tint: 100.0,
+            gap_color: None,
+            gap_tint: 100.0,
+            overprint: false,
+            gap_overprint: false,
+        }
+    }
+}
+
+fn is_full_tint(t: &f64) -> bool {
+    (*t - 100.0).abs() < 1e-9
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl LineStyle {
@@ -1106,24 +1156,43 @@ impl LineStyle {
         *self == LineStyle::default()
     }
 
-    /// The colour the line is drawn in: its own, or the fill of the
-    /// characters it belongs to.
+    /// Whether the kind leaves gaps between its marks, where a gap colour
+    /// shows.
+    pub fn has_gaps(&self) -> bool {
+        matches!(self.kind, LineKind::Dotted | LineKind::Dashed)
+    }
+
+    /// The colour the line is drawn in: its own at its tint, or the fill of
+    /// the characters it belongs to (a tint is part of a colour of its own).
     pub fn fill_or(&self, characters: &Fill) -> Fill {
         match self.color {
-            Some(c) => Fill::Solid(c),
+            Some(c) => Fill::Solid(c.tint(self.tint)),
             None => characters.clone(),
+        }
+    }
+
+    /// The colour of the gaps, when one is set and the kind has gaps.
+    pub fn gap_fill(&self) -> Option<Fill> {
+        match self.gap_color {
+            Some(c) if self.has_gaps() => Some(Fill::Solid(c.tint(self.gap_tint))),
+            _ => None,
         }
     }
 }
 
 /// What a part of a text with its own colours draws of its characters:
-/// the letters, the underline and the strike line, each of which may need
-/// a look (a colour) of its own. See [`Shape::text_parts`]. Never saved.
+/// the letters, the underline and the strike line, and the gaps between
+/// their dashes, each of which may need a look (a colour) of its own. See
+/// [`Shape::text_parts`]. Never saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Marks {
     pub letters: bool,
     pub underline: bool,
     pub strike: bool,
+    /// The gaps of the underline's dashes or dots.
+    pub underline_gap: bool,
+    /// The gaps of the strike line's dashes or dots.
+    pub strike_gap: bool,
 }
 
 impl Default for Marks {
@@ -1132,6 +1201,8 @@ impl Default for Marks {
             letters: true,
             underline: true,
             strike: true,
+            underline_gap: true,
+            strike_gap: true,
         }
     }
 }
@@ -1142,11 +1213,13 @@ impl Marks {
         letters: false,
         underline: false,
         strike: false,
+        underline_gap: false,
+        strike_gap: false,
     };
 
     /// Whether it draws anything of them.
     pub fn any(self) -> bool {
-        self.letters || self.underline || self.strike
+        self.letters || self.underline || self.strike || self.underline_gap || self.strike_gap
     }
 }
 
@@ -2712,58 +2785,95 @@ impl Shape {
             (fill, stroke)
         };
         let drawn = spans.iter().filter(|s| s.char_count() > 0);
-        if drawn.clone().all(|s| {
+        // A part is a look (a fill, an outline and whether the fill
+        // overprints); a line of its own is a look of its own.
+        let over = self.overprint_fill;
+        let gap_ink = |style: &LineStyle| -> Option<(Fill, bool)> {
+            style.gap_fill().map(|f| (f, style.gap_overprint))
+        };
+        let nothing_of_its_own = |s: &TextSpan| -> bool {
+            let (fill, _) = colour_of(s);
+            let line_ok = |on: bool, style: &LineStyle| {
+                !on
+                    || (style.fill_or(&fill) == fill
+                        && style.overprint == over
+                        && style.gap_color.is_none())
+            };
             s.fill.is_none()
                 && s.outline.is_none()
-                && !s.underline_style.color.is_some_and(|_| s.underline)
-                && !s.strike_style.color.is_some_and(|_| s.strikethrough)
-        }) {
+                && line_ok(s.underline, &s.underline_style)
+                && line_ok(s.strikethrough, &s.strike_style)
+        };
+        if drawn.clone().all(nothing_of_its_own) {
             return None;
         }
-        let mut looks: Vec<(Fill, Option<Stroke>)> = Vec::new();
-        let mut line_inks: Vec<Fill> = Vec::new();
+        let mut looks: Vec<(Fill, Option<Stroke>, bool)> = Vec::new();
+        let mut line_inks: Vec<(Fill, bool)> = Vec::new();
+        let mut gap_inks: Vec<(Fill, bool)> = Vec::new();
         for s in drawn {
             let (fill, stroke) = colour_of(s);
-            let look = (fill.clone(), stroke);
+            let look = (fill.clone(), stroke, over);
             if !looks.contains(&look) {
                 looks.push(look);
             }
             for (on, style) in [(s.underline, &s.underline_style), (s.strikethrough, &s.strike_style)]
             {
-                let ink = style.fill_or(&fill);
-                if on && ink != fill && !line_inks.contains(&ink) {
-                    line_inks.push(ink);
+                if !on {
+                    continue;
+                }
+                let ink = (style.fill_or(&fill), style.overprint);
+                if ink != (fill.clone(), over) && !line_inks.contains(&ink) {
+                    line_inks.push(ink.clone());
+                }
+                if let Some(g) = gap_ink(style) {
+                    if g != ink && !gap_inks.contains(&g) {
+                        gap_inks.push(g);
+                    }
                 }
             }
         }
         if looks.is_empty() {
             return None;
         }
+        let mut inks: Vec<(Fill, Option<Stroke>, bool)> = looks;
         // Nothing to split: one look, the object's own, and no line in a
-        // colour of its own (a line colour equal to the characters' one).
-        if line_inks.is_empty() && looks.len() == 1 && looks[0] == (self.fill.clone(), self.stroke.clone())
+        // colour or an overprint of its own.
+        if inks.len() == 1
+            && inks[0] == (self.fill.clone(), self.stroke.clone(), over)
+            && line_inks.is_empty()
+            && gap_inks.is_empty()
         {
             return None;
         }
-        let mut inks: Vec<(Fill, Option<Stroke>)> = looks;
-        inks.extend(line_inks.into_iter().map(|f| (f, None)));
+        inks.extend(line_inks.into_iter().map(|(f, op)| (f, None, op)));
+        for g in gap_inks {
+            if !inks.contains(&(g.0.clone(), None, g.1)) {
+                inks.push((g.0, None, g.1));
+            }
+        };
         let parts = inks
             .into_iter()
             .enumerate()
-            .map(|(i, (fill, stroke))| {
+            .map(|(i, (fill, stroke, op))| {
                 let mut part = self.clone();
+                part.overprint_fill = op;
                 if let ShapeKind::Text { spans, para, .. } = &mut part.kind {
                     for s in spans.iter_mut() {
-                        let (mine, _) = colour_of(s);
-                        let (under, strike) = (
-                            s.underline && s.underline_style.fill_or(&mine) == fill,
-                            s.strikethrough && s.strike_style.fill_or(&mine) == fill,
+                        let (mine, mine_stroke) = colour_of(s);
+                        let under_ink = (
+                            s.underline_style.fill_or(&mine),
+                            s.underline_style.overprint,
                         );
-                        let letters = colour_of(s) == (fill.clone(), stroke.clone());
+                        let strike_ink = (s.strike_style.fill_or(&mine), s.strike_style.overprint);
+                        let letters = mine == fill && mine_stroke == stroke && op == over;
                         s.marks = Marks {
                             letters,
-                            underline: under,
-                            strike,
+                            underline: s.underline && under_ink == (fill.clone(), op),
+                            strike: s.strikethrough && strike_ink == (fill.clone(), op),
+                            underline_gap: s.underline
+                                && gap_ink(&s.underline_style) == Some((fill.clone(), op)),
+                            strike_gap: s.strikethrough
+                                && gap_ink(&s.strike_style) == Some((fill.clone(), op)),
                         };
                         s.background = None;
                         s.fill = None;
@@ -2772,6 +2882,8 @@ impl Shape {
                         // is never split again.
                         s.underline_style.color = None;
                         s.strike_style.color = None;
+                        s.underline_style.gap_color = None;
+                        s.strike_style.gap_color = None;
                     }
                     para.frame_fill = None;
                 }
@@ -7965,6 +8077,101 @@ mod tests {
         assert!(rect.text_parts().is_none());
     }
 
+    /// An underline at a tint and with a gap colour is drawn as parts of
+    /// its own: the letters, the dashes in the tinted colour and the gaps
+    /// in theirs, with the overprint going with the part it belongs to.
+    #[test]
+    fn a_line_takes_its_tint_its_gaps_and_its_overprint_apart() {
+        let mut s = TextSpan::new("ab", "Arial", 12.0);
+        s.underline = true;
+        s.underline_style = LineStyle {
+            kind: LineKind::Dashed,
+            thickness_pt: Some(1.0),
+            color: Some(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)),
+            tint: 40.0,
+            gap_color: Some(Color::rgb8(255, 0, 0)),
+            gap_overprint: true,
+            ..Default::default()
+        };
+        let mut shape = Shape::new(
+            ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![s],
+                origin: Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        shape.fill = Fill::Solid(Color::BLACK);
+        let parts = shape.text_parts().expect("parts");
+        assert_eq!(parts.len(), 3);
+        let marks = |p: &Shape| match &p.kind {
+            ShapeKind::Text { spans, .. } => spans[0].marks,
+            _ => Marks::NONE,
+        };
+        // The letters in the object's colour.
+        assert_eq!(parts[0].fill, Fill::Solid(Color::BLACK));
+        assert!(marks(&parts[0]).letters);
+        // The dashes in the tinted colour.
+        assert_eq!(
+            parts[1].fill,
+            Fill::Solid(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0).tint(40.0))
+        );
+        assert!(marks(&parts[1]).underline && !marks(&parts[1]).underline_gap);
+        // The gaps in their colour, overprinting.
+        assert_eq!(parts[2].fill, Fill::Solid(Color::rgb8(255, 0, 0)));
+        assert!(parts[2].overprint_fill);
+        assert!(marks(&parts[2]).underline_gap && !marks(&parts[2]).underline);
+        // A line overprinting in the characters' colour needs a part too.
+        let mut s = TextSpan::new("cd", "Arial", 12.0);
+        s.strikethrough = true;
+        s.strike_style = LineStyle {
+            overprint: true,
+            ..Default::default()
+        };
+        let mut shape = Shape::new(
+            ShapeId(2),
+            ShapeKind::Text {
+                spans: vec![s],
+                origin: Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        shape.fill = Fill::Solid(Color::BLACK);
+        let parts = shape.text_parts().expect("parts");
+        assert_eq!(parts.len(), 2);
+        assert!(!parts[0].overprint_fill && parts[1].overprint_fill);
+        assert!(marks(&parts[1]).strike);
+    }
+
+    /// The line's tint, gap colour and overprints are kept in the file, and
+    /// a plain line leaves them out.
+    #[test]
+    fn a_line_keeps_its_tint_its_gaps_and_its_overprints() {
+        let json = serde_json::to_string(&LineStyle::default()).expect("json");
+        assert_eq!(json, "{\"kind\":\"single\"}");
+        let st = LineStyle {
+            kind: LineKind::Dotted,
+            thickness_pt: Some(0.5),
+            tint: 40.0,
+            color: Some(Color::BLACK),
+            gap_color: Some(Color::rgb8(255, 0, 0)),
+            gap_tint: 25.0,
+            overprint: true,
+            gap_overprint: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&st).expect("json");
+        let back: LineStyle = serde_json::from_str(&json).expect("back");
+        assert_eq!(back, st);
+        assert!(!st.is_plain());
+    }
+
     #[test]
     fn character_outlines_are_saved_and_the_marks_of_a_part_are_not() {
         let mut s = TextSpan::new("a", "Arial", 12.0);
@@ -8025,11 +8232,13 @@ mod tests {
                     letters: true,
                     underline: false,
                     strike: false,
+                    ..Marks::NONE
                 },
                 Marks {
                     letters: true,
                     underline: false,
                     strike: true,
+                    ..Marks::NONE
                 },
             ]
         );
@@ -8041,6 +8250,7 @@ mod tests {
                     letters: false,
                     underline: true,
                     strike: false,
+                    ..Marks::NONE
                 },
                 Marks::NONE,
             ]

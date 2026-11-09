@@ -314,6 +314,63 @@ impl Color {
 
     /// Screen colour as 8-bit sRGB. Uses the registered converter or ICC
     /// engine when there is one, else the built-in conversions.
+    /// The colour at a tint, `pct` from 0 (no ink) to 100 (as it is): the
+    /// ink is thinned towards the paper in the colour's own model, so a
+    /// CMYK colour stays a CMYK colour and a spot ink keeps its name.
+    pub fn tint(self, pct: f64) -> Color {
+        let t = if pct.is_finite() {
+            (pct / 100.0).clamp(0.0, 1.0)
+        } else {
+            1.0
+        } as f32;
+        if t >= 1.0 {
+            return self;
+        }
+        match self {
+            Color::Cmyk { c, m, y, k } => Color::Cmyk {
+                c: c * t,
+                m: m * t,
+                y: y * t,
+                k: k * t,
+            },
+            Color::Rgb { r, g, b } => Color::Rgb {
+                r: 1.0 - (1.0 - r) * t,
+                g: 1.0 - (1.0 - g) * t,
+                b: 1.0 - (1.0 - b) * t,
+            },
+            Color::Gray { v } => Color::Gray {
+                v: 1.0 - (1.0 - v) * t,
+            },
+            Color::Spot {
+                ink,
+                tint,
+                c,
+                m,
+                y,
+                k,
+            } => Color::Spot {
+                ink,
+                tint: tint * t,
+                c,
+                m,
+                y,
+                k,
+            },
+            // The models that mix in another space are thinned in RGB and
+            // go back to theirs; registration prints as it is.
+            Color::Registration => self,
+            other => {
+                let [r, g, b] = other.to_rgb_f32();
+                Color::Rgb {
+                    r: 1.0 - (1.0 - r) * t,
+                    g: 1.0 - (1.0 - g) * t,
+                    b: 1.0 - (1.0 - b) * t,
+                }
+                .convert_to(other.model_name())
+            }
+        }
+    }
+
     pub fn to_rgb8(self) -> [u8; 3] {
         // A spot ink as its process colour. (Not "if process() differs":
         // a component that is not a number differs from itself, and the
@@ -739,6 +796,57 @@ mod tests {
             k: 0.0,
         };
         assert!(matches!(odd.process(), Color::Cmyk { m, .. } if (m - 0.4).abs() < 1e-6));
+    }
+
+    /// A tint thins the ink in the colour's own model: a CMYK colour stays
+    /// CMYK, a spot ink keeps its name, and the ends are no ink at all and
+    /// the colour itself.
+    #[test]
+    fn a_tint_thins_the_ink_in_its_own_model() {
+        let black = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0);
+        assert_eq!(black.tint(100.0), black);
+        assert_eq!(
+            black.tint(40.0),
+            Color::Cmyk {
+                c: 0.0,
+                m: 0.0,
+                y: 0.0,
+                k: 0.4
+            }
+        );
+        assert_eq!(
+            black.tint(0.0),
+            Color::Cmyk {
+                c: 0.0,
+                m: 0.0,
+                y: 0.0,
+                k: 0.0
+            }
+        );
+        // RGB is thinned towards the paper (white).
+        assert_eq!(
+            Color::rgb8(0, 0, 0).tint(50.0),
+            Color::Rgb {
+                r: 0.5,
+                g: 0.5,
+                b: 0.5
+            }
+        );
+        let ink = Color::Spot {
+            ink: 2,
+            tint: 0.8,
+            c: 0.0,
+            m: 0.3,
+            y: 0.9,
+            k: 0.0,
+        };
+        assert!(matches!(ink.tint(50.0), Color::Spot { ink: 2, tint, .. } if (tint - 0.4).abs() < 1e-6));
+        // Grey goes towards white too (0 is black, 1 white);
+        // registration prints as it is.
+        assert!(matches!(Color::Gray { v: 0.0 }.tint(25.0), Color::Gray { v } if (v - 0.75).abs() < 1e-6));
+        assert_eq!(Color::Registration.tint(10.0), Color::Registration);
+        // A broken tint reads as full strength.
+        assert_eq!(black.tint(f64::NAN), black);
     }
 
     #[test]

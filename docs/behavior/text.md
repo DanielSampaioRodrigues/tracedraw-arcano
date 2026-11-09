@@ -685,23 +685,39 @@ colour of its own.
   the values its font file carries. The place is the centre of the line,
   in points from the baseline, positive up: an underline's own place is
   under the baseline, a strike line's across the letters.
-- The colour is the characters' colour, or one of the line's own. A line
-  with a colour of its own is drawn in a part of the text of its own
-  (`Shape::text_parts`, `TextSpan::marks`), so the characters and the
-  line are each painted once, in their own colour; the renderer and the
-  exports draw the parts as they draw any text.
+- The colour is the characters' colour, or one of the line's own at a
+  tint (`LineStyle::tint`, 0 to 100): the ink thinned towards the paper in
+  the colour's own model, so a CMYK colour stays CMYK and a spot ink keeps
+  its name (`Color::tint`). A tint goes with a colour of its own; a line
+  that takes the characters' colour takes it full.
+- A dashed or a dotted line may fill its gaps with a colour of its own at
+  a tint (`LineStyle::gap_color`, `gap_tint`), drawn as a part of the
+  text of its own under the gaps alone: the dashes and the gaps are two
+  colours. The other kinds have no gaps to fill.
+- Both overprints (`overprint`, `gap_overprint`) travel with the part
+  they belong to: a line set to overprint paints over what is under it
+  (the multiply of the overprint simulation) and is marked for print, and
+  its gaps do the same on their own.
+- A line with a colour, a tint, a gap colour or an overprint of its own is
+  drawn in a part of the text of its own (`Shape::text_parts`,
+  `TextSpan::marks`: `underline`, `strike`, `underline_gap`,
+  `strike_gap`), so each ink is painted once, in its own colour; the
+  renderer and the exports draw the parts as they draw any text.
 - The look is set in the Text docker's Character section, in two rows
   under the characters (one for the underline, one for the strike line):
   the kind of line, the thickness, the place and "a colour of its own".
 - The property bar's text row carries the Underline and Strikethrough
   buttons and, beside them, an arrow whose menu opens Underline Options
-  and Strikethrough Options, as the Control panel's flyout does.
+  and Strikethrough Options.
 - Underline Options and Strikethrough Options are windows with the
-  fields the panel's dialogs have: On, Weight, Type, Offset and Colour
-  (with "a colour of its own" for the characters' colour). The look shows
-  on the text as it is set; OK keeps it, Cancel puts the text back as it
-  was when the window opened. A weight or a place of 0 leaves the font's
-  own.
+  fields of the panel's dialogs: On, Weight, Type, Offset, Colour (with "a
+  colour of its own" and its Tint), Overprint, Gap Colour (with its own
+  colour and Tint) and Overprint Gap. The look shows on the text as it is
+  set, and each field is set on its own: a selection whose lines differ
+  shows those fields marked (mixed) and keeps what it was not told to
+  change (`line_options::Mixed`). OK keeps the look; Cancel puts the text
+  back as it was when the window opened. A weight or a place of 0 leaves
+  the font's own.
 - It is part of the character properties a text style sets
   (`CharFormat::underline_style`, `CharFormat::strike_style`), so a
   paragraph or a character style carries it, and a style made from the

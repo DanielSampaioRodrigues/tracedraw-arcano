@@ -4444,8 +4444,8 @@ impl FontSystem {
                 }
                 let adv = g.advance + extras.get(gi).copied().unwrap_or(0.0);
                 let span = &spans[g.span];
-                if (span.underline && span.marks.underline)
-                    || (span.strikethrough && span.marks.strike)
+                if (span.underline && (span.marks.underline || span.marks.underline_gap))
+                    || (span.strikethrough && (span.marks.strike || span.marks.strike_gap))
                 {
                     match underline_runs.last_mut() {
                         Some((s, _, end)) if *s == g.span && (*end - pen).abs() < 1e-6 => {
@@ -4525,8 +4525,30 @@ impl FontSystem {
                         sm.size,
                     ));
                 }
+                if span.underline && span.marks.underline_gap {
+                    add(gap_band(
+                        &span.underline_style,
+                        a,
+                        b,
+                        y,
+                        sm.underline_pos - sm.underline_thick / 2.0,
+                        sm.underline_thick,
+                        sm.size,
+                    ));
+                }
                 if span.strikethrough && span.marks.strike {
                     add(line_band(
+                        &span.strike_style,
+                        a,
+                        b,
+                        y,
+                        sm.strike_pos,
+                        sm.strike_thick,
+                        sm.size,
+                    ));
+                }
+                if span.strikethrough && span.marks.strike_gap {
+                    add(gap_band(
                         &span.strike_style,
                         a,
                         b,
@@ -5484,6 +5506,50 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
 /// \`thick\` where it leaves them unset, above the letters of \`size\`. The
 /// band runs from \`x0\` to \`x1\` at baseline \`y\`; a hairline of a band
 /// when the thickness is nothing at all.
+/// The gaps between the dashes or the dots of a line: the bars a gap
+/// colour fills, in the same thickness and place as the line itself.
+/// Nothing for the kinds without gaps.
+fn gap_band(
+    style: &LineStyle,
+    x0: f64,
+    x1: f64,
+    y: f64,
+    place: f64,
+    thick: f64,
+    size: f64,
+) -> BezPath {
+    let t = style
+        .thickness_pt
+        .map(|p| p * PT_MM)
+        .unwrap_or(thick)
+        .max(size * 0.006);
+    let c = y + style.offset_pt.map(|p| p * PT_MM).unwrap_or(place);
+    let (x0, x1) = (x0.min(x1), x0.max(x1));
+    let mut out = BezPath::new();
+    if !t.is_finite() || t <= 0.0 || x1 - x0 <= 1e-9 {
+        return out;
+    }
+    let bar = |out: &mut BezPath, a: f64, b: f64, at: f64, thick: f64| {
+        let r = Rect::new(a, at - thick / 2.0, b, at + thick / 2.0);
+        out.extend(r.to_path(0.01).elements().iter().copied());
+    };
+    let (dash, step) = match style.kind {
+        LineKind::Dotted => (t, t * 2.0),
+        LineKind::Dashed => (t * 3.0, t * 5.0),
+        _ => return out,
+    };
+    let mut x = x0;
+    while x < x1 - 1e-9 {
+        let gap_from = (x + dash).min(x1);
+        let gap_to = (x + step).min(x1);
+        if gap_to - gap_from > 1e-9 {
+            bar(&mut out, gap_from, gap_to, c, t);
+        }
+        x += step;
+    }
+    out
+}
+
 fn line_band(
     style: &LineStyle,
     x0: f64,
