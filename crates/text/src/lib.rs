@@ -13,8 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
-        text_outline::TextRequest, DocumentFont, ParagraphStyle, PathTextOrientation,
-        PathTextVertical, TabAlign, TextAlign, TextOnPath, TextSpan, VerticalAlign,
+        text_outline::TextRequest, DocumentFont, LineKind, LineStyle, ParagraphStyle,
+        PathTextOrientation, PathTextVertical, TabAlign, TextAlign, TextOnPath, TextSpan,
+        VerticalAlign,
     },
     geometry::{Affine, BezPath, Point, Rect, Shape as _, Size},
     text_flow::{free_segments, WrapRegion},
@@ -1380,6 +1381,7 @@ struct Metrics {
     underline_pos: f64,
     underline_thick: f64,
     strike_pos: f64,
+    strike_thick: f64,
 }
 
 struct Line {
@@ -2939,8 +2941,8 @@ impl FontSystem {
             req.spans
                 .iter()
                 .map(|s| format!(
-                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}|{}",
-                    s.layout_only,
+                    "{:?}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{}",
+                    s.marks,
                     s.font_family,
                     s.size_pt,
                     s.bold,
@@ -2954,6 +2956,8 @@ impl FontSystem {
                     s.features,
                     s.variations,
                     s.paragraph,
+                    s.underline_style,
+                    s.strike_style,
                     s.text
                 ))
                 .collect::<Vec<_>>()
@@ -3083,6 +3087,7 @@ impl FontSystem {
                 underline_pos: -s * 0.1,
                 underline_thick: s * 0.05,
                 strike_pos: s * 0.3,
+                strike_thick: s * 0.05,
             };
         };
         let Some((data, index)) = self.face_data(id) else {
@@ -3107,6 +3112,9 @@ impl FontSystem {
                 .map(|u| u.thickness as f64 * scale)
                 .unwrap_or(span.size_pt * PT_MM * 0.05),
             strike_pos: st.map(|s| s.position as f64 * scale).unwrap_or(asc * 0.35),
+            strike_thick: st
+                .map(|s| s.thickness as f64 * scale)
+                .unwrap_or(span.size_pt * PT_MM * 0.05),
         }
     }
 
@@ -4200,7 +4208,7 @@ impl FontSystem {
         // underlines. Characters of a span that is only laid out take their
         // room but are not drawn (a text drawn in parts, one per character
         // colour).
-        let span_drawn = |span: usize| spans.get(span).is_none_or(|s| !s.layout_only);
+        let span_drawn = |span: usize| spans.get(span).is_none_or(|s| s.marks.letters);
         let mut path = BezPath::new();
         let mut glyphs_out = GlyphLayout::default();
         let mut glyph_count = 0usize;
@@ -4436,7 +4444,9 @@ impl FontSystem {
                 }
                 let adv = g.advance + extras.get(gi).copied().unwrap_or(0.0);
                 let span = &spans[g.span];
-                if (span.underline || span.strikethrough) && !span.layout_only {
+                if (span.underline && span.marks.underline)
+                    || (span.strikethrough && span.marks.strike)
+                {
                     match underline_runs.last_mut() {
                         Some((s, _, end)) if *s == g.span && (*end - pen).abs() < 1e-6 => {
                             *end = pen + adv
@@ -4497,31 +4507,34 @@ impl FontSystem {
             for (si, a, b) in underline_runs {
                 let span = &spans[si];
                 let sm = metrics[si];
-                if span.underline {
-                    let r = Rect::new(
-                        a,
-                        y + sm.underline_pos - sm.underline_thick,
-                        b,
-                        y + sm.underline_pos,
-                    );
-                    let rp = wound_like(orient_rest(r.to_path(0.01)), glyph_area);
+                let mut add = |p: BezPath| {
+                    let rp = wound_like(orient_rest(p), glyph_area);
                     line_path.extend(rp.elements().iter().copied());
                     if collect {
                         line_glyphs.rest.extend(rp.elements().iter().copied());
                     }
+                };
+                if span.underline && span.marks.underline {
+                    add(line_band(
+                        &span.underline_style,
+                        a,
+                        b,
+                        y,
+                        sm.underline_pos - sm.underline_thick / 2.0,
+                        sm.underline_thick,
+                        sm.size,
+                    ));
                 }
-                if span.strikethrough {
-                    let r = Rect::new(
+                if span.strikethrough && span.marks.strike {
+                    add(line_band(
+                        &span.strike_style,
                         a,
-                        y + sm.strike_pos - sm.underline_thick / 2.0,
                         b,
-                        y + sm.strike_pos + sm.underline_thick / 2.0,
-                    );
-                    let rp = wound_like(orient_rest(r.to_path(0.01)), glyph_area);
-                    line_path.extend(rp.elements().iter().copied());
-                    if collect {
-                        line_glyphs.rest.extend(rp.elements().iter().copied());
-                    }
+                        y,
+                        sm.strike_pos,
+                        sm.strike_thick,
+                        sm.size,
+                    ));
                 }
             }
             if line_drawn {
@@ -5379,7 +5392,7 @@ fn place_on_path(
             * along
             * flip
             * Affine::translate((-g.advance / 2.0 + g.x_offset, g.y_offset + lift));
-        if spans.get(g.span).is_some_and(|s| s.layout_only) {
+        if spans.get(g.span).is_some_and(|s| !s.marks.letters) {
             continue;
         }
         place_glyph(collect, place, g, glyphs);
@@ -5463,6 +5476,88 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
     fn close(&mut self) {
         self.path.close_path();
     }
+}
+
+/// The filled band of an underline or a strike line over a run of
+/// characters, in layout space (mm): \`style\`'s kind, thickness and place
+/// (mm from the baseline, positive up), the font's own \`place\` and
+/// \`thick\` where it leaves them unset, above the letters of \`size\`. The
+/// band runs from \`x0\` to \`x1\` at baseline \`y\`; a hairline of a band
+/// when the thickness is nothing at all.
+fn line_band(
+    style: &LineStyle,
+    x0: f64,
+    x1: f64,
+    y: f64,
+    place: f64,
+    thick: f64,
+    size: f64,
+) -> BezPath {
+    let t = style
+        .thickness_pt
+        .map(|p| p * PT_MM)
+        .unwrap_or(thick)
+        .max(size * 0.006);
+    let c = y + style.offset_pt.map(|p| p * PT_MM).unwrap_or(place);
+    let (x0, x1) = (x0.min(x1), x0.max(x1));
+    let mut out = BezPath::new();
+    if !(t.is_finite() && t > 0.0) || !(x1 - x0 > 1e-9) {
+        return out;
+    }
+    // One bar of the line: \`thick\` deep, centred on \`at\`.
+    let bar = |out: &mut BezPath, a: f64, b: f64, at: f64, thick: f64| {
+        let r = Rect::new(a, at - thick / 2.0, b, at + thick / 2.0);
+        out.extend(r.to_path(0.01).elements().iter().copied());
+    };
+    match style.kind {
+        LineKind::Single => bar(&mut out, x0, x1, c, t),
+        LineKind::Thick => bar(&mut out, x0, x1, c, t * 2.0),
+        LineKind::Double => {
+            let thin = t * 0.55;
+            let half = (thin + t * 0.55) / 2.0;
+            bar(&mut out, x0, x1, c + half, thin);
+            bar(&mut out, x0, x1, c - half, thin);
+        }
+        LineKind::Dotted => {
+            let mut x = x0;
+            while x < x1 - 1e-9 {
+                bar(&mut out, x, (x + t).min(x1), c, t);
+                x += t * 2.0;
+            }
+        }
+        LineKind::Dashed => {
+            let mut x = x0;
+            while x < x1 - 1e-9 {
+                bar(&mut out, x, (x + t * 3.0).min(x1), c, t);
+                x += t * 5.0;
+            }
+        }
+        LineKind::Wavy => {
+            let len = x1 - x0;
+            // Whole crests across the run, so it starts and ends on the
+            // line, and four segments of a line at the least.
+            let crests = (len / (t * 4.0)).round().max(1.0);
+            let period = len / crests;
+            let amp = t * 0.75;
+            let w = (t * 0.6).max(size * 0.004);
+            let n = ((crests * 12.0).ceil() as usize).clamp(4, 4096);
+            let wave = |i: usize| -> (f64, f64) {
+                let x = x0 + len * i as f64 / n as f64;
+                let phase = std::f64::consts::TAU * (x - x0) / period;
+                (x, c + amp * phase.sin())
+            };
+            for i in 0..n {
+                let (xa, ya) = wave(i);
+                let (xb, yb) = wave(i + 1);
+                out.move_to(Point::new(xa, ya + w / 2.0));
+                out.line_to(Point::new(xb, yb + w / 2.0));
+                out.line_to(Point::new(xb, yb - w / 2.0));
+                out.line_to(Point::new(xa, ya - w / 2.0));
+                out.close_path();
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -5887,10 +5982,12 @@ mod tests {
             angle_deg: 0.0,
             underline: false,
             strikethrough: false,
+            underline_style: Default::default(),
+            strike_style: Default::default(),
             fill: None,
             background: None,
             outline: None,
-            layout_only: false,
+            marks: Default::default(),
             features: Vec::new(),
             variations: Vec::new(),
             paragraph: None,
@@ -6860,6 +6957,65 @@ mod tests {
         assert!(checked > 0);
     }
 
+
+    /// The kind, the thickness and the place of a line are the ones it is
+    /// drawn with: measured on a run of spaces, where only the line shows.
+    #[test]
+    fn the_look_of_a_line_sets_kind_thickness_and_place() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let line = |kind: LineKind, thickness_pt: Option<f64>, offset_pt: Option<f64>| {
+            let mut s = span("    ");
+            s.underline = true;
+            s.underline_style = LineStyle {
+                kind,
+                thickness_pt,
+                offset_pt,
+                color: None,
+            };
+            f.outline(&[s]).path
+        };
+        // A single line 2 pt thick is 2 pt deep, under the baseline.
+        let one = line(LineKind::Single, Some(2.0), None);
+        let b = one.bounding_box();
+        assert!((b.height() - 2.0 * PT_MM).abs() < 0.02, "{b:?}");
+        assert!(b.y1 < 0.0, "under the baseline: {b:?}");
+        // Thick is twice as deep.
+        let thick = line(LineKind::Thick, Some(2.0), None).bounding_box();
+        assert!((thick.height() - 4.0 * PT_MM).abs() < 0.02, "{thick:?}");
+        // Double draws two lines, so taller than one.
+        let double = line(LineKind::Double, Some(2.0), None).bounding_box();
+        assert!(double.height() > b.height() * 1.4, "{double:?} {b:?}");
+        // Dotted and dashed leave gaps, the dashed one longer than the
+        // dotted.
+        let ink = |p: &BezPath| p.area().abs();
+        let dotted = line(LineKind::Dotted, Some(2.0), None);
+        let dashed = line(LineKind::Dashed, Some(2.0), None);
+        assert!(ink(&dotted) < ink(&one) && ink(&dashed) < ink(&one));
+        assert!(ink(&dotted) < ink(&dashed));
+        // The wave goes above and below where a plain line sits.
+        let wavy = line(LineKind::Wavy, Some(2.0), None).bounding_box();
+        assert!(wavy.height() > b.height() * 1.3, "{wavy:?} {b:?}");
+        assert!(wavy.y0 < b.y0 && wavy.y1 > b.y1, "{wavy:?} {b:?}");
+        // The place is measured from the baseline: 10 pt up puts the top
+        // edge of a 2 pt line at 11 pt.
+        let up = line(LineKind::Single, Some(2.0), Some(10.0)).bounding_box();
+        let want = 11.0 * PT_MM;
+        assert!((up.y1 - want).abs() < 0.02, "{up:?}");
+        // A line that is not one of the marks of its characters is not
+        // drawn (a part of a text with a colour of its own for the line).
+        let mut hidden = span("    ");
+        hidden.underline = true;
+        hidden.marks = tracedraw_core::document::Marks {
+            letters: true,
+            underline: false,
+            strike: false,
+        };
+        assert!(f.outline(&[hidden]).path.elements().is_empty());
+    }
+
     #[test]
     fn spans_only_laid_out_keep_their_room_but_are_not_drawn() {
         if !has_fonts() {
@@ -6868,10 +7024,10 @@ mod tests {
         let f = fonts();
         let whole = f.outline(&[span("ab"), span("cd")]);
         let mut hidden = span("ab");
-        hidden.layout_only = true;
+        hidden.marks = tracedraw_core::document::Marks::NONE;
         let mut ul = span("cd");
         ul.underline = true;
-        ul.layout_only = true;
+        ul.marks = tracedraw_core::document::Marks::NONE;
         let part = f.outline(&[hidden, span("cd")]);
         let none = f.outline(&[span("ab"), ul]);
         // The visible letters stay where they are in the whole text.
@@ -8248,8 +8404,10 @@ mod tests {
         let part = |first_drawn: bool| {
             let mut a = a.clone();
             let mut b = b.clone();
-            a.layout_only = !first_drawn;
-            b.layout_only = first_drawn;
+            let all = tracedraw_core::document::Marks::default();
+            let none = tracedraw_core::document::Marks::NONE;
+            a.marks = if first_drawn { all } else { none };
+            b.marks = if first_drawn { none } else { all };
             f.outline(&[a, b]).path.bounding_box()
         };
         let all = whole.path.bounding_box();

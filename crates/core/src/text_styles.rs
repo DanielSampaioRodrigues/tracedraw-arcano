@@ -19,7 +19,7 @@
 //! dropped and the text keeps its formatting. See
 //! docs/behavior/text-styles.md.
 
-use crate::document::{spans_apply, Shape, ShapeKind, TextSpan};
+use crate::document::{spans_apply, LineStyle, Shape, ShapeKind, TextSpan};
 use crate::paragraphs::{
     edit_paragraph_formats, paragraph_format, paragraph_of, paragraph_ranges, ParagraphFormat,
 };
@@ -52,6 +52,12 @@ pub struct CharFormat {
     pub underline: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
+    /// How the underline is drawn (kind, thickness, place, colour).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub underline_style: Option<LineStyle>,
+    /// How the strike line is drawn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strike_style: Option<LineStyle>,
     /// Range kerning, percent of the em.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tracking_pct: Option<f64>,
@@ -78,6 +84,11 @@ impl CharFormat {
             italic: over.italic.or(self.italic),
             underline: over.underline.or(self.underline),
             strikethrough: over.strikethrough.or(self.strikethrough),
+            underline_style: over
+                .underline_style
+                .clone()
+                .or_else(|| self.underline_style.clone()),
+            strike_style: over.strike_style.clone().or_else(|| self.strike_style.clone()),
             tracking_pct: over.tracking_pct.or(self.tracking_pct),
             baseline_shift_pt: over.baseline_shift_pt.or(self.baseline_shift_pt),
             fill: over.fill.clone().or_else(|| self.fill.clone()),
@@ -105,6 +116,12 @@ impl CharFormat {
         if let Some(v) = self.strikethrough {
             sp.strikethrough = v;
         }
+        if let Some(v) = &self.underline_style {
+            sp.underline_style = v.clone();
+        }
+        if let Some(v) = &self.strike_style {
+            sp.strike_style = v.clone();
+        }
         if let Some(v) = self.tracking_pct {
             sp.tracking_pct = v;
         }
@@ -128,6 +145,8 @@ impl CharFormat {
             italic: Some(sp.italic),
             underline: Some(sp.underline),
             strikethrough: Some(sp.strikethrough),
+            underline_style: Some(sp.underline_style.clone()),
+            strike_style: Some(sp.strike_style.clone()),
             tracking_pct: Some(sp.tracking_pct),
             baseline_shift_pt: Some(sp.baseline_shift_pt),
             fill: Some(sp.fill.clone()),
@@ -152,6 +171,8 @@ impl CharFormat {
             italic: keep(&self.italic, &base.italic),
             underline: keep(&self.underline, &base.underline),
             strikethrough: keep(&self.strikethrough, &base.strikethrough),
+            underline_style: keep(&self.underline_style, &base.underline_style),
+            strike_style: keep(&self.strike_style, &base.strike_style),
             tracking_pct: keep(&self.tracking_pct, &base.tracking_pct),
             baseline_shift_pt: keep(&self.baseline_shift_pt, &base.baseline_shift_pt),
             fill: keep(&self.fill, &base.fill),
@@ -175,6 +196,8 @@ impl CharFormat {
             italic: pick(&self.italic, &mask.italic),
             underline: pick(&self.underline, &mask.underline),
             strikethrough: pick(&self.strikethrough, &mask.strikethrough),
+            underline_style: pick(&self.underline_style, &mask.underline_style),
+            strike_style: pick(&self.strike_style, &mask.strike_style),
             tracking_pct: pick(&self.tracking_pct, &mask.tracking_pct),
             baseline_shift_pt: pick(&self.baseline_shift_pt, &mask.baseline_shift_pt),
             fill: pick(&self.fill, &mask.fill),
@@ -824,5 +847,54 @@ mod tests {
         // Without styles nothing is written.
         let plain = serde_json::to_string(&Document::new("t", Size::new(210.0, 297.0))).unwrap();
         assert!(!plain.contains("text_styles"));
+    }
+
+    /// A style carries the look of the underline and of the strike line,
+    /// for a character style made from text too.
+    #[test]
+    fn a_style_carries_the_look_of_the_two_lines() {
+        use crate::color::Color;
+        use crate::document::{LineKind, LineStyle};
+        let look = LineStyle {
+            kind: LineKind::Wavy,
+            thickness_pt: Some(1.5),
+            offset_pt: Some(-3.0),
+            color: Some(Color::rgb8(200, 0, 0)),
+        };
+        let mut sp = TextSpan::new("a", "Sans", 11.0);
+        sp.underline = true;
+        sp.strikethrough = true;
+        sp.underline_style = look.clone();
+        sp.strike_style = LineStyle {
+            kind: LineKind::Double,
+            ..LineStyle::default()
+        };
+        // A style made from the text sets both looks.
+        let chars = CharFormat::of(&sp);
+        let mut out = TextSpan::new("b", "Sans", 11.0);
+        chars.apply(&mut out);
+        assert_eq!(out.underline_style, look);
+        assert_eq!(out.strike_style.kind, LineKind::Double);
+        // One made from plain text says what differs, the looks included.
+        let plain = TextSpan::new("c", "Sans", 11.0);
+        let mine = CharFormat::of(&sp).differing_from(&CharFormat::of(&plain));
+        assert_eq!(mine.underline_style, Some(look.clone()));
+        // A style that sets neither leaves the text's own.
+        let bold = CharFormat {
+            bold: Some(true),
+            ..Default::default()
+        };
+        let mut span0 = sp.clone();
+        bold.apply(&mut span0);
+        assert_eq!(span0.underline_style, look);
+        assert_eq!(span0.strike_style.kind, LineKind::Double);
+        // Only what a mask names is taken.
+        let mask = CharFormat {
+            underline_style: Some(LineStyle::default()),
+            ..Default::default()
+        };
+        let only = chars.only(&mask);
+        assert_eq!(only.underline_style, Some(look));
+        assert_eq!(only.strike_style, None);
     }
 }

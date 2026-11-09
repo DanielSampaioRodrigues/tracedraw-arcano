@@ -3711,7 +3711,7 @@ mod tests {
         let mut i = 0usize;
         for sp in req.spans {
             for _ in sp.text.chars() {
-                if !sp.layout_only {
+                if sp.marks.letters {
                     let x = 10.0 * i as f64;
                     p.extend(Rect::new(x, 0.0, x + 8.0, 8.0).to_path(0.01));
                 }

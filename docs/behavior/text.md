@@ -624,7 +624,10 @@ the preferences, `text_sections_closed`).
   Normal, Italic, Bold, Bold-Italic for a family whose faces are not
   known, and the weight of a family named with one, "SemiBold") and the
   size list; range kerning (-50 to
-  200 %) and the underline button; the text fill, the characters'
+  200 %) and the underline button; the look of the underline and of the
+  strike line, a row each under the characters (the kind of line, its
+  thickness and place in points, and a colour of its own, see Underlines
+  and strike lines below); the text fill, the characters'
   background and the text outline, each as a kind (No Fill or Uniform
   Fill; none, hairline or a width in points for the outline), a colour
   and "..." for the Properties docker's full fill or outline settings.
@@ -661,6 +664,48 @@ the preferences, `text_sections_closed`).
   (`pick_drag_tests::a_size_picked_with_nothing_selected_asks_before_changing_the_default`).
   The Enter that applies a typed size does not answer the question.
 - Labels show without a trailing colon.
+
+## Underlines and strike lines
+
+An underline and a strike line are marks of the characters
+(\`TextSpan::underline\`, \`TextSpan::strikethrough\`), each with a look of its
+own (\`LineStyle\`): the kind of line, its thickness, where it sits and a
+colour of its own.
+
+| Kind | The line |
+|---|---|
+| Single | one line, the font's thickness |
+| Double | two thin lines, one under the other |
+| Thick | one line twice as thick |
+| Dotted | squares as wide as they are thick, gaps of the same |
+| Dashed | dashes three times the thickness, gaps of twice |
+| Wavy | a wave, its crests 0.75 of the thickness above the line |
+
+- The thickness and the place are in points; 0 leaves the font's own,
+  the values its font file carries. The place is the centre of the line,
+  in points from the baseline, positive up: an underline's own place is
+  under the baseline, a strike line's across the letters.
+- The colour is the characters' colour, or one of the line's own. A line
+  with a colour of its own is drawn in a part of the text of its own
+  (\`Shape::text_parts\`, \`TextSpan::marks\`), so the characters and the
+  line are each painted once, in their own colour; the renderer and the
+  exports draw the parts as they draw any text.
+- The look is set in the Text docker's Character section, beside the
+  underline button and beside Strikethrough: the kind of line, the
+  thickness, the place and "a colour of its own".
+- It is part of the character properties a text style sets
+  (\`CharFormat::underline_style\`, \`CharFormat::strike_style\`), so a
+  paragraph or a character style carries it, and a style made from the
+  text keeps it.
+- The line is part of the text's own outline: Convert to Curves, the SVG
+  and PDF exports and the drawing window show it with its look.
+- A `.tdraw` file keeps the whole look. A `.cdr` file keeps the underline
+  and the strike line on or off, drawn as a single thin line: its look is
+  read from the look a text is created with, not from the file.
+- Checked by \`text::tests::the_look_of_a_line_sets_kind_thickness_and_place\`,
+  \`document::tests::a_line_with_its_own_colour_is_drawn_in_a_part_of_its_own\`,
+  \`document::tests::a_plain_line_style_is_not_written_and_a_set_one_comes_back\`
+  and \`text_styles::tests::a_style_carries_the_look_of_the_two_lines\`.
 
 ## Glyphs docker
 

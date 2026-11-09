@@ -34,6 +34,7 @@ use crate::ui::propbar::{pic_button, Pic};
 use crate::ui::tips::RichTip;
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::{
+    document::{LineKind, LineStyle},
     Color, Fill, LeadingUnit, ParagraphStyle, ShapeKind, TextAlign, TextSpan, VerticalAlign,
 };
 
@@ -848,6 +849,27 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     sc |= ui
         .checkbox(&mut sp.strikethrough, tr("docker.strikethrough"))
         .changed();
+    // How the underline and the strike line are drawn, each with its own
+    // kind, thickness, place and colour (docs/behavior/text.md).
+    let black = app.doc().metadata.primary_color_mode.black();
+    let mut under = None;
+    let mut over = None;
+    ui.horizontal_wrapped(|ui| {
+        if line_look(ui, &mut sp.underline_style, Line::Underline, black) {
+            under = Some(sp.underline_style.clone());
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        if line_look(ui, &mut sp.strike_style, Line::Strike, black) {
+            over = Some(sp.strike_style.clone());
+        }
+    });
+    if let Some(style) = under {
+        apply_line_look(app, style, Line::Underline);
+    }
+    if let Some(style) = over {
+        apply_line_look(app, style, Line::Strike);
+    }
     // Wrapped, so the feature buttons never widen the docker.
     ui.horizontal_wrapped(|ui| {
         ui.label(tr("docker.opentype"));
@@ -877,6 +899,112 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
             s.features = features.clone();
         });
     }
+}
+
+/// Which of the two lines under the characters a row of settings is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Line {
+    Underline,
+    Strike,
+}
+
+/// The name of a kind of line.
+fn line_kind_name(kind: LineKind) -> String {
+    tr(match kind {
+        LineKind::Single => "docker.line_single",
+        LineKind::Double => "docker.line_double",
+        LineKind::Thick => "docker.line_thick",
+        LineKind::Dotted => "docker.line_dotted",
+        LineKind::Dashed => "docker.line_dashed",
+        LineKind::Wavy => "docker.line_wavy",
+    })
+}
+
+/// Give the selected characters the look of their underline or of their
+/// strike line (one undo step).
+pub(crate) fn apply_line_look(app: &mut App, style: LineStyle, which: Line) {
+    edit_spans(app, move |s| match which {
+        Line::Underline => s.underline_style = style.clone(),
+        Line::Strike => s.strike_style = style.clone(),
+    });
+}
+
+/// The kind, thickness, place and colour of the underline or the strike
+/// line as a row of the Character section; true when one of them changed.
+/// A thickness or a place of 0 leaves the font's own.
+fn line_look(ui: &mut Ui, style: &mut LineStyle, which: Line, black: Color) -> bool {
+    let mut changed = false;
+    let name = match which {
+        Line::Underline => tr("toolbar.underline"),
+        Line::Strike => tr("docker.strikethrough"),
+    };
+    ui.label(egui::RichText::new(name).size(11.0))
+        .rich_tip(tr("docker.line_look"));
+    let id = match which {
+        Line::Underline => "underline_line",
+        Line::Strike => "strike_line",
+    };
+    egui::ComboBox::from_id_salt((id, "kind"))
+        .width(70.0)
+        .selected_text(line_kind_name(style.kind))
+        .show_ui(ui, |ui| {
+            for kind in LineKind::ALL {
+                if ui
+                    .selectable_label(style.kind == kind, line_kind_name(kind))
+                    .clicked()
+                {
+                    style.kind = kind;
+                    changed = true;
+                }
+            }
+        })
+        .response
+        .rich_tip(tr("docker.line_kind"));
+    let mut thick = style.thickness_pt.unwrap_or(0.0);
+    if ui
+        .add_sized(
+            [56.0, 22.0],
+            NumField::new(&mut thick)
+                .range(0.0..=30.0)
+                .max_decimals(1)
+                .suffix(" pt".to_string()),
+        )
+        .rich_tip(tr("docker.line_thickness"))
+        .changed()
+    {
+        style.thickness_pt = (thick > 0.0).then_some(thick);
+        changed = true;
+    }
+    let mut place = style.offset_pt.unwrap_or(0.0);
+    if ui
+        .add_sized(
+            [56.0, 22.0],
+            NumField::new(&mut place)
+                .range(-30.0..=30.0)
+                .max_decimals(1)
+                .suffix(" pt".to_string()),
+        )
+        .rich_tip(tr("docker.line_position"))
+        .changed()
+    {
+        style.offset_pt = (place != 0.0).then_some(place);
+        changed = true;
+    }
+    let mut own = style.color.is_some();
+    if ui
+        .checkbox(&mut own, "")
+        .rich_tip(tr("docker.line_own_colour"))
+        .changed()
+    {
+        style.color = own.then_some(black);
+        changed = true;
+    }
+    if let Some(c) = &mut style.color {
+        if crate::ui::color_picker::color_button(ui, c) {
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// The text fill, the characters' background and the text outline rows of
@@ -1681,6 +1809,59 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| text_docker(app, ui));
         out.textures_delta.clear();
+    }
+
+
+    /// The look of the underline and of the strike line goes on the
+    /// selected text, one undo step each, and stays where it was put.
+    #[test]
+    fn the_line_looks_are_set_on_the_selected_text() {
+        use tracedraw_core::document::LineStyle;
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("ab", "Sans", 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        let look = LineStyle {
+            kind: LineKind::Wavy,
+            thickness_pt: Some(2.0),
+            offset_pt: Some(-4.0),
+            color: Some(Color::rgb8(200, 0, 0)),
+        };
+        let style_of = |app: &App, which: Line| match &app.doc().find_shape(id).expect("t").kind {
+            ShapeKind::Text { spans, .. } => match which {
+                Line::Underline => spans[0].underline_style.clone(),
+                Line::Strike => spans[0].strike_style.clone(),
+            },
+            k => panic!("{k:?}"),
+        };
+        apply_line_look(&mut app, look.clone(), Line::Underline);
+        assert_eq!(style_of(&app, Line::Underline), look);
+        assert_eq!(style_of(&app, Line::Strike), LineStyle::default());
+        app.undo();
+        // One step took it off again.
+        assert_eq!(style_of(&app, Line::Underline), LineStyle::default());
+        // The strike line has a look of its own.
+        let other = LineStyle {
+            kind: LineKind::Dotted,
+            ..LineStyle::default()
+        };
+        apply_line_look(&mut app, other.clone(), Line::Strike);
+        assert_eq!(style_of(&app, Line::Strike), other);
+        assert_eq!(style_of(&app, Line::Underline), LineStyle::default());
+        // Every kind the docker offers has a name of its own.
+        let names: Vec<String> = LineKind::ALL.into_iter().map(line_kind_name).collect();
+        assert_eq!(names.len(), 6);
+        for name in &names {
+            assert!(!name.is_empty() && !name.starts_with("docker."), "{name}");
+        }
     }
 
     /// A text in a variable font shows its axes in the Character section

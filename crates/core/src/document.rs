@@ -3,6 +3,7 @@
 
 use crate::geometry::{self, Affine, BezPath, Point, Rect, Shape as _, Vec2};
 use crate::id::{IdSource, LayerId, PageId, ShapeId};
+use crate::color::Color;
 use crate::style::{Fill, Stroke};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -1027,6 +1028,128 @@ pub struct FontVariation {
     pub value: f64,
 }
 
+/// How an underline or a strike line is drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineKind {
+    /// One line, the font's own thickness.
+    #[default]
+    Single,
+    /// Two thin lines, one under the other, a little apart.
+    Double,
+    /// One heavy line.
+    Thick,
+    /// Short squares, as a dotted rule.
+    Dotted,
+    /// Even dashes with gaps between them.
+    Dashed,
+    /// A wave, its crests a little above the line.
+    Wavy,
+}
+
+impl LineKind {
+    /// The kinds, in the order the menus and the docker offer them.
+    pub const ALL: [LineKind; 6] = [
+        LineKind::Single,
+        LineKind::Double,
+        LineKind::Thick,
+        LineKind::Dotted,
+        LineKind::Dashed,
+        LineKind::Wavy,
+    ];
+
+    /// The name kept in files and preferences.
+    pub fn id(self) -> &'static str {
+        match self {
+            LineKind::Single => "single",
+            LineKind::Double => "double",
+            LineKind::Thick => "thick",
+            LineKind::Dotted => "dotted",
+            LineKind::Dashed => "dashed",
+            LineKind::Wavy => "wavy",
+        }
+    }
+
+    /// The kind of `id`, else a single line.
+    pub fn from_id(id: &str) -> LineKind {
+        LineKind::ALL
+            .into_iter()
+            .find(|k| k.id() == id)
+            .unwrap_or(LineKind::Single)
+    }
+}
+
+/// The look of an underline or a strike line: its kind, its thickness,
+/// where it sits and a colour of its own. What it leaves unset comes
+/// from the font, which draws the line where it says it goes.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LineStyle {
+    pub kind: LineKind,
+    /// Thickness in points; `None` = the font's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thickness_pt: Option<f64>,
+    /// Where the line sits, in points from the baseline, positive up;
+    /// `None` = the font's own (an underline below the baseline, a
+    /// strike line across the letters).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_pt: Option<f64>,
+    /// A colour of its own; `None` = the characters' colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+}
+
+impl LineStyle {
+    /// Whether it draws as the font does, the look a text has when it is
+    /// not told otherwise: worth no line in a file.
+    pub fn is_plain(&self) -> bool {
+        *self == LineStyle::default()
+    }
+
+    /// The colour the line is drawn in: its own, or the fill of the
+    /// characters it belongs to.
+    pub fn fill_or(&self, characters: &Fill) -> Fill {
+        match self.color {
+            Some(c) => Fill::Solid(c),
+            None => characters.clone(),
+        }
+    }
+}
+
+/// What a part of a text with its own colours draws of its characters:
+/// the letters, the underline and the strike line, each of which may need
+/// a look (a colour) of its own. See [`Shape::text_parts`]. Never saved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Marks {
+    pub letters: bool,
+    pub underline: bool,
+    pub strike: bool,
+}
+
+impl Default for Marks {
+    fn default() -> Self {
+        Marks {
+            letters: true,
+            underline: true,
+            strike: true,
+        }
+    }
+}
+
+impl Marks {
+    /// Draws nothing of these characters (they are laid out only).
+    pub const NONE: Marks = Marks {
+        letters: false,
+        underline: false,
+        strike: false,
+    };
+
+    /// Whether it draws anything of them.
+    pub fn any(self) -> bool {
+        self.letters || self.underline || self.strike
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextSpan {
     pub text: String,
@@ -1054,6 +1177,12 @@ pub struct TextSpan {
     pub underline: bool,
     #[serde(default)]
     pub strikethrough: bool,
+    /// How the underline is drawn; plain = as the font draws it.
+    #[serde(default, skip_serializing_if = "LineStyle::is_plain")]
+    pub underline_style: LineStyle,
+    /// How the strike line is drawn; plain = as the font draws it.
+    #[serde(default, skip_serializing_if = "LineStyle::is_plain")]
+    pub strike_style: LineStyle,
     /// Per-span fill override (character colour); `None` = object fill.
     #[serde(default)]
     pub fill: Option<Fill>,
@@ -1066,11 +1195,10 @@ pub struct TextSpan {
     /// object's outline off these characters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outline: Option<Stroke>,
-    /// Laid out but not drawn: set only on the parts a text with its own
-    /// character colours is drawn in (see [`Shape::text_parts`]), never
-    /// saved.
+    /// What the part of a text with its own character colours draws of
+    /// these characters (see [`Shape::text_parts`]); never saved.
     #[serde(skip)]
-    pub layout_only: bool,
+    pub marks: Marks,
     /// OpenType features to enable, e.g. "liga", "smcp", "frac".
     #[serde(default)]
     pub features: Vec<String>,
@@ -1109,10 +1237,12 @@ impl TextSpan {
             angle_deg: 0.0,
             underline: false,
             strikethrough: false,
+            underline_style: LineStyle::default(),
+            strike_style: LineStyle::default(),
             fill: None,
             background: None,
             outline: None,
-            layout_only: false,
+            marks: Marks::default(),
             features: Vec::new(),
             variations: Vec::new(),
             paragraph: None,
@@ -2529,26 +2659,25 @@ impl Shape {
         Some(s)
     }
 
-    /// A text whose characters have their own fill or outline, as the
-    /// texts it is drawn in: one per look (fill and outline), in the order
-    /// the looks first appear, each laid out as the whole text with the
-    /// other characters left undrawn (`TextSpan::layout_only`). The
-    /// character backgrounds and the frame background are left out of the
-    /// parts (they are drawn once under the text) and only the first part
-    /// keeps the shadow. `None` for other shapes and for text whose
-    /// characters all take the object's fill and outline.
+    /// A text whose characters have their own fill or outline, or an
+    /// underline or a strike line with a colour of its own, as the texts
+    /// it is drawn in: one per look (fill and outline), in the order the
+    /// looks first appear, and one per colour a line needs on its own;
+    /// each laid out as the whole text with the other marks left undrawn
+    /// (`TextSpan::marks`). The character backgrounds and the frame
+    /// background are left out of the parts (they are drawn once under the
+    /// text) and only the first part keeps the shadow. `None` for other
+    /// shapes and for text whose characters all take the object's fill and
+    /// outline and whose lines take the characters' colour.
     pub fn text_parts(&self) -> Option<Vec<Shape>> {
         let ShapeKind::Text { spans, .. } = &self.kind else {
             return None;
         };
-        if spans.iter().any(|s| s.layout_only)
-            || spans
-                .iter()
-                .all(|s| s.fill.is_none() && s.outline.is_none())
-        {
+        // A part is not split again.
+        if spans.iter().any(|s| s.marks != Marks::default()) {
             return None;
         }
-        let look = |s: &TextSpan| -> (Fill, Option<Stroke>) {
+        let colour_of = |s: &TextSpan| -> (Fill, Option<Stroke>) {
             let fill = s.fill.clone().unwrap_or_else(|| self.fill.clone());
             let stroke = match &s.outline {
                 Some(o) if o.width > 0.0 => Some(o.clone()),
@@ -2557,24 +2686,67 @@ impl Shape {
             };
             (fill, stroke)
         };
+        let drawn = spans.iter().filter(|s| s.char_count() > 0);
+        if drawn.clone().all(|s| {
+            s.fill.is_none()
+                && s.outline.is_none()
+                && !s.underline_style.color.is_some_and(|_| s.underline)
+                && !s.strike_style.color.is_some_and(|_| s.strikethrough)
+        }) {
+            return None;
+        }
         let mut looks: Vec<(Fill, Option<Stroke>)> = Vec::new();
-        for s in spans.iter().filter(|s| s.char_count() > 0) {
-            let l = look(s);
-            if !looks.contains(&l) {
-                looks.push(l);
+        let mut line_inks: Vec<Fill> = Vec::new();
+        for s in drawn {
+            let (fill, stroke) = colour_of(s);
+            let look = (fill.clone(), stroke);
+            if !looks.contains(&look) {
+                looks.push(look);
+            }
+            for (on, style) in [(s.underline, &s.underline_style), (s.strikethrough, &s.strike_style)]
+            {
+                let ink = style.fill_or(&fill);
+                if on && ink != fill && !line_inks.contains(&ink) {
+                    line_inks.push(ink);
+                }
             }
         }
-        let parts = looks
+        if looks.is_empty() {
+            return None;
+        }
+        // Nothing to split: one look, the object's own, and no line in a
+        // colour of its own (a line colour equal to the characters' one).
+        if line_inks.is_empty() && looks.len() == 1 && looks[0] == (self.fill.clone(), self.stroke.clone())
+        {
+            return None;
+        }
+        let mut inks: Vec<(Fill, Option<Stroke>)> = looks;
+        inks.extend(line_inks.into_iter().map(|f| (f, None)));
+        let parts = inks
             .into_iter()
             .enumerate()
             .map(|(i, (fill, stroke))| {
                 let mut part = self.clone();
                 if let ShapeKind::Text { spans, para, .. } = &mut part.kind {
                     for s in spans.iter_mut() {
-                        s.layout_only = look(s) != (fill.clone(), stroke.clone());
+                        let (mine, _) = colour_of(s);
+                        let (under, strike) = (
+                            s.underline && s.underline_style.fill_or(&mine) == fill,
+                            s.strikethrough && s.strike_style.fill_or(&mine) == fill,
+                        );
+                        let letters = colour_of(s) == (fill.clone(), stroke.clone());
+                        s.marks = Marks {
+                            letters,
+                            underline: under,
+                            strike,
+                        };
                         s.background = None;
                         s.fill = None;
                         s.outline = None;
+                        // The part's fill is the colour of its lines; a part
+                        // is never split again.
+                        s.underline_style.color = None;
+                        s.strike_style.color = None;
                     }
                     para.frame_fill = None;
                 }
@@ -7722,7 +7894,7 @@ mod tests {
             match &p.kind {
                 ShapeKind::Text { spans, .. } => spans
                     .iter()
-                    .filter(|s| !s.layout_only)
+                    .filter(|s| s.marks.letters)
                     .map(|s| s.text.as_str())
                     .collect(),
                 _ => String::new(),
@@ -7769,20 +7941,128 @@ mod tests {
     }
 
     #[test]
-    fn character_outlines_are_saved_and_layout_only_is_not() {
+    fn character_outlines_are_saved_and_the_marks_of_a_part_are_not() {
         let mut s = TextSpan::new("a", "Arial", 12.0);
         s.outline = Some(Stroke::default());
-        s.layout_only = true;
+        s.marks = Marks::NONE;
         let json = serde_json::to_string(&s).expect("json");
-        assert!(!json.contains("layout_only"), "{json}");
+        assert!(!json.contains("marks"), "{json}");
         let back: TextSpan = serde_json::from_str(&json).expect("back");
         assert_eq!(back.outline, Some(Stroke::default()));
-        assert!(!back.layout_only);
+        assert_eq!(back.marks, Marks::default());
         // Older files without the field read as no override.
         let old: TextSpan = serde_json::from_str(
             r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false}"#,
         )
         .expect("old");
         assert_eq!(old.outline, None);
+    }
+
+    /// An underline with a colour of its own goes in a part of its own,
+    /// drawn once: the characters in the object's fill, the line in its
+    /// colour.
+    #[test]
+    fn a_line_with_its_own_colour_is_drawn_in_a_part_of_its_own() {
+        use crate::color::Color;
+        let red = Color::rgb8(255, 0, 0);
+        let mut a = TextSpan::new("ab", "Arial", 12.0);
+        a.underline = true;
+        a.underline_style.color = Some(red);
+        let mut b = TextSpan::new("cd", "Arial", 12.0);
+        b.strikethrough = true;
+        let mut shape = Shape::new(
+            ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![a, b],
+                origin: Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        shape.fill = Fill::Solid(Color::BLACK);
+        let parts = shape.text_parts().expect("parts");
+        assert_eq!(parts.len(), 2);
+        let marks = |p: &Shape| -> Vec<Marks> {
+            match &p.kind {
+                ShapeKind::Text { spans, .. } => spans.iter().map(|s| s.marks).collect(),
+                _ => Vec::new(),
+            }
+        };
+        // The characters and the strike line (which takes their colour) in
+        // the black part; the red underline in the red one, where nothing
+        // else is drawn.
+        assert_eq!(
+            marks(&parts[0]),
+            vec![
+                Marks {
+                    letters: true,
+                    underline: false,
+                    strike: false,
+                },
+                Marks {
+                    letters: true,
+                    underline: false,
+                    strike: true,
+                },
+            ]
+        );
+        assert_eq!(parts[0].fill, Fill::Solid(Color::BLACK));
+        assert_eq!(
+            marks(&parts[1]),
+            vec![
+                Marks {
+                    letters: false,
+                    underline: true,
+                    strike: false,
+                },
+                Marks::NONE,
+            ]
+        );
+        assert_eq!(parts[1].fill, Fill::Solid(red));
+        assert!(parts[1].stroke.is_none());
+        // No part is split again, and a text whose lines take the
+        // characters' colour stays whole.
+        assert!(parts.iter().all(|p| p.text_parts().is_none()));
+        let mut plain = shape.clone();
+        if let ShapeKind::Text { spans, .. } = &mut plain.kind {
+            spans[0].underline_style.color = None;
+        }
+        assert!(plain.text_parts().is_none());
+        // A line colour that is the characters' own needs no part either:
+        // the line goes with them (and a part of a part would never end).
+        let mut same = shape.clone();
+        if let ShapeKind::Text { spans, .. } = &mut same.kind {
+            spans[0].underline_style.color = Some(Color::BLACK);
+        }
+        assert!(same.text_parts().is_none());
+    }
+
+    /// A line style left plain is not written; one that is set is, and
+    /// files without it read as the plain look.
+    #[test]
+    fn a_plain_line_style_is_not_written_and_a_set_one_comes_back() {
+        let mut s = TextSpan::new("a", "Arial", 12.0);
+        s.underline = true;
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(!json.contains("underline_style"), "{json}");
+        let back: TextSpan = serde_json::from_str(&json).expect("back");
+        assert!(back.underline_style.is_plain());
+        let old: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false,"underline":true}"#,
+        )
+        .expect("old");
+        assert_eq!(old.underline_style, LineStyle::default());
+        let mut t = TextSpan::new("b", "Arial", 12.0);
+        t.strikethrough = true;
+        t.strike_style.kind = LineKind::Double;
+        t.strike_style.thickness_pt = Some(1.5);
+        t.strike_style.offset_pt = Some(3.0);
+        t.strike_style.color = Some(Color::rgb8(1, 2, 3));
+        let json = serde_json::to_string(&t).expect("json");
+        assert!(json.contains("strike_style"), "{json}");
+        let back: TextSpan = serde_json::from_str(&json).expect("back");
+        assert_eq!(back.strike_style, t.strike_style);
     }
 }
