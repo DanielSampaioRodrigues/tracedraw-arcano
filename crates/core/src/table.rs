@@ -921,6 +921,70 @@ mod tests {
         s
     }
 
+
+    /// Transposing turns the rows into columns and back: the cells keep
+    /// their text, their merge and their side borders turned with them,
+    /// the sizes swap and the table keeps its top left corner.
+    #[test]
+    fn transposing_turns_the_rows_into_columns() {
+        use crate::document::TextSpan;
+        let mut t = Table::new(Rect::new(10.0, 10.0, 130.0, 40.0), 2, 3, None);
+        let (w, h) = (t.rect.width(), t.rect.height());
+        let (widths, heights) = (t.col_widths.clone(), t.row_heights.clone());
+        // "r0c0" and so on in each cell, so the places are told apart.
+        for cell in t.cells.iter_mut() {
+            let text = format!("r{}c{}", cell.row, cell.col);
+            cell.text = vec![TextSpan::new(text, "Arial", 10.0)];
+        }
+        // A merged cell (rows 0..=1 of column 0) and a border of its own.
+        t.cells.retain(|c| !(c.col == 0 && c.row == 1));
+        if let Some(i) = t.cell_index(0, 0) {
+            t.cells[i].row_span = 2;
+            t.cells[i].borders.left = EdgeBorder::None;
+            t.cells[i].borders.top = EdgeBorder::Stroke(Box::new(red()));
+        }
+        t.spacing = Some([2.0, 5.0]);
+        t.margins = Some(CellMargins {
+            left: 1.0,
+            right: 2.0,
+            top: 3.0,
+            bottom: 4.0,
+        });
+        t.transpose();
+        assert_eq!((t.rows(), t.cols()), (3, 2));
+        assert_eq!(t.col_widths, heights);
+        assert_eq!(t.row_heights, widths);
+        // The top left corner stays, the width and height swap.
+        assert!((t.rect.x0 - 10.0).abs() < 1e-9);
+        assert!((t.rect.y1 - 40.0).abs() < 1e-9);
+        assert!((t.rect.width() - h).abs() < 1e-9, "{:?}", t.rect);
+        assert!((t.rect.height() - w).abs() < 1e-9, "{:?}", t.rect);
+        // Each cell keeps its text and is one row down and one column right.
+        for cell in &t.cells {
+            let text = |sp: &TextSpan| sp.text.clone();
+            let want = format!("r{}c{}", cell.col, cell.row);
+            assert_eq!(cell.text.first().map(text).as_deref(), Some(want.as_str()));
+        }
+        // The merge turned: two rows became two columns.
+        let merged = t.cells[t.cell_index(0, 0).expect("the merged cell")].clone();
+        assert_eq!((merged.row_span, merged.col_span), (1, 2));
+        // Its borders turned over the diagonal: the stroke that was on the
+        // top edge is on the left one now, and the side left bare is on the
+        // top; the sides with the table's border stay with the table.
+        assert!(matches!(merged.borders.left, EdgeBorder::Stroke(_)));
+        assert_eq!(merged.borders.top, EdgeBorder::None);
+        assert!(matches!(merged.borders.right, EdgeBorder::Table));
+        assert!(matches!(merged.borders.bottom, EdgeBorder::Table));
+        // The spacing and the margins turn with the cells.
+        assert_eq!(t.spacing, Some([5.0, 2.0]));
+        let m = t.margins.expect("margins");
+        assert_eq!((m.left, m.right, m.top, m.bottom), (3.0, 4.0, 1.0, 2.0));
+        // Twice is where it began.
+        t.transpose();
+        assert_eq!((t.rows(), t.cols()), (2, 3));
+        assert_eq!(t.col_widths, widths);
+        assert_eq!(t.row_heights, heights);
+    }
     /// Rows and columns removed from the end (the property bar's counts,
     /// #1680) and from the middle: the cells in them go, a merged cell
     /// reaching into them keeps the rest, and the last row or column

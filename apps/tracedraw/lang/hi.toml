@@ -2428,6 +2428,7 @@ menu.table.select_row = "पंक्ति"
 menu.table.select_table = "तालिका"
 menu.table.split_into_columns = "कॉलम में विभाजित करें..."
 menu.table.split_into_rows = "पंक्तियों में विभाजित करें..."
+menu.table.transpose = "पलटें" # mt
 menu.table.unmerge_cells = "सेल अलग करें"
 menu.text = "टेक्स्ट"
 menu.text.align_to_baseline = "बेसलाइन से संरेखित करें"

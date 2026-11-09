@@ -2428,6 +2428,7 @@ menu.table.select_row = "صف"
 menu.table.select_table = "جدول"
 menu.table.split_into_columns = "تقسيم إلى أعمدة..."
 menu.table.split_into_rows = "تقسيم إلى صفوف..."
+menu.table.transpose = "تبديل" # mt
 menu.table.unmerge_cells = "إلغاء دمج الخلايا"
 menu.text = "نص"
 menu.text.align_to_baseline = "محاذاة على الخط الأساسي"

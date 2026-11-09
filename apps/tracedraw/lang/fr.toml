@@ -2428,6 +2428,7 @@ menu.table.select_row = "Ligne"
 menu.table.select_table = "Tableau"
 menu.table.split_into_columns = "Fractionner en colonnes..."
 menu.table.split_into_rows = "Fractionner en lignes..."
+menu.table.transpose = "Transposer" # mt
 menu.table.unmerge_cells = "Annuler la fusion des cellules"
 menu.text = "Texte"
 menu.text.align_to_baseline = "Aligner sur la ligne de base"

@@ -25,6 +25,8 @@ pub enum TableOp {
     DistributeCols,
     Merge,
     Unmerge,
+    /// Turn the table over its diagonal: rows become columns.
+    Transpose,
 }
 
 /// What separates the columns of Table > Convert Text to Table.
@@ -694,6 +696,18 @@ impl App {
             .unwrap_or_else(|| vec![(0, 0)]);
         let (ar, ac) = sel.first().copied().unwrap_or((0, 0));
         match op {
+            TableOp::Transpose => {
+                t.transpose();
+                // The selected cells turn with the table, the active one
+                // staying where it was in it.
+                if let Some(e) = self.table_edit.as_mut().filter(|e| e.shape == id) {
+                    for (r, c) in e.cells.iter_mut() {
+                        std::mem::swap(r, c);
+                    }
+                }
+                self.set_table_as(id, t, "Transpose Table");
+                return;
+            }
             TableOp::RowAbove | TableOp::RowBelow => {
                 // As many rows as the selection covers.
                 let n = self.table_selection_extent().0;
@@ -1151,6 +1165,43 @@ mod tests {
         assert!((r.x0 - 10.0).abs() < 1e-9 && (r.x1 - 40.0).abs() < 1e-9);
         assert!((r.y0 - 30.0).abs() < 1e-9 && (r.y1 - 40.0).abs() < 1e-9);
         assert_eq!(t.rect, Rect::new(10.0, 10.0, 130.0, 40.0));
+    }
+
+
+    /// Transpose turns the table over its diagonal in one undo step: the
+    /// rows become columns, the sizes swap and the cell being edited turns
+    /// with it.
+    #[test]
+    fn transposing_a_table_swaps_rows_and_columns() {
+        let mut app = App::headless();
+        app.table_rows = 2;
+        app.table_cols = 3;
+        app.create_table(Rect::new(10.0, 10.0, 130.0, 40.0));
+        let (id, t) = app.selected_table().expect("a table");
+        let (w, h) = (t.rect.width(), t.rect.height());
+        // A cell selected in the Table tool, with its caret.
+        app.table_edit = Some(TableEdit::new(id, vec![(1, 2)], 0));
+        let depth = app.engine.history_labels().0.len();
+        app.table_op(TableOp::Transpose);
+        assert_eq!(
+            app.engine.history_labels().0.len(),
+            depth + 1,
+            "one undo step"
+        );
+        let (_, t) = app.selected_table().expect("a table");
+        assert_eq!((t.rows(), t.cols()), (3, 2));
+        assert!(
+            (t.rect.width() - h).abs() < 1e-9 && (t.rect.height() - w).abs() < 1e-9,
+            "{:?}",
+            t.rect
+        );
+        // The cell being edited turned with the table.
+        let cells = app.table_edit.as_ref().expect("the edit").cells.clone();
+        assert_eq!(cells, vec![(2, 1)]);
+        // One undo takes it back.
+        app.undo();
+        let (_, t) = app.selected_table().expect("a table");
+        assert_eq!((t.rows(), t.cols()), (2, 3));
     }
 
     /// The selected text's table: its cells' texts row by row.

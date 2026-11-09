@@ -2428,6 +2428,7 @@ menu.table.select_row = "行"
 menu.table.select_table = "表"
 menu.table.split_into_columns = "列に分割..."
 menu.table.split_into_rows = "行に分割..."
+menu.table.transpose = "行列を入れ替え" # mt
 menu.table.unmerge_cells = "セルの結合を解除"
 menu.text = "テキスト"
 menu.text.align_to_baseline = "ベースラインに揃える"

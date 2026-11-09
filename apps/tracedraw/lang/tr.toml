@@ -2428,6 +2428,7 @@ menu.table.select_row = "Satır"
 menu.table.select_table = "Tablo"
 menu.table.split_into_columns = "Sütunlara Böl..."
 menu.table.split_into_rows = "Satırlara Böl..."
+menu.table.transpose = "Devir" # mt
 menu.table.unmerge_cells = "Hücre Birleştirmeyi Kaldır"
 menu.text = "Metin"
 menu.text.align_to_baseline = "Taban Çizgisine Hizala"

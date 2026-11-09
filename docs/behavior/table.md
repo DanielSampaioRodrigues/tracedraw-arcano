@@ -133,6 +133,19 @@ cell does nothing and says so on the status bar.
   (`table::tests::text_becomes_a_table_by_its_separator`,
   `ui::dialogs::tests::convert_text_to_table_takes_the_chosen_separator`)
   Convert Table to Text: cells joined by tabs, rows by newlines.
+- Transpose: the table is turned over its diagonal, its rows becoming
+  columns and its columns rows. Each cell keeps its text, background and
+  alignment and takes the turned place: a cell spanning two rows spans
+  two columns after, and its borders turn with it (the stroke that was on
+  the top edge is on the left one, and so on), as do the cell margins and
+  the spacing of separated borders. The column widths become row heights
+  and the row heights column widths, so the table keeps its drawing, and
+  it keeps the top left corner of its rectangle with the width and the
+  height swapped. With the Table tool, the cells being edited turn with
+  it, the active cell staying in the same cell. One undo step
+  (`Table::transpose`, `TableOp::Transpose`).
+  (`tracedraw_core::table::tests::transposing_turns_the_rows_into_columns`,
+  `table::tests::transposing_a_table_swaps_rows_and_columns`)
 - Every change is one `SetShapeKind` command after `Table::refit`, so the
   table rectangle always equals the sum of its rows and columns.
 

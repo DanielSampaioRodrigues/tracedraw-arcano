@@ -2428,6 +2428,7 @@ menu.table.select_row = "Řádek"
 menu.table.select_table = "Tabulka"
 menu.table.split_into_columns = "Rozdělit na sloupce..."
 menu.table.split_into_rows = "Rozdělit na řádky..."
+menu.table.transpose = "Transponovat" # mt
 menu.table.unmerge_cells = "Zrušit sloučení buněk"
 menu.text = "Text"
 menu.text.align_to_baseline = "Zarovnat na účaří"

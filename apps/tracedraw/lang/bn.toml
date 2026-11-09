@@ -2428,6 +2428,7 @@ menu.table.select_row = "সারি"
 menu.table.select_table = "টেবিল"
 menu.table.split_into_columns = "কলামে বিভক্ত করুন..."
 menu.table.split_into_rows = "সারিতে বিভক্ত করুন..."
+menu.table.transpose = "স্থানান্তর" # mt
 menu.table.unmerge_cells = "সেল আলাদা করুন"
 menu.text = "টেক্সট"
 menu.text.align_to_baseline = "বেসলাইনে সারিবদ্ধ"

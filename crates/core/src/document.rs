@@ -1884,6 +1884,31 @@ impl Table {
             self.rect.y1,
         );
     }
+
+    /// Turn the table over its diagonal: its rows become columns and its
+    /// columns rows. Each cell keeps its text, fill and alignment and takes
+    /// the place turned (a cell spanning two rows spans two columns
+    /// after), its borders and margins turned with it; the table keeps the
+    /// top left corner of its rectangle, its width and height swapped.
+    pub fn transpose(&mut self) {
+        std::mem::swap(&mut self.col_widths, &mut self.row_heights);
+        for c in self.cells.iter_mut() {
+            std::mem::swap(&mut c.row, &mut c.col);
+            std::mem::swap(&mut c.row_span, &mut c.col_span);
+            // Over the diagonal the top edge turns into the left one.
+            std::mem::swap(&mut c.borders.top, &mut c.borders.left);
+            std::mem::swap(&mut c.borders.bottom, &mut c.borders.right);
+        }
+        self.cells.sort_by_key(|c| (c.row, c.col));
+        if let Some(spacing) = self.spacing.as_mut() {
+            spacing.swap(0, 1);
+        }
+        if let Some(m) = self.margins.as_mut() {
+            std::mem::swap(&mut m.left, &mut m.top);
+            std::mem::swap(&mut m.right, &mut m.bottom);
+        }
+        self.refit();
+    }
 }
 
 /// How the letters of a text on a path follow it.

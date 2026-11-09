@@ -2428,6 +2428,7 @@ menu.table.select_row = "Rij"
 menu.table.select_table = "Tabel"
 menu.table.split_into_columns = "Splitsen in kolommen..."
 menu.table.split_into_rows = "Splitsen in rijen..."
+menu.table.transpose = "Transponeren" # mt
 menu.table.unmerge_cells = "Samenvoegen van cellen opheffen"
 menu.text = "Tekst"
 menu.text.align_to_baseline = "Uitlijnen op basislijn"

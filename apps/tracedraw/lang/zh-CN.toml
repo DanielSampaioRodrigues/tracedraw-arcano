@@ -2428,6 +2428,7 @@ menu.table.select_row = "行"
 menu.table.select_table = "表格"
 menu.table.split_into_columns = "拆分为列..."
 menu.table.split_into_rows = "拆分为行..."
+menu.table.transpose = "转置" # mt
 menu.table.unmerge_cells = "取消合并单元格"
 menu.text = "文本"
 menu.text.align_to_baseline = "对齐基线"

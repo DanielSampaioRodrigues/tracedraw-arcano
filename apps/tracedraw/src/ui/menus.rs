@@ -3787,6 +3787,10 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.table.split_into_columns", "", in_table) {
         app.open_table_count(crate::ui::table_bar::TableCountKind::SplitCols);
     }
+    sep(ui);
+    if item(ui, "menu.table.transpose", "", in_table) {
+        app.table_op(crate::table::TableOp::Transpose);
+    }
 }
 
 /// Tools > Macros: the Macro Manager, Run Macro, the editor, loading a

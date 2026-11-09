@@ -2428,6 +2428,7 @@ menu.table.select_row = "Riga"
 menu.table.select_table = "Tabella"
 menu.table.split_into_columns = "Dividi in colonne..."
 menu.table.split_into_rows = "Dividi in righe..."
+menu.table.transpose = "Trasponi" # mt
 menu.table.unmerge_cells = "Separa celle"
 menu.text = "Testo"
 menu.text.align_to_baseline = "Allinea alla linea di base"

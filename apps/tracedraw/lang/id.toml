@@ -2428,6 +2428,7 @@ menu.table.select_row = "Baris"
 menu.table.select_table = "Tabel"
 menu.table.split_into_columns = "Bagi menjadi Kolom..."
 menu.table.split_into_rows = "Bagi menjadi Baris..."
+menu.table.transpose = "Transpos" # mt
 menu.table.unmerge_cells = "Pisahkan Sel"
 menu.text = "Teks"
 menu.text.align_to_baseline = "Ratakan ke Garis Dasar"

@@ -2428,6 +2428,7 @@ menu.table.select_row = "Wiersz"
 menu.table.select_table = "Tabela"
 menu.table.split_into_columns = "Podziel na kolumny..."
 menu.table.split_into_rows = "Podziel na wiersze..."
+menu.table.transpose = "Transponuj" # mt
 menu.table.unmerge_cells = "Rozdziel komórki"
 menu.text = "Tekst"
 menu.text.align_to_baseline = "Wyrównaj do linii bazowej"

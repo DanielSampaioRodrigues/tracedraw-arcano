@@ -2428,6 +2428,7 @@ menu.table.select_row = "Строку"
 menu.table.select_table = "Таблицу"
 menu.table.split_into_columns = "Разбить на столбцы..."
 menu.table.split_into_rows = "Разбить на строки..."
+menu.table.transpose = "Транспонировать" # mt
 menu.table.unmerge_cells = "Разделить ячейки"
 menu.text = "Текст"
 menu.text.align_to_baseline = "Выровнять по базовой линии"
