@@ -110,6 +110,12 @@ pub enum Pic {
     FrontMinusBack,
     BackMinusFront,
     Boundary,
+    /// The shaping operations that make several objects of the selection:
+    /// the regions marked, the outline turned into a band, one colour of
+    /// the merge whole and the other dashed.
+    Divide,
+    OutlineStroke,
+    Merge,
     AlignDistribute,
     // Text: alignments, bullets, drop cap, the Text docker, editing, and
     // wrapping paragraph text around an object.
@@ -1153,6 +1159,34 @@ fn draw_arrange_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
             v.extend(arc(10.0, 10.0, 6.0, -80.0, 170.0));
             v.push(p(0.5, 11.0));
             dashed(v);
+        }
+        Pic::Divide => {
+            // The pieces pulled a little apart: every region an object.
+            let apart = |pts: Vec<Pos2>, dx: f32, dy: f32| -> Vec<Pos2> {
+                pts.iter().map(|p| *p + Vec2::new(dx * k, dy * k)).collect()
+            };
+            fill_polygon(painter, &apart(back_minus_front(), -0.9, -0.9), color, edge);
+            fill_polygon(painter, &both(), color, edge);
+            fill_polygon(painter, &apart(front_minus_back(), 0.9, 0.9), color, edge);
+        }
+        Pic::OutlineStroke => {
+            // A line whose outline becomes the band it covers: the line
+            // still a line where it runs out of the band, the band filled.
+            let (a, b) = (p(1.5, 14.5), p(14.5, 1.5));
+            let (t0, t1) = (0.2, 0.8);
+            let at = |t: f32| a + (b - a) * t;
+            let (m, e) = (at(t0), at(t1));
+            let d = e - m;
+            let len = d.length().max(1e-6);
+            let n = Vec2::new(-d.y, d.x) / len * (1.5 * k);
+            painter.line_segment([a, b], thin);
+            fill_polygon(painter, &[m + n, e + n, e - n, m - n], color, edge);
+        }
+        Pic::Merge => {
+            // One object per colour, the one in front keeping the whole
+            // overlap: it is filled whole, the other object dashed.
+            dashed(square.to_vec());
+            fill_polygon(painter, &circle(), color, edge);
         }
         Pic::Combine => {
             // One object with both outlines: where they overlap is a hole.
@@ -3186,6 +3220,27 @@ pub fn arrange_part(app: &mut App, ui: &mut Ui) -> bool {
             "docker.boundary_hint",
             Shaping::Boundary,
             false,
+        ),
+        (
+            Pic::Divide,
+            "menu.object.divide",
+            "docker.divide_hint",
+            Shaping::Divide,
+            true,
+        ),
+        (
+            Pic::OutlineStroke,
+            "menu.object.outline_stroke",
+            "docker.outline_stroke_hint",
+            Shaping::OutlineStroke,
+            false,
+        ),
+        (
+            Pic::Merge,
+            "menu.object.merge",
+            "docker.merge_hint",
+            Shaping::Merge,
+            true,
         ),
     ] {
         let on = if need_many {

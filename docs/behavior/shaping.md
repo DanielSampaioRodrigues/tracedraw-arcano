@@ -31,6 +31,9 @@ its result are one undo step. Checked by
 | Front Minus Back | 2 | the front object without the ones behind (its attributes) | nothing |
 | Back Minus Front | 2 | the back object without the ones in front (its attributes) | nothing |
 | Boundary | 1 | an outline around the selection (the target's attributes) | every object |
+| Divide | 2 | every region where the objects meet, each an object | nothing |
+| Outline Stroke | 1 | each object's outline, as a filled object | nothing |
+| Merge | 2 | one object per fill colour | nothing |
 
 The result goes on top of the active layer and becomes the selection; an
 empty result changes nothing and the status bar says so. Each operation
@@ -73,6 +76,40 @@ of the group's first object with a fill. The result took the group's own
 attributes, none, and showed only in Wireframe (#539,
 `back_minus_front_with_a_group_keeps_each_objects_colours`).
 
+## Divide, Outline Stroke and Merge
+
+Three operations build objects of their own from the selection and keep
+none of the originals, so they never ask what to leave.
+
+Divide (`ops::divide_shapes`, `shaping::divide`) cuts the outlines where
+they cross and gives every region an object of its own, filled with the
+fill of the topmost object that holds the region whole (the part of the
+region left outside that object is empty): where two objects overlap, the
+region they share takes the front one's fill. The region itself says
+which object it came from, not a point of its box, which lands on the
+boundaries where the regions meet. Nothing is lost and nothing is counted
+twice, the regions tiling the union of the objects. Four objects make up
+to fifteen regions and are the most worked out; with five or more the
+status bar says nothing was divided.
+
+Outline Stroke (`ops::outline_strokes`) replaces each object by a filled
+object in the outline's colour, as wide as the outline is drawn: centred,
+inside or outside, with its caps, joins, dashes (fitted to the corners
+when the outline aligns them), nib or variable width, its width scaled
+with the object when it scales (`shaping::outline_band`, and
+`shaping::stroke_area` for a plain centred outline). A hairline, or an
+object without an outline, contributes nothing and stays as it is; when
+no object had an outline the status bar says so.
+
+Merge (`ops::merge_shapes`) welds the objects of one fill colour into one
+and removes what the colours in front cover, so the colour in front keeps
+the overlap: red behind blue leaves red cut by blue and blue whole. An
+object whose fill is not a plain colour takes no part and stays as it is.
+
+Checked by `ui::shaping_docker::tests::dividing_two_squares_makes_three_shapes_in_their_colours`,
+`ui::shaping_docker::tests::outlining_a_square_gives_the_band_of_its_outline`
+and `ui::shaping_docker::tests::merging_two_colours_keeps_the_front_one_whole`.
+
 ## Curves
 
 - The operations run on the outlines flattened to 0.02 mm (`i_overlay`),
@@ -101,7 +138,7 @@ attributes, none, and showed only in Wireframe (#539,
 
 ## Panel
 
-- Seven picture buttons choose the operation; under them its name, a
+- Ten picture buttons choose the operation; under them its name, a
   large picture and what it does, and that the last object selected is
   the target.
 - Weld, Trim and Intersect each keep their own choice of what to leave:
@@ -129,4 +166,7 @@ on its own.
 
 - `ui::shaping_docker::tests::what_the_operations_leave_of_the_originals`
 - `ui::shaping_docker::tests::the_docker_draws_every_operation`
+- `ui::shaping_docker::tests::dividing_two_squares_makes_three_shapes_in_their_colours`
+- `ui::shaping_docker::tests::outlining_a_square_gives_the_band_of_its_outline`
+- `ui::shaping_docker::tests::merging_two_colours_keeps_the_front_one_whole`
 - `ui::propbar::tests::shaping_and_grouping_show_for_several_objects_groups_and_parts`

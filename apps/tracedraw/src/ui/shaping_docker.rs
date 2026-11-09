@@ -1,4 +1,4 @@
-//! The Shaping docker: the seven operations as picture buttons at the
+//! The Shaping docker: the ten operations as picture buttons at the
 //! top; the one chosen shows its name, a large picture and what it does,
 //! what it leaves of the originals (Weld, Trim and Intersect: the source
 //! objects and the target, each operation keeping its own choice), and
@@ -43,6 +43,17 @@ fn info(op: Shaping) -> (Pic, &'static str, &'static str) {
             "menu.object.boundary",
             "docker.boundary_hint",
         ),
+        Shaping::Divide => (
+            Pic::Divide,
+            "menu.object.divide",
+            "docker.divide_hint",
+        ),
+        Shaping::OutlineStroke => (
+            Pic::OutlineStroke,
+            "menu.object.outline_stroke",
+            "docker.outline_stroke_hint",
+        ),
+        Shaping::Merge => (Pic::Merge, "menu.object.merge", "docker.merge_hint"),
     }
 }
 
@@ -232,5 +243,102 @@ mod tests {
         }
         assert_eq!(Shaping::from_id("trim"), Shaping::Trim);
         assert_eq!(Shaping::from_id("no.such.key"), Shaping::Weld);
+    }
+
+    /// Two overlapping squares of different colours make three regions,
+    /// each with the fill of the object on top of it, and the originals
+    /// go.
+    #[test]
+    fn dividing_two_squares_makes_three_shapes_in_their_colours() {
+        use tracedraw_core::geometry::Shape as _;
+        use tracedraw_core::{Color, Fill};
+        let red = Color::rgb8(220, 40, 40);
+        let blue = Color::rgb8(40, 90, 220);
+        let mut app = App::headless();
+        let back = rect(&mut app, 0.0, 0.0, 20.0, 20.0);
+        let front = rect(&mut app, 10.0, 10.0, 30.0, 30.0);
+        for (id, color) in [(back, red), (front, blue)] {
+            app.select(vec![id]);
+            app.apply_fill(Fill::Solid(color));
+        }
+        app.select(vec![back, front]);
+        app.shaping(Shaping::Divide);
+        assert_eq!(count(&app), 3);
+        assert!(app.doc().find_shape(back).is_none() && app.doc().find_shape(front).is_none());
+        let shapes = &app.doc().pages[0].layers[0].shapes;
+        let of = |c: Color| shapes.iter().filter(|s| s.fill == Fill::Solid(c)).count();
+        assert_eq!(of(red), 1);
+        assert_eq!(of(blue), 2);
+        // Nothing lost and nothing counted twice: the union of the two.
+        let area: f64 = shapes.iter().map(|s| s.page_path().area().abs()).sum();
+        assert!((area - 700.0).abs() < 0.5, "{area}");
+
+        // Five objects are more regions than Divide works out: nothing
+        // changes and the status bar says so.
+        let mut app = App::headless();
+        let ids: Vec<ShapeId> = (0..5)
+            .map(|i| {
+                let x = i as f64 * 10.0;
+                rect(&mut app, x, 0.0, x + 8.0, 8.0)
+            })
+            .collect();
+        app.select(ids);
+        app.shaping(Shaping::Divide);
+        assert_eq!(count(&app), 5);
+        assert_eq!(app.status, crate::i18n::tr("status.shaping_too_many"));
+    }
+
+    /// Outline Stroke: the outline of a square becomes a filled object in
+    /// the outline's own colour, a millimetre further out on every side
+    /// (a centred 2 mm outline), and the original goes.
+    #[test]
+    fn outlining_a_square_gives_the_band_of_its_outline() {
+        use tracedraw_core::{Color, Fill};
+        let ink = Color::rgb8(30, 30, 30);
+        let mut app = App::headless();
+        let id = rect(&mut app, 0.0, 0.0, 20.0, 20.0);
+        app.select(vec![id]);
+        app.apply_outline_color(Some(ink));
+        app.apply_outline_width(2.0);
+        app.select(vec![id]);
+        app.shaping(Shaping::OutlineStroke);
+        assert!(app.doc().find_shape(id).is_none());
+        assert_eq!(count(&app), 1);
+        let shape = app.doc().pages[0].layers[0].shapes[0].clone();
+        assert_eq!(shape.fill, Fill::Solid(ink));
+        let b = shape.bounds();
+        assert!((b.width() - 22.0).abs() < 0.05, "{b:?}");
+        assert!((b.height() - 22.0).abs() < 0.05, "{b:?}");
+        assert!((b.x0 + 1.0).abs() < 0.05, "{b:?}");
+    }
+
+    /// Merge: one object per fill colour, and the colour in front keeps
+    /// the overlap, so the red one behind loses it.
+    #[test]
+    fn merging_two_colours_keeps_the_front_one_whole() {
+        use tracedraw_core::geometry::Shape as _;
+        use tracedraw_core::{Color, Fill};
+        let red = Color::rgb8(220, 40, 40);
+        let blue = Color::rgb8(40, 90, 220);
+        let mut app = App::headless();
+        let back = rect(&mut app, 0.0, 0.0, 20.0, 20.0);
+        let front = rect(&mut app, 10.0, 10.0, 30.0, 30.0);
+        for (id, color) in [(back, red), (front, blue)] {
+            app.select(vec![id]);
+            app.apply_fill(Fill::Solid(color));
+        }
+        app.select(vec![back, front]);
+        app.shaping(Shaping::Merge);
+        assert_eq!(count(&app), 2);
+        assert!(app.doc().find_shape(back).is_none() && app.doc().find_shape(front).is_none());
+        for s in &app.doc().pages[0].layers[0].shapes {
+            let area = s.page_path().area().abs();
+            let want = match &s.fill {
+                Fill::Solid(c) if *c == blue => 400.0,
+                Fill::Solid(c) if *c == red => 300.0,
+                other => panic!("unexpected fill {other:?}"),
+            };
+            assert!((area - want).abs() < 0.5, "{area} where {want} was due");
+        }
     }
 }

@@ -802,10 +802,13 @@ pub enum Shaping {
     FrontMinusBack,
     BackMinusFront,
     Boundary,
+    Divide,
+    OutlineStroke,
+    Merge,
 }
 
 impl Shaping {
-    pub const ALL: [Shaping; 7] = [
+    pub const ALL: [Shaping; 10] = [
         Shaping::Weld,
         Shaping::Trim,
         Shaping::Intersect,
@@ -813,6 +816,9 @@ impl Shaping {
         Shaping::FrontMinusBack,
         Shaping::BackMinusFront,
         Shaping::Boundary,
+        Shaping::Divide,
+        Shaping::OutlineStroke,
+        Shaping::Merge,
     ];
 
     /// Whether the operation can leave its source objects or its target
@@ -842,6 +848,9 @@ impl Shaping {
             Shaping::FrontMinusBack => "front_minus_back",
             Shaping::BackMinusFront => "back_minus_front",
             Shaping::Boundary => "boundary",
+            Shaping::Divide => "divide",
+            Shaping::OutlineStroke => "outline_stroke",
+            Shaping::Merge => "merge",
         }
     }
 
@@ -867,7 +876,7 @@ impl Shaping {
     /// How many objects it needs selected.
     pub fn needs(self) -> usize {
         match self {
-            Shaping::Simplify | Shaping::Boundary => 1,
+            Shaping::Simplify | Shaping::Boundary | Shaping::OutlineStroke => 1,
             _ => 2,
         }
     }
@@ -975,7 +984,11 @@ impl App {
         use tracedraw_core::shaping::{overlay, simplify, Op};
         let shapes = self.selected_shapes_target_last();
         if shapes.is_empty()
-            || (shapes.len() < 2 && !matches!(op, Shaping::Simplify | Shaping::Boundary))
+            || (shapes.len() < 2
+                && !matches!(
+                    op,
+                    Shaping::Simplify | Shaping::Boundary | Shaping::OutlineStroke
+                ))
         {
             return;
         }
@@ -983,6 +996,24 @@ impl App {
         // Z-order: lowest index first within the layer.
         let mut ordered = shapes.clone();
         ordered.sort_by_key(|s| doc.locate(s.id).map(|(_, i)| i).unwrap_or(0));
+        // Divide, Outline Stroke and Merge make one object per region, per
+        // outline and per colour: each works out its own objects and keeps
+        // none of the originals, instead of building one result outline.
+        match op {
+            Shaping::Divide => {
+                self.divide_shapes(&ordered);
+                return;
+            }
+            Shaping::OutlineStroke => {
+                self.outline_strokes(&ordered);
+                return;
+            }
+            Shaping::Merge => {
+                self.merge_shapes(&ordered);
+                return;
+            }
+            _ => {}
+        }
         let target = shapes.last().cloned().unwrap_or_else(|| ordered[0].clone());
         // The object that keeps its attributes and is cut: the target, the
         // front one (Front Minus Back) or the back one (Back Minus Front).
@@ -1106,6 +1137,9 @@ impl App {
                     .iter()
                     .skip(1)
                     .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Trim)),
+                // Divide, Outline Stroke and Merge made their own objects
+                // above and returned.
+                Shaping::Divide | Shaping::OutlineStroke | Shaping::Merge => return,
             }
         };
         if result.elements().is_empty() {
@@ -1299,8 +1333,218 @@ impl App {
             Shaping::BackMinusFront => "Back Minus Front",
             Shaping::Boundary => "Boundary",
             Shaping::Simplify => "Simplify",
+            Shaping::Divide => "Divide",
+            Shaping::OutlineStroke => "Outline Stroke",
+            Shaping::Merge => "Merge",
         };
         if let Err(e) = self.engine.run_batch(label, &cmds) {
+            self.status = e.to_string();
+            return;
+        }
+        self.select(ids);
+    }
+
+    /// Divide: every region where the selected objects meet becomes an
+    /// object of its own, filled with the fill of the topmost object that
+    /// holds the region whole. The originals go. More than four objects
+    /// make too many regions to work out: the status bar says so and
+    /// nothing changes.
+    fn divide_shapes(&mut self, ordered: &[Shape]) {
+        use tracedraw_core::shaping::{divide, overlay, Op};
+        let paths: Vec<tracedraw_core::BezPath> = ordered.iter().map(Shape::page_path).collect();
+        let Some(regions) = divide(&paths) else {
+            self.status = crate::i18n::tr("status.shaping_too_many");
+            return;
+        };
+        if regions.is_empty() {
+            self.status = crate::i18n::tr("status.shaping_empty");
+            return;
+        }
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let mut cmds = Vec::new();
+        let mut ids = Vec::new();
+        for region in regions {
+            // The object on top that holds the region whole: the part of
+            // the region left outside it is nothing. A point of the box
+            // would land on the boundaries where the regions meet, so the
+            // regions themselves say which object they came from.
+            let area = tracedraw_core::geometry::Shape::area(&region).abs();
+            let fill = ordered
+                .iter()
+                .rev()
+                .find(|s| {
+                    let outside = overlay(&region, &s.page_path(), Op::Trim);
+                    outside.elements().is_empty()
+                        || tracedraw_core::geometry::Shape::area(&outside).abs()
+                            <= area * 1e-4 + 1e-9
+                })
+                .map_or(tracedraw_core::Fill::None, |s| s.fill.clone());
+            let mut shape = Shape::new(
+                self.engine.new_shape_id(),
+                ShapeKind::Path {
+                    path: region,
+                    closed: true,
+                },
+            );
+            shape.fill = fill;
+            shape.stroke = None;
+            ids.push(shape.id);
+            cmds.push(Command::AddShape { layer, shape });
+        }
+        let gone: Vec<_> = ordered.iter().map(|s| s.id).collect();
+        cmds.push(Command::DeleteShapes { shapes: gone });
+        if let Err(e) = self.engine.run_batch("Divide", &cmds) {
+            self.status = e.to_string();
+            return;
+        }
+        self.select(ids);
+    }
+
+    /// Outline Stroke: each object's outline becomes a filled object in
+    /// the outline's own colour, as wide as it is drawn (centred, inside
+    /// or outside, with its caps, joins, dashes, nib or variable width),
+    /// and the original goes. An object without an outline stays as it
+    /// is.
+    fn outline_strokes(&mut self, ordered: &[Shape]) {
+        use tracedraw_core::shaping::{outline_band, stroke_area};
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let mut cmds = Vec::new();
+        let mut ids = Vec::new();
+        let mut gone = Vec::new();
+        for s in ordered {
+            let Some(st) = &s.stroke else { continue };
+            if !st.width.is_finite() || st.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 {
+                continue;
+            }
+            // The scale the outline is drawn at ("Scale with object").
+            let scale = if st.scale_with_object {
+                let [a, b, c, d, _, _] = s.transform.as_coeffs();
+                (a * d - b * c).abs().sqrt().max(1e-6)
+            } else {
+                1.0
+            };
+            let path = s.page_path();
+            let area = match outline_band(&path, st, scale) {
+                Some(band) => band,
+                None => stroke_area(
+                    &path,
+                    &tracedraw_core::Stroke {
+                        width: st.width * scale,
+                        ..st.clone()
+                    },
+                ),
+            };
+            if area.elements().is_empty() {
+                continue;
+            }
+            let mut shape = Shape::new(
+                self.engine.new_shape_id(),
+                ShapeKind::Path {
+                    path: area,
+                    closed: true,
+                },
+            );
+            shape.fill = tracedraw_core::Fill::Solid(st.color);
+            shape.stroke = None;
+            shape.opacity = s.opacity;
+            ids.push(shape.id);
+            cmds.push(Command::AddShape { layer, shape });
+            gone.push(s.id);
+        }
+        if ids.is_empty() {
+            self.status = crate::i18n::tr("status.shaping_no_outline");
+            return;
+        }
+        cmds.push(Command::DeleteShapes { shapes: gone });
+        if let Err(e) = self.engine.run_batch("Outline Stroke", &cmds) {
+            self.status = e.to_string();
+            return;
+        }
+        self.select(ids);
+    }
+
+    /// Merge: one object per fill colour of the selection. The objects of
+    /// one colour are welded together, and where two colours overlap the
+    /// one in front keeps the overlap, so each colour loses what the
+    /// colours above it cover. The originals go; an object whose fill is
+    /// not a plain colour takes no part and stays as it is.
+    fn merge_shapes(&mut self, ordered: &[Shape]) {
+        use tracedraw_core::shaping::{overlay, Op};
+        let weld = |paths: &[tracedraw_core::BezPath]| {
+            let mut out = tracedraw_core::BezPath::new();
+            for path in paths {
+                out = if out.elements().is_empty() {
+                    path.clone()
+                } else {
+                    overlay(&out, path, Op::Weld)
+                };
+            }
+            out
+        };
+        // The colours, the areas each covers, the highest place each
+        // reaches and the objects that take part.
+        let mut groups: Vec<(tracedraw_core::Color, Vec<tracedraw_core::BezPath>, usize)> =
+            Vec::new();
+        let mut taking: Vec<tracedraw_core::ShapeId> = Vec::new();
+        for (z, s) in ordered.iter().enumerate() {
+            let tracedraw_core::Fill::Solid(color) = s.fill else {
+                continue;
+            };
+            taking.push(s.id);
+            let path = s.page_path();
+            match groups.iter_mut().find(|(c, _, _)| *c == color) {
+                Some((_, paths, top)) => {
+                    paths.push(path);
+                    *top = z;
+                }
+                None => groups.push((color, vec![path], z)),
+            }
+        }
+        if groups.is_empty() {
+            self.status = crate::i18n::tr("status.shaping_empty");
+            return;
+        }
+        // Front to back: a colour is cut only by the colours above it.
+        groups.sort_by_key(|(_, _, top)| *top);
+        let unions: Vec<tracedraw_core::BezPath> = groups
+            .iter()
+            .map(|(_, paths, _)| weld(paths))
+            .collect();
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let mut cmds = Vec::new();
+        let mut ids = Vec::new();
+        for (i, (union, (color, _, _))) in unions.iter().zip(groups.iter()).enumerate() {
+            let mut area = union.clone();
+            for above in unions.iter().skip(i + 1) {
+                area = overlay(&area, above, Op::Trim);
+            }
+            if area.elements().is_empty() {
+                continue;
+            }
+            let mut shape = Shape::new(
+                self.engine.new_shape_id(),
+                ShapeKind::Path {
+                    path: area,
+                    closed: true,
+                },
+            );
+            shape.fill = tracedraw_core::Fill::Solid(*color);
+            shape.stroke = None;
+            ids.push(shape.id);
+            cmds.push(Command::AddShape { layer, shape });
+        }
+        if ids.is_empty() {
+            self.status = crate::i18n::tr("status.shaping_empty");
+            return;
+        }
+        cmds.push(Command::DeleteShapes { shapes: taking });
+        if let Err(e) = self.engine.run_batch("Merge", &cmds) {
             self.status = e.to_string();
             return;
         }

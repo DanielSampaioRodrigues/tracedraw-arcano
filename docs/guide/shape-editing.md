@@ -120,6 +120,9 @@ is the target: it gives the result its fill and outline.
 | **Front Minus Back** | the front object without the ones behind it |
 | **Back Minus Front** | the back object without the ones in front |
 | **Boundary** | an outline around the selection (works on one object too) |
+| **Divide** | every region where the objects meet, each an object with the fill of the one on top |
+| **Outline Stroke** | each object's outline, as a filled object in the outline's colour |
+| **Merge** | one object per fill colour, the colour in front keeping the overlap |
 
 In the Combine Shapes panel you can choose, for Weld, Trim and Intersect,
 whether to leave the original source and target objects. Each operation
