@@ -916,6 +916,8 @@ pub enum Dialog {
     None,
     /// Edit Line Style: custom dash patterns.
     LineStyle(crate::ui::line_style::State),
+    /// Underline or Strikethrough Options.
+    LineOptions(crate::ui::line_options::State),
     /// File > New From Template.
     NewFromTemplate(Box<crate::ui::template_dialog::TemplateState>),
     /// Image > Mode > Black and White, Duotone and Paletted.
@@ -1566,6 +1568,7 @@ pub fn show(app: &mut App, ctx: &Context) {
     match &mut dialog {
         Dialog::None => {}
         Dialog::LineStyle(st) => crate::ui::line_style::dialog(app, ctx, st, &mut close),
+        Dialog::LineOptions(st) => crate::ui::line_options::dialog(app, ctx, st, &mut close),
         Dialog::BitmapBw(s) => crate::ui::bitmap_dialogs::bw_dialog(app, ctx, s, &mut close),
         Dialog::RemoveBackground(st) => {
             crate::ui::bitmap_dialogs::remove_background_dialog(app, ctx, st, &mut close)
@@ -7030,6 +7033,18 @@ pub(crate) mod tests {
                 kind: crate::ui::table_bar::TableCountKind::SplitCols,
                 count: 3,
                 after: false,
+            }),
+            Dialog::LineOptions(crate::ui::line_options::State {
+                which: crate::ui::text_docker::Line::Underline,
+                on: true,
+                style: Default::default(),
+                before: Vec::new(),
+            }),
+            Dialog::LineOptions(crate::ui::line_options::State {
+                which: crate::ui::text_docker::Line::Strike,
+                on: false,
+                style: Default::default(),
+                before: Vec::new(),
             }),
             Dialog::CreatePattern { vector: true },
             Dialog::CreatePattern { vector: false },

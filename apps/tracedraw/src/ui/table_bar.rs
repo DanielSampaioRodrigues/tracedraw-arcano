@@ -315,6 +315,16 @@ fn table_options(app: &mut App, ui: &mut Ui) {
             app.table_set_spacing(Some(sp));
         }
     }
+    ui.separator();
+    // The table turned over its diagonal: rows become columns.
+    if ui
+        .button(tr("menu.table.transpose"))
+        .rich_tip(tr("table.transpose_tip"))
+        .clicked()
+    {
+        app.table_op(crate::table::TableOp::Transpose);
+        ui.close();
+    }
 }
 
 /// Font, size, bold, italic, underline and alignment of the selected

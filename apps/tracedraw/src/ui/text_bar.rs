@@ -88,6 +88,42 @@ fn dist(ui: &mut Ui, app: &App, key: &str, mm: &mut f64) -> bool {
     }
 }
 
+
+/// The arrow beside the Underline and Strikethrough buttons: their
+/// options, in the window the panel opens (Underline Options and
+/// Strikethrough Options).
+fn line_options_arrow(app: &mut App, ui: &mut Ui) {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(12.0, 22.0), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 2.0, crate::theme::Tokens::tool_hover());
+    }
+    let c = rect.center();
+    ui.painter().add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(c.x - 3.5, c.y - 2.0),
+            egui::pos2(c.x + 3.5, c.y - 2.0),
+            egui::pos2(c.x, c.y + 2.5),
+        ],
+        crate::theme::Tokens::icon(),
+        egui::Stroke::NONE,
+    ));
+    let resp = resp.rich_tip(tr("line_opt.menu"));
+    egui::Popup::menu(&resp)
+        .id(egui::Id::new("text_bar_line_options"))
+        .show(|ui| {
+            for (which, key) in [
+                (td::Line::Underline, "line_opt.underline"),
+                (td::Line::Strike, "line_opt.strike"),
+            ] {
+                if ui.button(format!("{}...", tr(key))).clicked() {
+                    app.dialog = crate::ui::dialogs::Dialog::LineOptions(
+                        crate::ui::line_options::State::open(app, which),
+                    );
+                    ui.close();
+                }
+            }
+        });
+}
 /// Row 1: the characters' look, and the paragraph's word and letter
 /// spacing.
 pub(crate) fn characters(app: &mut App, ui: &mut Ui) {
@@ -117,11 +153,6 @@ pub(crate) fn characters(app: &mut App, ui: &mut Ui) {
             egui::RichText::new("I").italics(),
             "toolbar.italic",
         ),
-        (
-            app.text_underline,
-            egui::RichText::new("U").underline(),
-            "toolbar.underline",
-        ),
     ] {
         if ui
             .add_sized([22.0, 22.0], egui::Button::selectable(on, label.size(14.0)))
@@ -130,12 +161,46 @@ pub(crate) fn characters(app: &mut App, ui: &mut Ui) {
         {
             match key {
                 "toolbar.bold" => app.text_bold = !app.text_bold,
-                "toolbar.italic" => app.text_italic = !app.text_italic,
-                _ => app.text_underline = !app.text_underline,
+                _ => app.text_italic = !app.text_italic,
             }
             changed = true;
         }
     }
+    // Underline and Strikethrough: the buttons switch them for the text;
+    // the arrow opens their options, as the Control panel's flyout does.
+    let strike_on = span.as_ref().is_some_and(|s| s.strikethrough);
+    for (on, label, key, which) in [
+        (
+            app.text_underline,
+            egui::RichText::new("U").underline(),
+            "toolbar.underline",
+            td::Line::Underline,
+        ),
+        (
+            strike_on,
+            egui::RichText::new("S").strikethrough(),
+            "docker.strikethrough",
+            td::Line::Strike,
+        ),
+    ] {
+        if ui
+            .add_sized([22.0, 22.0], egui::Button::selectable(on, label.size(14.0)))
+            .rich_tip(crate::ui::tips::keyed(key))
+            .clicked()
+        {
+            match which {
+                td::Line::Underline => {
+                    app.text_underline = !on;
+                    changed = true;
+                }
+                td::Line::Strike => {
+                    let v = !on;
+                    td::edit_spans(app, move |s| s.strikethrough = v);
+                }
+            }
+        }
+    }
+    line_options_arrow(app, ui);
     if changed {
         app.apply_text_style();
     }

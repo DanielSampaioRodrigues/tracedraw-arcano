@@ -693,6 +693,15 @@ colour of its own.
 - The look is set in the Text docker's Character section, in two rows
   under the characters (one for the underline, one for the strike line):
   the kind of line, the thickness, the place and "a colour of its own".
+- The property bar's text row carries the Underline and Strikethrough
+  buttons and, beside them, an arrow whose menu opens Underline Options
+  and Strikethrough Options, as the Control panel's flyout does.
+- Underline Options and Strikethrough Options are windows with the
+  fields the panel's dialogs have: On, Weight, Type, Offset and Colour
+  (with "a colour of its own" for the characters' colour). The look shows
+  on the text as it is set; OK keeps it, Cancel puts the text back as it
+  was when the window opened. A weight or a place of 0 leaves the font's
+  own.
 - It is part of the character properties a text style sets
   (`CharFormat::underline_style`, `CharFormat::strike_style`), so a
   paragraph or a character style carries it, and a style made from the

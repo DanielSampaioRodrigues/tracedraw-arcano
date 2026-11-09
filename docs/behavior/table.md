@@ -133,8 +133,9 @@ cell does nothing and says so on the status bar.
   (`table::tests::text_becomes_a_table_by_its_separator`,
   `ui::dialogs::tests::convert_text_to_table_takes_the_chosen_separator`)
   Convert Table to Text: cells joined by tabs, rows by newlines.
-- Transpose: the table is turned over its diagonal, its rows becoming
-  columns and its columns rows. Each cell keeps its text, background and
+- Transpose (Table > Transpose, and the bar's Options menu): the table is
+  turned over its diagonal, its rows becoming columns and its columns
+  rows. Each cell keeps its text, background and
   alignment and takes the turned place: a cell spanning two rows spans
   two columns after, and its borders turn with it (the stroke that was on
   the top edge is on the left one, and so on), as do the cell margins and
