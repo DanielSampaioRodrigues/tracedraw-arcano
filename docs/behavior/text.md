@@ -668,8 +668,8 @@ the preferences, `text_sections_closed`).
 ## Underlines and strike lines
 
 An underline and a strike line are marks of the characters
-(\`TextSpan::underline\`, \`TextSpan::strikethrough\`), each with a look of its
-own (\`LineStyle\`): the kind of line, its thickness, where it sits and a
+(`TextSpan::underline`, `TextSpan::strikethrough`), each with a look of its
+own (`LineStyle`): the kind of line, its thickness, where it sits and a
 colour of its own.
 
 | Kind | The line |
@@ -687,14 +687,14 @@ colour of its own.
   under the baseline, a strike line's across the letters.
 - The colour is the characters' colour, or one of the line's own. A line
   with a colour of its own is drawn in a part of the text of its own
-  (\`Shape::text_parts\`, \`TextSpan::marks\`), so the characters and the
+  (`Shape::text_parts`, `TextSpan::marks`), so the characters and the
   line are each painted once, in their own colour; the renderer and the
   exports draw the parts as they draw any text.
 - The look is set in the Text docker's Character section, in two rows
   under the characters (one for the underline, one for the strike line):
   the kind of line, the thickness, the place and "a colour of its own".
 - It is part of the character properties a text style sets
-  (\`CharFormat::underline_style\`, \`CharFormat::strike_style\`), so a
+  (`CharFormat::underline_style`, `CharFormat::strike_style`), so a
   paragraph or a character style carries it, and a style made from the
   text keeps it.
 - The line is part of the text's own outline: Convert to Curves, the SVG
@@ -702,10 +702,10 @@ colour of its own.
 - A `.tdraw` file keeps the whole look. A `.cdr` file keeps the underline
   and the strike line on or off, drawn as a single thin line: its look is
   read from the look a text is created with, not from the file.
-- Checked by \`text::tests::the_look_of_a_line_sets_kind_thickness_and_place\`,
-  \`document::tests::a_line_with_its_own_colour_is_drawn_in_a_part_of_its_own\`,
-  \`document::tests::a_plain_line_style_is_not_written_and_a_set_one_comes_back\`
-  and \`text_styles::tests::a_style_carries_the_look_of_the_two_lines\`.
+- Checked by `text::tests::the_look_of_a_line_sets_kind_thickness_and_place`,
+  `document::tests::a_line_with_its_own_colour_is_drawn_in_a_part_of_its_own`,
+  `document::tests::a_plain_line_style_is_not_written_and_a_set_one_comes_back`
+  and `text_styles::tests::a_style_carries_the_look_of_the_two_lines`.
 
 ## Glyphs docker
 

@@ -46,7 +46,7 @@ the styles based on it what it set and its parent.
 
 ## Next style
 
-A paragraph style names the style of the paragraph after it (\`next\`):
+A paragraph style names the style of the paragraph after it (`next`):
 when a paragraph ends with Enter, the paragraph it opens takes it. The
 book set uses it: Chapter title gives a First paragraph, a First
 paragraph gives Body text, a Subtitle or a Quotation gives Body text
@@ -62,13 +62,13 @@ the body style.
   inside the paragraph.
 - Opening a file keeps the paragraph formats it has: the next style is
   not applied to what is already written.
-- Checked by \`text_styles::tests::a_style_names_the_style_that_follows_it\`,
-  \`text_styles::tests::an_empty_last_paragraph_takes_the_look_on_its_newline\`
-  and \`estilos::tests::the_next_style_follows_a_paragraph_break\`.
+- Checked by `text_styles::tests::a_style_names_the_style_that_follows_it`,
+  `text_styles::tests::an_empty_last_paragraph_takes_the_look_on_its_newline`
+  and `estilos::tests::the_next_style_follows_a_paragraph_break`.
 
 ## Shortcuts
 
-A style can carry a keyboard shortcut (\`shortcut\`, written as the other
+A style can carry a keyboard shortcut (`shortcut`, written as the other
 shortcuts are: "Ctrl+3"). A press of it applies the style to what the
 panel would apply it to, the text being edited or the selected text
 objects.
@@ -79,8 +79,8 @@ objects.
   Commands) is read first, as built-in shortcuts are.
 - While a text is being typed the keys go to the text, as always: a style
   shortcut acts when a text object is selected.
-- Checked by \`text_styles::tests::the_next_style_and_the_shortcut_are_saved\`
-  and \`estilos::tests::a_style_shortcut_finds_the_style\`.
+- Checked by `text_styles::tests::the_next_style_and_the_shortcut_are_saved`
+  and `estilos::tests::a_style_shortcut_finds_the_style`.
 
 ## Reset to base and the summary
 
@@ -96,9 +96,9 @@ the look of the underline and of the strike line when they have one of
 their own, and the style that follows it.
 
 - Checked by
-  \`text_styles::tests::reset_to_base_leaves_the_name_the_parent_and_the_next\`,
-  \`estilos::tests::reset_to_base_gives_the_text_the_look_of_the_base\` and
-  \`estilos::tests::the_summary_says_what_the_style_sets\`.
+  `text_styles::tests::reset_to_base_leaves_the_name_the_parent_and_the_next`,
+  `estilos::tests::reset_to_base_gives_the_text_the_look_of_the_base` and
+  `estilos::tests::the_summary_says_what_the_style_sets`.
 
 ## Making styles from text
 
