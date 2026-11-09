@@ -6979,11 +6979,15 @@ mod tests {
             };
             f.outline(&[s]).path
         };
-        // A single line 2 pt thick is 2 pt deep, under the baseline.
+        // A single line 2 pt thick is 2 pt deep.
         let one = line(LineKind::Single, Some(2.0), None);
         let b = one.bounding_box();
         assert!((b.height() - 2.0 * PT_MM).abs() < 0.02, "{b:?}");
-        assert!(b.y1 < 0.0, "under the baseline: {b:?}");
+        // With no thickness and no place of its own it sits where the font
+        // says an underline goes, under the baseline.
+        let own = line(LineKind::Single, None, None).bounding_box();
+        assert!(own.y1 < 0.0, "under the baseline: {own:?}");
+        assert!(own.height() > 0.0, "{own:?}");
         // Thick is twice as deep.
         let thick = line(LineKind::Thick, Some(2.0), None).bounding_box();
         assert!((thick.height() - 4.0 * PT_MM).abs() < 0.02, "{thick:?}");

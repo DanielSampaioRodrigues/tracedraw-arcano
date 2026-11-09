@@ -690,9 +690,9 @@ colour of its own.
   (\`Shape::text_parts\`, \`TextSpan::marks\`), so the characters and the
   line are each painted once, in their own colour; the renderer and the
   exports draw the parts as they draw any text.
-- The look is set in the Text docker's Character section, beside the
-  underline button and beside Strikethrough: the kind of line, the
-  thickness, the place and "a colour of its own".
+- The look is set in the Text docker's Character section, in two rows
+  under the characters (one for the underline, one for the strike line):
+  the kind of line, the thickness, the place and "a colour of its own".
 - It is part of the character properties a text style sets
   (\`CharFormat::underline_style\`, \`CharFormat::strike_style\`), so a
   paragraph or a character style carries it, and a style made from the
