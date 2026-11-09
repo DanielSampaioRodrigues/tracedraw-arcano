@@ -11,8 +11,8 @@ in `apps/tracedraw/src/estilos.rs`.
   parent (`based_on`, same kind; a loop is never offered), a paragraph
   format (paragraph styles; `None` takes the parent's) and the character
   properties it sets (`CharFormat`: font, size, bold, italic, underline,
-  strikethrough, tracking, baseline shift, colour, OpenType features; each
-  one `None` when not set).
+  strikethrough, the look of those two lines, tracking, baseline shift,
+  colour, OpenType features; each one `None` when not set).
 - What a style sets is its own settings over its parents', from the root
   down (`resolve`).
 - A paragraph is linked through its paragraph format
