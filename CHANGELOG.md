@@ -61,6 +61,8 @@ full, row-by-row status.
 
 - Drop Shadow tool on an object with an envelope, a perspective or a distortion: the shadow is measured on the outline the object shows, as it is drawn. A drag from the middle of the bent object gives a flat shadow and one from next to an edge stands the shadow on that edge, the handles sit on the object, and the shadow is picked where it lies; before, the tool went by the outline without the envelope, so a press on the object could stand a perspective shadow on a far edge and the handles sat away from it (#2217).
 
+- Opening `.cdr` files of versions 14 and later: tables open as tables, with their rows and columns, cell fills, borders and text, ready for the Table tool. A drawing with a table opened without it, and each empty cell was counted as an object that could not be read (#2170).
+
 - Weld, Combine and the other shaping operations keep a mesh fill: the result takes the mesh in its place on the page when the mesh covers it, else the mesh's mean colour; Combine left the mesh in the wrong place and a result reaching past the mesh showed no colour there.
 - Windows: a file opened from the Explorer while TraceDraw is running brings its window to the front, restored when it was minimized. The window stayed minimized or behind the others: Windows lets only the program just started bring a window to the foreground, so the start made for the file now passes that right to the running window, and the window comes up before it reads the file, also while a question is showing (#2129).
 
