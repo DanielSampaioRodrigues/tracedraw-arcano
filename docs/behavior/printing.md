@@ -112,11 +112,24 @@ has one.
     `export::tests::keep_size_keeps_the_selection_at_its_size`); and Odd and even pages,
     Odd pages or Even pages of the document or the list (#951).
   - Copies: a file gets its copies inside, as whole sets (Collate) or
-    each sheet repeated.
+    each sheet repeated. Reverse order (under Collate) prints the
+    sheets last first, for a stack that comes out face up or for the
+    backs of printed sheets; it reverses the sheets as imposed, so a
+    booklet or n-up layout keeps its sheets whole (#1394, #1571).
   - Print as bitmap: each sheet becomes one picture at the resolution
     given (36 to 1200 dpi).
-- Color: Composite or Separations (one grey page per ink and sheet: C, M,
-  Y, K, then the spot inks; black = full ink); Convert spot colors to
+- Color: Composite, with Grayscale under it, or Separations (one grey
+  page per ink and sheet: C, M, Y, K, then the spot inks; black = full
+  ink). Grayscale (#1657) prints every colour of the sheets as its grey,
+  its luminance `0.299 R + 0.587 G + 0.114 B` as Bitmaps > Mode >
+  Grayscale gives it: fills, outlines, text, gradients, meshes, patterns,
+  live effects, shadows, lens colours and the marks (registration colour
+  stays), and every picture as its grey pixels (a CMYK picture's own
+  inks are left out of the print); the drawing keeps its colours. It is
+  greyed with Separations, which print from the colours. A lens that
+  makes colours of its own from what lies under it (heat map) still
+  does (`export::tests::grayscale_and_reverse_order_change_the_printed_sheets`).
+  Convert spot colors to
   CMYK prints spot inks as their CMYK mix at their tint. The printed
   sheets keep the drawing's list of spot inks, so each spot ink gets its
   plate and its box in the print preview; before, the sheets lost the
@@ -174,6 +187,24 @@ over its settings), fills the window with the sheets exactly as Print
 sends them: the imposition, the marks, Mirror and Invert, built by the
 same function (`export::print_sheets`).
 
+- The printer's unprintable edge (#1924): with a printer chosen (not a
+  file), the strip along each side of the sheet that the printer cannot
+  print on, its hard margins as the system reports them, is shaded
+  grey; when the artwork of a page (what its frame on the sheet shows,
+  marks aside) reaches into it, a warning over the sheet says it will
+  be cut off (`print_preview::art_in_unprintable_edge`). The margins
+  are read once a printer, off the interface's thread (`printers.rs`,
+  `MarginsCache`): on Windows the printer's default paper and its
+  printable area (`PageSettings.PrintableArea`, hundredths of an inch,
+  the paper upright; `parse_windows_margins`), through CUPS (Linux,
+  macOS) the PPD's `*ImageableArea` inside its `*PaperDimension` for the
+  paper `lpoptions` says the printer is set to, else the PPD's default
+  (`parse_ppd_margins`); a queue with no PPD (driverless) or a printer
+  that does not say gets no shading. A sheet wider than tall takes the
+  margins turned a quarter counterclockwise: its top is the paper's
+  left edge (`HardMargins::for_sheet`). The browser and Android have
+  none.
+
 - Top bar: Print (prints these settings and closes), the sheet shown with previous and next (Page Up, Page Down), Zoom from 25 to 400 % of the fitted size
   with Fit, the printer, and Close (Esc) at the right end (#534). The
   bar wraps onto a second row when the window is too narrow for it.
@@ -199,7 +230,8 @@ same function (`export::print_sheets`).
   #1653, `print_preview::tests::the_bleed_limit_is_set_beside_bleed`)
   beside Crop marks, Registration
   marks beside Color bars, Densitometer scale beside Page information,
-  Mirror beside Invert, Transform and Artwork position; then the layout
+  Mirror beside Invert, Grayscale beside Reverse order (#1657, #1394),
+  Transform and Artwork position; then the layout
   with its sketch. Every change rebuilds the sheets at once.
   The panel is 360 points wide at first and its edge drags from 300 to
   720. It is never narrower than its widest row as last laid out (a
@@ -209,8 +241,9 @@ same function (`export::print_sheets`).
   (#862, `print_preview::tests::the_options_panel_is_wider_and_its_edge_drags`,
   `print_preview::tests::no_option_is_cut_off_in_any_language`).
   While Print separations is on, a box for cyan, magenta, yellow, black
-  and each spot ink stands indented under it, all ticked at first
-  (#571; `print_preview::tests::the_ink_boxes_stand_under_print_separations`).
+  and each spot ink stands indented under it, side by side in a row that
+  wraps at the panel's edge, all ticked at first
+  (#571, #1737; `print_preview::tests::the_ink_boxes_stand_under_print_separations`).
   Every ink ticked shows the sheet as it is; one alone shows its plate
   in grey; some show the colours those inks print together (process
   colours keep the channels ticked, a spot colour shows when its ink is
@@ -219,7 +252,14 @@ same function (`export::print_sheets`).
   the ticked inks pixel by pixel (#1659,
   `print_preview::tests::plates_split_pictures_by_ink`).
 - A plate shows the ink's coverage in grey, black = full ink, as the
-  separations print; registration colour shows on every plate.
+  separations print; registration colour shows on every plate. So cyan
+  ink ticked alone shows a pure cyan square black, which reads as black
+  ink on the cyan plate. "Show one ink in its color" (under the ink
+  boxes, off at first) shows one ink alone as the colour it prints, the
+  way several inks show: the cyan square cyan, what the ink does not
+  print paper white. It changes the preview only; the plate prints the
+  same (#1652,
+  `print_preview::tests::one_ink_alone_shows_in_its_colour_when_asked`).
 - Paper margins (left, right, top, bottom, mm, 0 at first) keep the
   paper's edges clear: the pages and their marks go in the middle of what
   is left, shrinking to fit inside it unless Keep size is on; a sheet
@@ -252,8 +292,63 @@ same function (`export::print_sheets`).
 
 ## Imposition
 
+- With facing pages each page prints with what its facing page holds
+  across the spine and in the bleed beside it (not for the selection
+  alone, nor with Fit to page; see `facing-pages.md`, #1972).
 - Pages keep their aspect ratio; each cell is as large as the largest
   page on its sheet and a smaller page sits in its middle.
+- Gap between pages (several pages per sheet and repeat on the sheet,
+  0 to 50 mm, 5 mm at first): two fields, the gap across (between pages
+  side by side) and the gap down (between rows), each on its own
+  (#1795, `imposition::Options::gutter` and `gutter_y`,
+  `imposition::tests::the_column_and_row_gaps_are_set_apart`). Options >
+  Global > Printing starts every print with both; preferences saved
+  before the gap down existed take the gap across for it
+  (`prefs::tests::the_row_gap_is_remembered_and_old_preferences_take_the_column_gap`).
+  A booklet's spread keeps its own Gap (below).
+- Page order (several pages per sheet, #1658, `imposition::PageOrder`,
+  `imposition::tests::n_up_pages_can_run_down_the_columns`):
+  - Across, then down (default): left to right along each row, then the
+    next row; the next sheet goes on from the last page of this one.
+  - Down, then across: top to bottom down each column, then the next
+    column to the right; the next sheet goes on from the last page of
+    this one. 2 x 3: 1 2 3 down the first column, 4 5 6 down the
+    second, 7 on the next sheet.
+  - Down, through all sheets: top to bottom down each column, the
+    column going on in the same column of the next sheet, and only
+    after the last sheet does the next column start. Once the sheets are
+    stacked and cut into columns, each column is one series. 2 x 3 on
+    two sheets: 1 2 3 and 7 8 9 on the first sheet, 4 5 6 and 10 11 12
+    on the second. Cells past the last page stay empty.
+  - Cut and stack: each cell runs down the stack of sheets. With T
+    pages and N cells a sheet there are S = ceil(T / N) sheets, and cell
+    p (0 based, left to right, top to bottom) of sheet s holds page
+    p * S + s, so each pile cut from the stacked sheets is one series and
+    the piles go on top of each other in order. 100 pages 4 up: 1, 26,
+    51 and 76 on the first sheet, 25, 50, 75 and 100 on the last; 10
+    pages 4 up: 1 4 7 10, 2 5 8 and 3 6 9 over three sheets, the last
+    cell of the last two empty.
+- Layout presets (#1796): the Preset row at the top of the layout fields
+  (Print dialog's Layout tab and Print Preview) lists the layouts saved
+  under a name; choosing one sets the imposition, columns and rows, page
+  order, sheet (by its name, or the Custom size) and orientation,
+  Stretch to fill, Keep page size, Back side, both gaps, the paper
+  margins, the booklet's binding, signature sheets, creep and gap, Bleed
+  with its limit and every printers' mark. "+" asks for a name and OK
+  (or Enter) keeps the layout under it, replacing a preset of that name;
+  "-" deletes the chosen preset after a Yes. A preset whose settings are
+  changed afterwards is shown unchosen. Presets are kept in the
+  preferences (`prefs::PrintPrefs::layout_presets`). Save to file...
+  writes the layout as a `.tdlayout` file (JSON: `format`
+  `"tracedraw-print-layout"`, `version` 1 and the `layout`, the fields
+  of `prefs::LayoutPreset`); Load from file... reads one (or a `.json`
+  file holding one) into the open Print Preview or Print dialog and keeps
+  it as a preset of its name. Another file is refused with a message;
+  values out of range are brought into range
+  (`prefs::tests::layout_presets_round_trip_through_a_file`,
+  `ui::dialogs::layout_preset_tests`). File access goes through the
+  app's file dialogs, so it works on the desktop, in the browser and on
+  Android.
 - A booklet's page count is rounded up to a multiple of four with blank
   pages at the back. The Layout fields (Print dialog and Print Preview)
   choose its binding by two pictures (#788, #947,

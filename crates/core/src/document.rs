@@ -237,7 +237,12 @@ pub fn text_glyph_layout(kind: &ShapeKind) -> Option<text_outline::GlyphLayout> 
         para,
         on_path: on_path.as_ref(),
     })?;
-    let shift = text_layout_shift(*origin, *frame, on_path.is_some(), para.vertical);
+    let shift = text_layout_shift(
+        *origin,
+        *frame,
+        on_path.is_some(),
+        para.columns_from_right(),
+    );
     for g in &mut layout.glyphs {
         g.transform = shift * g.transform;
         g.path.apply_affine(shift);
@@ -247,19 +252,20 @@ pub fn text_glyph_layout(kind: &ShapeKind) -> Option<text_outline::GlyphLayout> 
 }
 
 /// From the text engine's layout space to a text's local space: paragraph
-/// text hangs from the top left of its frame (vertical text from the top
-/// right), artistic text sits on its first baseline at its origin
-/// (vertical text starts at the top of its first column there); text on
-/// a path is placed at the origin.
+/// text hangs from the top left of its frame (vertical text whose columns
+/// go right to left, `from_right`, from the top right), artistic text
+/// sits on its first baseline at its origin (vertical text starts at the
+/// top of its first column there); text on a path is placed at the
+/// origin. Callers pass [`ParagraphStyle::columns_from_right`].
 pub fn text_layout_shift(
     origin: Point,
     frame: Option<geometry::Size>,
     on_path: bool,
-    vertical: bool,
+    from_right: bool,
 ) -> Affine {
     match frame {
         Some(f) if !on_path => {
-            let dx = if vertical { f.width } else { 0.0 };
+            let dx = if from_right { f.width } else { 0.0 };
             Affine::translate((origin.x + dx, origin.y + f.height))
         }
         _ => Affine::translate(origin.to_vec2()),
@@ -311,7 +317,7 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
     };
     // The written lines to local space, as the outline is placed (the
     // columns of vertical text are the lines turned).
-    let to_local = text_layout_shift(*origin, *frame, false, para.vertical)
+    let to_local = text_layout_shift(*origin, *frame, false, para.columns_from_right())
         * if para.vertical {
             vertical_line_frame()
         } else {
@@ -352,8 +358,11 @@ pub fn text_backgrounds(kind: &ShapeKind) -> Vec<(Rect, Fill)> {
 
 /// Paragraph text as one artistic text a laid-out line, each placed where
 /// its frame put it (alignment and justification spacing aside), the lines
-/// that overflow the frame left out. `None` for other shapes or without a
-/// text engine. Formats that hold no frames use it to keep the look.
+/// that overflow the frame left out. A line with tabs is cut at them, each
+/// part an artistic text of its own placed where the tab stops put it,
+/// so a reader with other tab stops (or none) shows the same (#1852).
+/// `None` for other shapes or without a text engine. Formats that hold no
+/// frames use it to keep the look.
 pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
     let ShapeKind::Text {
         spans,
@@ -375,7 +384,7 @@ pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
     })?;
     // The written lines to local space (vertical text: the columns run
     // down the frame's height, so the lines go across its width).
-    let to_local = text_layout_shift(*origin, Some(*frame), false, para.vertical)
+    let to_local = text_layout_shift(*origin, Some(*frame), false, para.columns_from_right())
         * if para.vertical {
             vertical_line_frame()
         } else {
@@ -387,10 +396,18 @@ pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
         frame.height
     };
     let mut out = Vec::new();
+    // Each line's parts between tabs, with where each starts (#1852).
+    let mut pieces = Vec::new();
     for line in &lines {
         // Below the frame: overflow, shown in the next linked frame or not
-        // at all.
-        if line.baseline < -depth - 1e-6 {
+        // at all. The columns of left to right vertical text are placed
+        // mirrored, their baselines going up from the frame's left edge.
+        let past = if para.columns_left_to_right() {
+            line.baseline + line.ascent - line.descent > depth + 1e-6
+        } else {
+            line.baseline < -depth - 1e-6
+        };
+        if past {
             break;
         }
         let (_, tail) = split_spans_at(spans, line.start_char);
@@ -401,12 +418,36 @@ pub fn paragraph_lines(kind: &ShapeKind) -> Option<Vec<ShapeKind>> {
             sp.paragraph = None;
         }
         piece.retain(|sp| !sp.text.is_empty());
+        // The parts between tabs, with where each starts.
+        let line_chars: Vec<char> = piece.iter().flat_map(|sp| sp.text.chars()).collect();
+        let mut parts = Vec::new();
+        let mut from = 0usize;
+        for (i, c) in line_chars.iter().enumerate() {
+            if *c == '\t' {
+                parts.push((from, i));
+                from = i + 1;
+            }
+        }
+        parts.push((from, line_chars.len()));
+        for (a, b) in parts {
+            let (_, tail) = split_spans_at(&piece, a);
+            let (mut part, _) = split_spans_at(&tail, b - a);
+            part.retain(|sp| !sp.text.is_empty());
+            let x = if a == 0 {
+                line.x
+            } else {
+                line.edges.get(a).copied().unwrap_or(line.x)
+            };
+            pieces.push((part, x, line.baseline));
+        }
+    }
+    for (piece, x, baseline) in pieces {
         if piece.iter().all(|sp| sp.text.trim().is_empty()) {
             continue;
         }
         out.push(ShapeKind::Text {
             spans: piece,
-            origin: to_local * Point::new(line.x, line.baseline),
+            origin: to_local * Point::new(x, baseline),
             frame: None,
             align: TextAlign::Left,
             para: ParagraphStyle {
@@ -877,6 +918,18 @@ pub struct BitmapFxStack {
 }
 
 impl ShapeKind {
+    /// An open curve: a curve left open, or an ellipse made an arc (not a
+    /// pie). Its fill shows only while the document fills open curves
+    /// (`Metadata::fill_open_curves`), on screen, in exports and
+    /// for picking alike.
+    pub fn is_open_curve(&self) -> bool {
+        match self {
+            ShapeKind::Path { closed, .. } => !closed,
+            ShapeKind::Ellipse { arc: Some(a), .. } => !a.pie,
+            _ => false,
+        }
+    }
+
     /// A rectangle with these corners. Plain ones (one round radius that
     /// scales with the object) keep the short form; otherwise `radius`
     /// holds the largest corner for readers that know only one.
@@ -1086,7 +1139,7 @@ impl LineKind {
 /// where it says it goes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct LineStyle {
+pub struct LineLook {
     pub kind: LineKind,
     /// Thickness in points; `None` = the font's own.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1123,11 +1176,11 @@ fn full_tint() -> f64 {
     100.0
 }
 
-impl Default for LineStyle {
+impl Default for LineLook {
     /// A line as the font draws it: solid, no colour of its own, both
     /// tints full.
     fn default() -> Self {
-        LineStyle {
+        LineLook {
             kind: LineKind::Single,
             thickness_pt: None,
             offset_pt: None,
@@ -1149,11 +1202,11 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-impl LineStyle {
+impl LineLook {
     /// Whether it draws as the font does, the look a text has when it is
     /// not told otherwise: worth no line in a file.
     pub fn is_plain(&self) -> bool {
-        *self == LineStyle::default()
+        *self == LineLook::default()
     }
 
     /// Whether the kind leaves gaps between its marks, where a gap colour
@@ -1176,6 +1229,129 @@ impl LineStyle {
         match self.gap_color {
             Some(c) if self.has_gaps() => Some(Fill::Solid(c.tint(self.gap_tint))),
             _ => None,
+        }
+    }
+}
+
+/// Where characters sit on the line (#1201): on the baseline, raised as
+/// superscript or lowered as subscript. A font with the `sups` or `subs`
+/// feature draws its own forms; otherwise the characters are drawn at
+/// [`TextPosition::SYNTHETIC_SCALE`] of their size, shifted by
+/// [`TextPosition::synthetic_shift`] of the size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextPosition {
+    #[default]
+    Normal,
+    Superscript,
+    Subscript,
+}
+
+impl TextPosition {
+    /// The size of synthetic superscripts and subscripts, as a fraction
+    /// of the characters' size.
+    pub const SYNTHETIC_SCALE: f64 = 0.58;
+
+    /// Serde: a normal position is left out of the file.
+    pub fn is_normal(&self) -> bool {
+        *self == TextPosition::Normal
+    }
+
+    /// The OpenType feature that draws this position, if any.
+    pub fn feature(self) -> Option<&'static str> {
+        match self {
+            TextPosition::Normal => None,
+            TextPosition::Superscript => Some("sups"),
+            TextPosition::Subscript => Some("subs"),
+        }
+    }
+
+    /// The baseline shift of the synthetic form as a fraction of the
+    /// characters' size, positive up: superscripts rise by a third of
+    /// the size, subscripts drop by 15 % of it.
+    pub fn synthetic_shift(self) -> f64 {
+        match self {
+            TextPosition::Normal => 0.0,
+            TextPosition::Superscript => 0.33,
+            TextPosition::Subscript => -0.15,
+        }
+    }
+}
+
+/// The look of an underline or a strike line (#1209). A thin line is a
+/// fourteenth of the font size thick, a thick one a seventh; a double
+/// line is two thin lines a thin line apart; a word-only line skips the
+/// spaces between the words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineStyle {
+    #[default]
+    None,
+    SingleThin,
+    SingleThick,
+    DoubleThin,
+    SingleThinWord,
+    SingleThickWord,
+    DoubleThinWord,
+}
+
+impl LineStyle {
+    /// Every style, in the order the lists show them.
+    pub const ALL: [LineStyle; 7] = [
+        LineStyle::None,
+        LineStyle::SingleThin,
+        LineStyle::SingleThick,
+        LineStyle::DoubleThin,
+        LineStyle::SingleThinWord,
+        LineStyle::SingleThickWord,
+        LineStyle::DoubleThinWord,
+    ];
+
+    /// A line is drawn.
+    pub fn is_on(self) -> bool {
+        self != LineStyle::None
+    }
+
+    /// No line (serde and the lists).
+    pub fn is_none(&self) -> bool {
+        *self == LineStyle::None
+    }
+
+    /// The spaces between words are left out.
+    pub fn word_only(self) -> bool {
+        matches!(
+            self,
+            LineStyle::SingleThinWord | LineStyle::SingleThickWord | LineStyle::DoubleThinWord
+        )
+    }
+
+    /// Two thin lines, a thin line apart.
+    pub fn double(self) -> bool {
+        matches!(self, LineStyle::DoubleThin | LineStyle::DoubleThinWord)
+    }
+
+    /// The thickness of each line drawn, as a share of the font size: a
+    /// fourteenth for a thin line, a seventh for a thick one, nothing for
+    /// no line.
+    pub fn thickness_share(self) -> f64 {
+        match self {
+            LineStyle::None => 0.0,
+            LineStyle::SingleThick | LineStyle::SingleThickWord => 1.0 / 7.0,
+            _ => 1.0 / 14.0,
+        }
+    }
+
+    /// The style with the same line, drawn over the spaces too or only
+    /// under the words.
+    pub fn with_word_only(self, word_only: bool) -> LineStyle {
+        match (self, word_only) {
+            (LineStyle::SingleThin, true) => LineStyle::SingleThinWord,
+            (LineStyle::SingleThick, true) => LineStyle::SingleThickWord,
+            (LineStyle::DoubleThin, true) => LineStyle::DoubleThinWord,
+            (LineStyle::SingleThinWord, false) => LineStyle::SingleThin,
+            (LineStyle::SingleThickWord, false) => LineStyle::SingleThick,
+            (LineStyle::DoubleThinWord, false) => LineStyle::DoubleThin,
+            (s, _) => s,
         }
     }
 }
@@ -1225,6 +1401,74 @@ impl Marks {
     }
 }
 
+/// The OpenType features a shaper applies without being asked, so a
+/// span that lists none of them still gets them: a span switches one off
+/// with a `-` before its tag ("-liga", see [`TextSpan::set_feature`]).
+pub const DEFAULT_ON_FEATURES: [&str; 10] = [
+    "liga", "clig", "calt", "kern", "rlig", "ccmp", "locl", "mark", "mkmk", "curs",
+];
+
+/// A feature entry of [`TextSpan::features`] as its tag and whether it
+/// is on: "liga", "+liga" and "liga=1" turn it on, "-liga" and "liga=0"
+/// off. `None` for an entry that is not a feature.
+pub fn parse_feature(entry: &str) -> Option<(&str, bool)> {
+    let entry = entry.trim();
+    let (body, on) = if let Some(rest) = entry.strip_prefix('-') {
+        (rest, false)
+    } else if let Some(rest) = entry.strip_prefix('+') {
+        (rest, true)
+    } else {
+        (entry, true)
+    };
+    let (tag, on) = match body.split_once('=') {
+        Some((tag, value)) => (tag.trim(), value.trim() != "0"),
+        None => (body, on),
+    };
+    (!tag.is_empty() && tag.len() <= 4).then_some((tag, on))
+}
+
+/// The underline button and older files: on is a single thin line.
+impl From<bool> for LineStyle {
+    fn from(on: bool) -> Self {
+        if on {
+            LineStyle::SingleThin
+        } else {
+            LineStyle::None
+        }
+    }
+}
+
+/// Serde for [`LineStyle`] fields: files written before the styles hold
+/// `true` or `false`, which read as a single thin line and no line, and
+/// those two are still written that way, so a file with only them stays
+/// as it was; the other styles are written by name.
+pub mod line_style_serde {
+    use super::LineStyle;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Repr {
+        Flag(bool),
+        Style(LineStyle),
+    }
+
+    pub fn serialize<S: Serializer>(v: &LineStyle, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            LineStyle::None => false.serialize(s),
+            LineStyle::SingleThin => true.serialize(s),
+            other => other.serialize(s),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<LineStyle, D::Error> {
+        Ok(match Repr::deserialize(d)? {
+            Repr::Flag(on) => LineStyle::from(on),
+            Repr::Style(s) => s,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextSpan {
     pub text: String,
@@ -1248,16 +1492,41 @@ pub struct TextSpan {
     /// character's origin on its (shifted) baseline.
     #[serde(default)]
     pub angle_deg: f64,
-    #[serde(default)]
-    pub underline: bool,
-    #[serde(default)]
-    pub strikethrough: bool,
-    /// How the underline is drawn; plain = as the font draws it.
-    #[serde(default, skip_serializing_if = "LineStyle::is_plain")]
-    pub underline_style: LineStyle,
-    /// How the strike line is drawn; plain = as the font draws it.
-    #[serde(default, skip_serializing_if = "LineStyle::is_plain")]
-    pub strike_style: LineStyle,
+    /// The underline (#1209): drawn by the text layout from the face's
+    /// underline position down.
+    #[serde(default, with = "line_style_serde")]
+    pub underline: LineStyle,
+    /// The strike line (#1209), centred on the face's strikeout position.
+    #[serde(default, with = "line_style_serde")]
+    pub strikethrough: LineStyle,
+    /// Drawn as capitals (#1209): the shaper gets the Unicode uppercase
+    /// of each letter; the text keeps the case typed. A letter whose
+    /// capital is more than one letter stays as typed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub all_caps: bool,
+    /// Enclosed characters (#1209): the font's `nalt` forms when the face
+    /// has them, else a circle drawn round each glyph (a stroke of a
+    /// fourteenth of the size, radius 0.6 of the size, centred on the
+    /// glyph's advance).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub enclosed: bool,
+    /// These characters' fill overprints what lies beneath (#1209);
+    /// `None` = as the object's `overprint_fill`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overprint_fill: Option<bool>,
+    /// These characters' outline overprints (#1209); `None` = as the
+    /// object's `overprint_outline`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overprint_outline: Option<bool>,
+    /// How the underline is drawn beyond its kind: dots, dashes or a
+    /// wave, its thickness, place, colour, tint, gap colour and overprint;
+    /// plain = as the kind and the font draw it.
+    #[serde(default, skip_serializing_if = "LineLook::is_plain")]
+    pub underline_style: LineLook,
+    /// How the strike line is drawn beyond its kind; plain = as the kind
+    /// and the font draw it.
+    #[serde(default, skip_serializing_if = "LineLook::is_plain")]
+    pub strike_style: LineLook,
     /// Per-span fill override (character colour); `None` = object fill.
     #[serde(default)]
     pub fill: Option<Fill>,
@@ -1274,9 +1543,19 @@ pub struct TextSpan {
     /// these characters (see [`Shape::text_parts`]); never saved.
     #[serde(skip)]
     pub marks: Marks,
-    /// OpenType features to enable, e.g. "liga", "smcp", "frac".
+    /// Laid out but not drawn: a part of a text drawn in parts leaves the
+    /// characters of the other looks undrawn (see [`Shape::text_parts`]).
+    #[serde(skip)]
+    pub layout_only: bool,
+    /// OpenType features set on these characters: a tag turns the
+    /// feature on ("smcp", "frac"), a tag after a `-` turns one the
+    /// shaper applies by default off ("-liga"); see
+    /// [`TextSpan::feature_on`] and [`TextSpan::set_feature`].
     #[serde(default)]
     pub features: Vec<String>,
+    /// Superscript or subscript (#1201).
+    #[serde(default, skip_serializing_if = "TextPosition::is_normal")]
+    pub position: TextPosition,
     /// Axis values of a variable font set for these characters (#870);
     /// an axis not listed takes the value the text's weight and slant
     /// give, else the font's default.
@@ -1298,6 +1577,17 @@ fn is_zero(v: &f64) -> bool {
     *v == 0.0
 }
 
+
+/// One look of a text's characters (see [`Shape::text_parts`]): the fill,
+/// outline and overprints they are drawn with.
+#[derive(Clone, PartialEq)]
+struct TextLook {
+    fill: Fill,
+    stroke: Option<Stroke>,
+    overprint_fill: bool,
+    overprint_outline: bool,
+}
+
 impl TextSpan {
     pub fn new(text: impl Into<String>, font_family: impl Into<String>, size_pt: f64) -> Self {
         TextSpan {
@@ -1310,18 +1600,61 @@ impl TextSpan {
             baseline_shift_pt: 0.0,
             offset_x_pct: 0.0,
             angle_deg: 0.0,
-            underline: false,
-            strikethrough: false,
-            underline_style: LineStyle::default(),
-            strike_style: LineStyle::default(),
+            underline: LineStyle::None,
+            strikethrough: LineStyle::None,
+            all_caps: false,
+            enclosed: false,
+            overprint_fill: None,
+            overprint_outline: None,
+            underline_style: LineLook::default(),
+            strike_style: LineLook::default(),
             fill: None,
             background: None,
             outline: None,
             marks: Marks::default(),
+            layout_only: false,
             features: Vec::new(),
+            position: TextPosition::Normal,
             variations: Vec::new(),
             paragraph: None,
             char_style: None,
+        }
+    }
+
+    /// What these characters say about feature `tag`: `Some(true)` when
+    /// they turn it on, `Some(false)` when they turn it off, `None` when
+    /// they leave it to the shaper. The last entry for the tag wins.
+    pub fn feature_setting(&self, tag: &str) -> Option<bool> {
+        self.features
+            .iter()
+            .rev()
+            .filter_map(|f| parse_feature(f))
+            .find(|(t, _)| *t == tag)
+            .map(|(_, on)| on)
+    }
+
+    /// Feature `tag` is applied to these characters: as they say, else
+    /// when the shaper applies it by default ([`DEFAULT_ON_FEATURES`]).
+    /// Whether the font has the feature is another matter.
+    pub fn feature_on(&self, tag: &str) -> bool {
+        self.feature_setting(tag)
+            .unwrap_or_else(|| DEFAULT_ON_FEATURES.contains(&tag))
+    }
+
+    /// Set feature `tag` on (`Some(true)`), off (`Some(false)`) or leave
+    /// it to the shaper (`None`); the earlier entries for the tag go.
+    /// A setting that is what the shaper does anyway is not stored.
+    pub fn set_feature(&mut self, tag: &str, on: Option<bool>) {
+        self.features
+            .retain(|f| parse_feature(f).is_none_or(|(t, _)| t != tag));
+        match on {
+            Some(true) if !DEFAULT_ON_FEATURES.contains(&tag) => {
+                self.features.push(tag.to_string());
+            }
+            Some(false) if DEFAULT_ON_FEATURES.contains(&tag) => {
+                self.features.push(format!("-{tag}"));
+            }
+            _ => {}
         }
     }
 
@@ -1561,13 +1894,9 @@ pub struct ParagraphStyle {
     pub bullet_indent: f64,
     /// Drop cap height in lines; 0 = none.
     pub drop_cap_lines: u32,
-    /// Tab stops in mm from the left edge; empty = default every 12.7 mm.
-    pub tabs: Vec<f64>,
-    /// How each stop of `tabs` aligns the text after it and what fills
-    /// the space before it, by index; a stop with no entry is a left
-    /// stop with no leader (files and imports that know only positions).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tab_details: Vec<TabDetail>,
+    /// Tab stops, in order from the frame's left edge; empty = a left
+    /// stop every [`default_tab_step`] mm (12.7 unless set otherwise).
+    pub tabs: Vec<TabStop>,
     pub hyphenate: bool,
     /// How the paragraph hyphenates, when it does (see [`Hyphenation`]).
     #[serde(default, skip_serializing_if = "is_default_hyphenation")]
@@ -1596,6 +1925,11 @@ pub struct ParagraphStyle {
     /// a path ignores it. See docs/behavior/text.md, Vertical text.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub vertical: bool,
+    /// The order of vertical text's columns across the frame: right to
+    /// left (the default, from the top right) or left to right (from the
+    /// top left, #1986). Files from before it read as right to left.
+    #[serde(skip_serializing_if = "VerticalColumns::is_right_to_left")]
+    pub vertical_columns: VerticalColumns,
     /// The paragraph frame's background; `None` = transparent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame_fill: Option<Fill>,
@@ -1604,6 +1938,140 @@ pub struct ParagraphStyle {
     /// [`crate::text_flow`]); not saved.
     #[serde(skip)]
     pub flow: crate::text_flow::FrameFlow,
+}
+
+/// The distance between the default tab stops of a paragraph with no
+/// stops of its own, mm, unless Options > Text > Paragraph Text sets
+/// another ([`set_default_tab_step`]): half an inch, as the other
+/// program and `.cdr` files without stops have it.
+pub const DEFAULT_TAB_STEP: f64 = 12.7;
+
+/// The default tab spacing in use, as `f64` bits; 0 = [`DEFAULT_TAB_STEP`].
+static TAB_STEP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The distance between the default tab stops in use, mm (the setting
+/// "Default tab spacing", [`DEFAULT_TAB_STEP`] until it is set).
+pub fn default_tab_step() -> f64 {
+    let bits = TAB_STEP.load(std::sync::atomic::Ordering::Relaxed);
+    if bits == 0 {
+        DEFAULT_TAB_STEP
+    } else {
+        f64::from_bits(bits)
+    }
+}
+
+/// Use `mm` between the default tab stops from now on, kept within 1 to
+/// 100 mm; a value that is not a number restores [`DEFAULT_TAB_STEP`].
+/// Text laid out before keeps its layout until it is laid out again
+/// (the text engine's caches count the step in their keys).
+pub fn set_default_tab_step(mm: f64) {
+    let v = if mm.is_finite() {
+        mm.clamp(1.0, 100.0)
+    } else {
+        DEFAULT_TAB_STEP
+    };
+    TAB_STEP.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// How the text after a tab sits against its stop (Text > Tabs and the
+/// tab ruler).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabKind {
+    /// The text starts at the stop.
+    #[default]
+    Left,
+    /// The text is centred on the stop.
+    Center,
+    /// The text ends at the stop.
+    Right,
+    /// The text's decimal separator (its first `.` or `,`) sits on the
+    /// stop; text without one ends at the stop.
+    Decimal,
+}
+
+impl TabKind {
+    pub const ALL: [TabKind; 4] = [
+        TabKind::Left,
+        TabKind::Center,
+        TabKind::Right,
+        TabKind::Decimal,
+    ];
+}
+
+/// One tab stop of a paragraph.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct TabStop {
+    /// Distance from the frame's left edge, mm.
+    pub pos: f64,
+    pub kind: TabKind,
+    /// The character repeated over the gap the tab leaves (a dot leader
+    /// in a menu or a table of contents); `None` = blank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leader: Option<char>,
+}
+
+impl TabStop {
+    /// A left stop at `pos` mm with no leader.
+    pub fn left(pos: f64) -> Self {
+        TabStop {
+            pos,
+            kind: TabKind::Left,
+            leader: None,
+        }
+    }
+
+    pub fn new(pos: f64, kind: TabKind) -> Self {
+        TabStop {
+            pos,
+            kind,
+            leader: None,
+        }
+    }
+}
+
+/// Files from before tab kinds hold each stop as a bare number (a left
+/// stop at that many mm).
+impl<'de> Deserialize<'de> for TabStop {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Full {
+            #[serde(default)]
+            pos: f64,
+            #[serde(default)]
+            kind: TabKind,
+            #[serde(default)]
+            leader: Option<char>,
+        }
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either {
+            Pos(f64),
+            Full(Full),
+        }
+        Ok(match Either::deserialize(d)? {
+            Either::Pos(pos) => TabStop::left(pos),
+            Either::Full(f) => TabStop {
+                pos: f.pos,
+                kind: f.kind,
+                leader: f.leader,
+            },
+        })
+    }
+}
+
+/// The stops of `tabs` in order of position, with stops closer than
+/// 0.01 mm to one before them dropped and positions that are not finite
+/// left out (what an edit hands the paragraph).
+pub fn normalized_tabs(tabs: &[TabStop]) -> Vec<TabStop> {
+    let mut out: Vec<TabStop> = tabs
+        .iter()
+        .copied()
+        .filter(|t| t.pos.is_finite() && t.pos >= 0.0)
+        .collect();
+    out.sort_by(|a, b| a.pos.total_cmp(&b.pos));
+    out.dedup_by(|b, a| (b.pos - a.pos).abs() < 0.01);
+    out
 }
 
 /// The unit of a paragraph's line spacing (the Text docker's list next to
@@ -1680,6 +2148,23 @@ impl ParagraphStyle {
     }
 }
 
+/// Which way the columns of vertical text follow one another across the
+/// frame (Text > Vertical Text, the Text docker's Frame section): right to
+/// left, as CJK typesetting has them, or left to right (#1986).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerticalColumns {
+    #[default]
+    RightToLeft,
+    LeftToRight,
+}
+
+impl VerticalColumns {
+    pub fn is_right_to_left(&self) -> bool {
+        *self == VerticalColumns::RightToLeft
+    }
+}
+
 /// Where paragraph text sits in its frame (the Text docker's Frame
 /// section): at the top, in the middle or at the bottom of the room its
 /// lines leave. Text that overflows the frame starts at the top.
@@ -1711,7 +2196,6 @@ impl Default for ParagraphStyle {
             bullet_indent: 5.0,
             drop_cap_lines: 0,
             tabs: Vec::new(),
-            tab_details: Vec::new(),
             hyphenate: false,
             hyphenation: Hyphenation::default(),
             balance_lines: false,
@@ -1719,116 +2203,23 @@ impl Default for ParagraphStyle {
             baseline_grid_mm: 0.0,
             vertical_align: VerticalAlign::Top,
             vertical: false,
+            vertical_columns: VerticalColumns::RightToLeft,
             frame_fill: None,
             flow: crate::text_flow::FrameFlow::default(),
         }
     }
 }
 
-/// How a tab stop places the text after it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TabAlign {
-    /// The text starts at the stop.
-    #[default]
-    Left,
-    /// The text is centred on the stop.
-    Center,
-    /// The text ends at the stop.
-    Right,
-    /// The first `TabDetail::align_on` character of the text sits at the
-    /// stop (the text ends there when it has none).
-    Decimal,
-}
-
-impl TabAlign {
-    pub const ALL: [TabAlign; 4] = [
-        TabAlign::Left,
-        TabAlign::Center,
-        TabAlign::Right,
-        TabAlign::Decimal,
-    ];
-}
-
-/// What a tab stop does beyond its position (see
-/// [`ParagraphStyle::tab_details`]).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TabDetail {
-    pub align: TabAlign,
-    /// Characters repeated across the space the tab opens (dots for a
-    /// table of contents); empty = none.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub leader: String,
-    /// The character a decimal stop lines up on.
-    pub align_on: char,
-}
-
-impl Default for TabDetail {
-    fn default() -> Self {
-        TabDetail {
-            align: TabAlign::Left,
-            leader: String::new(),
-            align_on: ',',
-        }
-    }
-}
-
 impl ParagraphStyle {
-    /// The details of stop `i` of `tabs` (a plain left stop when it has
-    /// none).
-    pub fn tab_detail(&self, i: usize) -> TabDetail {
-        self.tab_details.get(i).cloned().unwrap_or_default()
+    /// Vertical text whose columns go left to right: its lines are
+    /// placed mirrored across the frame (see [`text_layout_shift`]).
+    pub fn columns_left_to_right(&self) -> bool {
+        self.vertical && self.vertical_columns == VerticalColumns::LeftToRight
     }
 
-    /// Set the details of stop `i`, filling the stops before it with
-    /// plain left stops; nothing beyond `tabs` is kept.
-    pub fn set_tab_detail(&mut self, i: usize, d: TabDetail) {
-        if i >= self.tabs.len() {
-            return;
-        }
-        if self.tab_details.len() <= i {
-            self.tab_details.resize(i + 1, TabDetail::default());
-        }
-        if let Some(slot) = self.tab_details.get_mut(i) {
-            *slot = d;
-        }
-        self.trim_tab_details();
-    }
-
-    /// Remove stop `i` with its details.
-    pub fn remove_tab(&mut self, i: usize) {
-        if i < self.tabs.len() {
-            self.tabs.remove(i);
-        }
-        if i < self.tab_details.len() {
-            self.tab_details.remove(i);
-        }
-        self.trim_tab_details();
-    }
-
-    /// Put the stops in order of position, each keeping its details.
-    pub fn sort_tabs(&mut self) {
-        let mut pairs: Vec<(f64, TabDetail)> = (0..self.tabs.len())
-            .map(|i| (self.tabs.get(i).copied().unwrap_or(0.0), self.tab_detail(i)))
-            .collect();
-        pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
-        self.tabs = pairs.iter().map(|p| p.0).collect();
-        self.tab_details = pairs.into_iter().map(|p| p.1).collect();
-        self.trim_tab_details();
-    }
-
-    /// No details past the stops, nor trailing plain ones (so a drawing
-    /// with plain stops saves as before).
-    fn trim_tab_details(&mut self) {
-        self.tab_details.truncate(self.tabs.len());
-        while self
-            .tab_details
-            .last()
-            .is_some_and(|d| *d == TabDetail::default())
-        {
-            self.tab_details.pop();
-        }
+    /// Vertical text whose columns start at the frame's right edge.
+    pub fn columns_from_right(&self) -> bool {
+        self.vertical && self.vertical_columns == VerticalColumns::RightToLeft
     }
 }
 
@@ -2363,6 +2754,12 @@ pub struct Shape {
     /// drops them and leaves an ordinary curve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spline: Option<Vec<Point>>,
+    /// Which of the B-spline's control points are fixed: the curve passes
+    /// through a fixed point (with a corner there), and only comes near
+    /// a floating one. Empty (every point floating), or one flag a point
+    /// of [`Shape::spline`] (#1758).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spline_fixed: Vec<bool>,
     /// The object's identity across saves, undo and moves between
     /// drawings (see [`Uid`]); the engine gives one to every object.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2405,6 +2802,19 @@ pub struct Shape {
     /// again from it whenever it changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qr: Option<Box<QrCode>>,
+    /// How the fill covers the places where the outline's contours
+    /// overlap (#1211, #1919): even-odd (the default: an overlap of two
+    /// contours is a hole, as in a combined ring) or nonzero (an overlap
+    /// of contours turning the same way stays filled, as in traced
+    /// lettering made of overlapping parts). Text always fills nonzero.
+    #[serde(default, skip_serializing_if = "crate::shaping::FillRule::is_even_odd")]
+    pub fill_rule: crate::shaping::FillRule,
+    /// Linked text content (#1568): the texts carrying the same key keep
+    /// the same characters, each in its own font, colours and effects
+    /// (see [`crate::linked_text`]). Not the flow of linked paragraph
+    /// frames, which is another feature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_link: Option<u64>,
 }
 
 /// What a QR code holds: the kind of content, which decides the fields
@@ -2694,6 +3104,7 @@ impl Shape {
             style: None,
             node_types: std::collections::BTreeMap::new(),
             spline: None,
+            spline_fixed: Vec::new(),
             uid: None,
             opacity_mask: None,
             parked_effects: Vec::new(),
@@ -2703,6 +3114,8 @@ impl Shape {
             extra_strokes: Vec::new(),
             raster_fx: None,
             qr: None,
+            fill_rule: crate::shaping::FillRule::EvenOdd,
+            content_link: None,
         }
     }
 
@@ -2759,129 +3172,135 @@ impl Shape {
         Some(s)
     }
 
-    /// A text whose characters have their own fill or outline, or an
-    /// underline or a strike line with a colour of its own, as the texts
-    /// it is drawn in: one per look (fill and outline), in the order the
-    /// looks first appear, and one per colour a line needs on its own;
+    /// A text whose characters have their own fill, outline or overprint,
+    /// or an underline or a strike line with a colour or an overprint of
+    /// its own, as the texts it is drawn in: one per look (fill, outline
+    /// and the two overprints), in the order the looks first appear, and
+    /// one per look a line or the gaps of its dashes need on their own;
     /// each laid out as the whole text with the other marks left undrawn
-    /// (`TextSpan::marks`). The character backgrounds and the frame
-    /// background are left out of the parts (they are drawn once under the
-    /// text) and only the first part keeps the shadow. `None` for other
-    /// shapes and for text whose characters all take the object's fill and
-    /// outline and whose lines take the characters' colour.
+    /// (`TextSpan::marks`, and `layout_only` for characters with nothing
+    /// drawn). The character backgrounds and the frame background are left
+    /// out of the parts (they are drawn once under the text) and only the
+    /// first part keeps the shadow. `None` for other shapes and for text
+    /// whose characters and lines all take the object's look.
     pub fn text_parts(&self) -> Option<Vec<Shape>> {
         let ShapeKind::Text { spans, .. } = &self.kind else {
             return None;
         };
         // A part is not split again.
-        if spans.iter().any(|s| s.marks != Marks::default()) {
+        if spans.iter().any(|s| s.layout_only || s.marks != Marks::default()) {
             return None;
         }
-        let colour_of = |s: &TextSpan| -> (Fill, Option<Stroke>) {
+        let look = |s: &TextSpan| -> TextLook {
             let fill = s.fill.clone().unwrap_or_else(|| self.fill.clone());
             let stroke = match &s.outline {
                 Some(o) if o.width > 0.0 => Some(o.clone()),
                 Some(_) => None,
                 None => self.stroke.clone(),
             };
-            (fill, stroke)
-        };
-        let drawn = spans.iter().filter(|s| s.char_count() > 0);
-        // A part is a look (a fill, an outline and whether the fill
-        // overprints); a line of its own is a look of its own.
-        let over = self.overprint_fill;
-        let gap_ink = |style: &LineStyle| -> Option<(Fill, bool)> {
-            style.gap_fill().map(|f| (f, style.gap_overprint))
-        };
-        let nothing_of_its_own = |s: &TextSpan| -> bool {
-            let (fill, _) = colour_of(s);
-            let line_ok = |on: bool, style: &LineStyle| {
-                !on
-                    || (style.fill_or(&fill) == fill
-                        && style.overprint == over
-                        && style.gap_color.is_none())
-            };
-            s.fill.is_none()
-                && s.outline.is_none()
-                && line_ok(s.underline, &s.underline_style)
-                && line_ok(s.strikethrough, &s.strike_style)
-        };
-        if drawn.clone().all(nothing_of_its_own) {
-            return None;
-        }
-        let mut looks: Vec<(Fill, Option<Stroke>, bool)> = Vec::new();
-        let mut line_inks: Vec<(Fill, bool)> = Vec::new();
-        let mut gap_inks: Vec<(Fill, bool)> = Vec::new();
-        for s in drawn {
-            let (fill, stroke) = colour_of(s);
-            let look = (fill.clone(), stroke, over);
-            if !looks.contains(&look) {
-                looks.push(look);
+            TextLook {
+                fill,
+                stroke,
+                overprint_fill: s.overprint_fill.unwrap_or(self.overprint_fill),
+                overprint_outline: s.overprint_outline.unwrap_or(self.overprint_outline),
             }
-            for (on, style) in [(s.underline, &s.underline_style), (s.strikethrough, &s.strike_style)]
-            {
+        };
+        let own = TextLook {
+            fill: self.fill.clone(),
+            stroke: self.stroke.clone(),
+            overprint_fill: self.overprint_fill,
+            overprint_outline: self.overprint_outline,
+        };
+        // A line with no colour and no overprint of its own is drawn with
+        // the letters it belongs to; else it is a look of its own, and so
+        // are the gaps of its dashes when they have a colour.
+        let with_letters = |l: &TextLook, style: &LineLook| {
+            style.fill_or(&l.fill) == l.fill && style.overprint == l.overprint_fill
+        };
+        let line_look = |l: &TextLook, style: &LineLook| TextLook {
+            fill: style.fill_or(&l.fill),
+            stroke: None,
+            overprint_fill: style.overprint,
+            overprint_outline: l.overprint_outline,
+        };
+        let gap_look = |l: &TextLook, style: &LineLook| {
+            style.gap_fill().map(|fill| TextLook {
+                fill,
+                stroke: None,
+                overprint_fill: style.gap_overprint,
+                overprint_outline: l.overprint_outline,
+            })
+        };
+        let mut looks: Vec<TextLook> = Vec::new();
+        let mut extra: Vec<TextLook> = Vec::new();
+        for s in spans.iter().filter(|s| s.char_count() > 0) {
+            let l = look(s);
+            if !looks.contains(&l) {
+                looks.push(l.clone());
+            }
+            for (on, style) in [
+                (s.underline.is_on(), &s.underline_style),
+                (s.strikethrough.is_on(), &s.strike_style),
+            ] {
                 if !on {
                     continue;
                 }
-                let ink = (style.fill_or(&fill), style.overprint);
-                if ink != (fill.clone(), over) && !line_inks.contains(&ink) {
-                    line_inks.push(ink.clone());
+                if !with_letters(&l, style) {
+                    let ll = line_look(&l, style);
+                    if !extra.contains(&ll) {
+                        extra.push(ll);
+                    }
                 }
-                if let Some(g) = gap_ink(style) {
-                    if g != ink && !gap_inks.contains(&g) {
-                        gap_inks.push(g);
+                if let Some(g) = gap_look(&l, style) {
+                    if !extra.contains(&g) {
+                        extra.push(g);
                     }
                 }
             }
         }
-        if looks.is_empty() {
-            return None;
-        }
-        let mut inks: Vec<(Fill, Option<Stroke>, bool)> = looks;
         // Nothing to split: one look, the object's own, and no line in a
         // colour or an overprint of its own.
-        if inks.len() == 1
-            && inks[0] == (self.fill.clone(), self.stroke.clone(), over)
-            && line_inks.is_empty()
-            && gap_inks.is_empty()
-        {
+        if looks.is_empty() || (looks.len() == 1 && looks[0] == own && extra.is_empty()) {
             return None;
         }
-        inks.extend(line_inks.into_iter().map(|(f, op)| (f, None, op)));
-        for g in gap_inks {
-            if !inks.contains(&(g.0.clone(), None, g.1)) {
-                inks.push((g.0, None, g.1));
+        let mut inks = looks;
+        for e in extra {
+            if !inks.contains(&e) {
+                inks.push(e);
             }
-        };
+        }
         let parts = inks
             .into_iter()
             .enumerate()
-            .map(|(i, (fill, stroke, op))| {
+            .map(|(i, ink)| {
                 let mut part = self.clone();
-                part.overprint_fill = op;
                 if let ShapeKind::Text { spans, para, .. } = &mut part.kind {
                     for s in spans.iter_mut() {
-                        let (mine, mine_stroke) = colour_of(s);
-                        let under_ink = (
-                            s.underline_style.fill_or(&mine),
-                            s.underline_style.overprint,
-                        );
-                        let strike_ink = (s.strike_style.fill_or(&mine), s.strike_style.overprint);
-                        let letters = mine == fill && mine_stroke == stroke && op == over;
+                        let l = look(s);
+                        let letters = l == ink;
+                        let line_here = |on: bool, style: &LineLook| {
+                            on && if with_letters(&l, style) {
+                                letters
+                            } else {
+                                line_look(&l, style) == ink
+                            }
+                        };
                         s.marks = Marks {
                             letters,
-                            underline: s.underline && under_ink == (fill.clone(), op),
-                            strike: s.strikethrough && strike_ink == (fill.clone(), op),
-                            underline_gap: s.underline
-                                && gap_ink(&s.underline_style) == Some((fill.clone(), op)),
-                            strike_gap: s.strikethrough
-                                && gap_ink(&s.strike_style) == Some((fill.clone(), op)),
+                            underline: line_here(s.underline.is_on(), &s.underline_style),
+                            strike: line_here(s.strikethrough.is_on(), &s.strike_style),
+                            underline_gap: s.underline.is_on()
+                                && gap_look(&l, &s.underline_style).as_ref() == Some(&ink),
+                            strike_gap: s.strikethrough.is_on()
+                                && gap_look(&l, &s.strike_style).as_ref() == Some(&ink),
                         };
+                        s.layout_only = !s.marks.any();
                         s.background = None;
                         s.fill = None;
                         s.outline = None;
-                        // The part's fill is the colour of its lines; a part
-                        // is never split again.
+                        s.overprint_fill = None;
+                        s.overprint_outline = None;
+                        // The part's fill is the colour of its lines.
                         s.underline_style.color = None;
                         s.strike_style.color = None;
                         s.underline_style.gap_color = None;
@@ -2889,8 +3308,10 @@ impl Shape {
                     }
                     para.frame_fill = None;
                 }
-                part.fill = fill;
-                part.stroke = stroke;
+                part.fill = ink.fill;
+                part.stroke = ink.stroke;
+                part.overprint_fill = ink.overprint_fill;
+                part.overprint_outline = ink.overprint_outline;
                 if i > 0 {
                     part.shadow = None;
                 }
@@ -3128,9 +3549,14 @@ impl Shape {
     }
 
     /// Whether Break Apart has parts to give: a curve of several
-    /// subpaths, or a clip frame whose frame is one (each part then a
-    /// clip frame holding the contents, #1607).
+    /// subpaths, a brush stroke (its band and its path, see
+    /// [`Self::is_brush_stroke`]), or a clip frame whose frame is a curve
+    /// of several subpaths (each part then a clip frame holding the
+    /// contents, #1607).
     pub fn breaks_into_parts(&self) -> bool {
+        if self.is_brush_stroke() {
+            return true;
+        }
         let path = match &self.kind {
             ShapeKind::Path { path, .. } => path,
             ShapeKind::ClipFrame { frame, .. } => match &frame.kind {
@@ -3144,6 +3570,76 @@ impl Shape {
             .filter(|e| matches!(e, geometry::PathEl::MoveTo(_)))
             .count()
             > 1
+    }
+
+    /// A curve drawn with a brush: its outline is a band of its own
+    /// shape along it (a brush stroke, a variable or calligraphic
+    /// outline). Break Apart sets the band apart from the path.
+    pub fn is_brush_stroke(&self) -> bool {
+        matches!(self.kind, ShapeKind::Path { .. })
+            && self.stroke.as_ref().is_some_and(|s| s.is_brush())
+    }
+
+    /// The band a brush stroke draws (see [`Self::is_brush_stroke`]), in
+    /// page space as its object stands in its layer, fitted to curves:
+    /// one path per separate part, each an outer contour with its holes.
+    /// `None` for any other object, or a band that comes out empty.
+    pub fn brush_band_parts(&self) -> Option<Vec<BezPath>> {
+        if !self.is_brush_stroke() {
+            return None;
+        }
+        let st = self.stroke.as_ref()?;
+        let page = self.page_path();
+        let scale = if st.scale_with_object {
+            let c = self.transform.as_coeffs();
+            ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt().max(1e-6)
+        } else {
+            1.0
+        };
+        // A variable width from a finer flattening, as it is fitted to
+        // curves (as Convert Outline to Object does, #627).
+        let band = if st.widths.is_empty() {
+            crate::shaping::outline_band(&page, st, scale)?
+        } else {
+            let nodes: Vec<crate::style::WidthNode> = st
+                .widths
+                .iter()
+                .map(|n| crate::style::WidthNode {
+                    at: n.at,
+                    left: n.left * scale,
+                    right: n.right * scale,
+                })
+                .collect();
+            crate::shaping::variable_band_within(&page, st.width * scale, &nodes, 0.005)
+        };
+        let band = crate::fit::fit_path(&band, 0.01);
+        // The contours come outer first, then its holes, which wind the
+        // other way.
+        let mut parts: Vec<BezPath> = Vec::new();
+        let mut outer_sign = 0.0;
+        let mut contour = BezPath::new();
+        let mut flush = |contour: &mut BezPath, parts: &mut Vec<BezPath>| {
+            let c = std::mem::take(contour);
+            let area = c.area();
+            if c.elements().is_empty() || !area.is_finite() || area.abs() <= 1e-12 {
+                return;
+            }
+            if outer_sign == 0.0 {
+                outer_sign = area.signum();
+            }
+            match parts.last_mut() {
+                Some(part) if area.signum() != outer_sign => part.extend(c),
+                _ => parts.push(c),
+            }
+        };
+        for el in band.elements() {
+            if matches!(el, geometry::PathEl::MoveTo(_)) {
+                flush(&mut contour, &mut parts);
+            }
+            contour.push(*el);
+        }
+        flush(&mut contour, &mut parts);
+        (!parts.is_empty()).then_some(parts)
     }
 
     /// A copy with ids from `next` for the object and everything inside
@@ -3337,7 +3833,8 @@ impl Shape {
                     }
                     // Paragraph text hangs from the top of its frame;
                     // artistic text sits on its baseline.
-                    return text_layout_shift(*origin, *frame, false, para.vertical) * p;
+                    return text_layout_shift(*origin, *frame, false, para.columns_from_right())
+                        * p;
                 }
                 // No text engine registered: rough box, 0.5 em per character.
                 let size_mm: f64 =
@@ -3500,6 +3997,7 @@ impl Shape {
             out.kind = kind;
             out.node_types.clear();
             out.spline = None;
+            out.spline_fixed.clear();
             changed = true;
         }
         if !container {
@@ -3607,6 +4105,7 @@ impl Shape {
                     self.kind = kind;
                     self.node_types.clear();
                     self.spline = None;
+                    self.spline_fixed.clear();
                 }
                 if bake && !container {
                     if let Some(b) = crate::live::bake_outline_warps(self) {
@@ -3665,6 +4164,7 @@ impl Shape {
                     self.kind = kind;
                     self.node_types.clear();
                     self.spline = None;
+                    self.spline_fixed.clear();
                 }
                 if bake && !container {
                     if let Some(b) = crate::live::bake_outline_warps(self) {
@@ -3818,7 +4318,7 @@ impl Shape {
         let local = if on_path.is_some() {
             Affine::translate(origin.to_vec2())
         } else {
-            text_layout_shift(*origin, *frame, false, para.vertical)
+            text_layout_shift(*origin, *frame, false, para.columns_from_right())
         };
         let m = self.transform * local;
         let [a, b, c, d, _, _] = m.as_coeffs();
@@ -4380,7 +4880,6 @@ impl ParagraphStyle {
     /// leaving its spacing and indents.
     pub fn apply_layout_to(&self, to: &mut ParagraphStyle) {
         to.tabs = self.tabs.clone();
-        to.tab_details = self.tab_details.clone();
         to.columns = self.columns;
         to.gutter = self.gutter;
         to.bullets = self.bullets;
@@ -4405,6 +4904,37 @@ pub struct ColorStyle {
 pub struct Symbol {
     pub name: String,
     pub shape: Shape,
+}
+
+/// Whether `shape` draws an instance of symbol `index`, directly or
+/// through the definitions of the symbols it draws (Edit Symbol refuses
+/// such a definition: it would draw itself without end). Symbols met
+/// once are not walked again, so a cycle already in a file ends.
+pub fn draws_symbol(shape: &Shape, index: usize, symbols: &[Symbol]) -> bool {
+    fn walk(s: &Shape, index: usize, symbols: &[Symbol], seen: &mut Vec<bool>) -> bool {
+        match &s.kind {
+            ShapeKind::SymbolInstance { index: i } => {
+                if *i == index {
+                    return true;
+                }
+                match (symbols.get(*i), seen.get_mut(*i)) {
+                    (Some(sym), Some(flag)) if !*flag => {
+                        *flag = true;
+                        walk(&sym.shape, index, symbols, seen)
+                    }
+                    _ => false,
+                }
+            }
+            ShapeKind::Group { children } => children.iter().any(|c| walk(c, index, symbols, seen)),
+            ShapeKind::ClipFrame { frame, contents } => {
+                walk(frame, index, symbols, seen)
+                    || contents.iter().any(|c| walk(c, index, symbols, seen))
+            }
+            _ => false,
+        }
+    }
+    let mut seen = vec![false; symbols.len()];
+    walk(shape, index, symbols, &mut seen)
 }
 
 /// Document properties (File > Document Properties).
@@ -4447,11 +4977,54 @@ pub struct Metadata {
     /// older drawings read and write as before.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page_spacing: Option<f64>,
-    /// Facing pages (a book's spreads): the Multipage View shows the
-    /// pages in pairs, the first page alone on the right, a left-hand
-    /// page beside the right-hand page after it with the spine between.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    /// Facing pages (Layout > Facing Pages, Document Options > Layout,
+    /// #1972, #1660): the pages show side by side in spreads, see
+    /// [`crate::spreads`]. Left out of the file while off.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub facing_pages: bool,
+    /// The side the first page of facing pages sits on: alone on the
+    /// right (the default) or starting a spread on the left.
+    #[serde(skip_serializing_if = "crate::spreads::PageSide::is_right")]
+    pub facing_start: crate::spreads::PageSide,
+    /// The pages the Multipage View shows, as a range of page numbers
+    /// such as "1-3, 7" (#1440); empty: every page. Left out of the file
+    /// while empty.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub multipage_pages: String,
+}
+
+/// The pages of `range` ("1-3, 5"; page numbers from 1, ranges either
+/// way round, commas or semicolons between) that exist among `count`,
+/// 0-based, in page order, each once. A part that is not a page number
+/// or a range of them makes the whole range read as none.
+pub fn parse_page_range(range: &str, count: usize) -> Vec<usize> {
+    let mut seen = vec![false; count];
+    for part in range.split([',', ';']) {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (a, b) = match part.split_once('-') {
+            Some((a, b)) => (a.trim().parse::<usize>(), b.trim().parse::<usize>()),
+            None => (part.parse::<usize>(), part.parse::<usize>()),
+        };
+        let (Ok(a), Ok(b)) = (a, b) else {
+            return Vec::new();
+        };
+        if a == 0 || b == 0 {
+            return Vec::new();
+        }
+        let (lo, hi) = (a.min(b), a.max(b).min(count));
+        for n in lo..=hi {
+            if let Some(f) = seen.get_mut(n - 1) {
+                *f = true;
+            }
+        }
+    }
+    seen.iter()
+        .enumerate()
+        .filter_map(|(i, f)| f.then_some(i))
+        .collect()
 }
 
 /// The space between pages in the Multipage View when a drawing sets
@@ -4470,6 +5043,15 @@ impl Metadata {
             Some(v) if v.is_finite() => v.clamp(0.0, MAX_PAGE_SPACING),
             _ => DEFAULT_PAGE_SPACING,
         }
+    }
+
+    /// The pages (0-based, in order) the Multipage View shows of a
+    /// drawing of `count` pages: those of [`Metadata::multipage_pages`],
+    /// or `None` for every page (no range, or one that names no page of
+    /// the drawing).
+    pub fn multipage_page_indices(&self, count: usize) -> Option<Vec<usize>> {
+        let pages = parse_page_range(&self.multipage_pages, count);
+        (!pages.is_empty()).then_some(pages)
     }
 
     /// Bitmap effects that spread past the edges grow the bitmap first.
@@ -5013,6 +5595,10 @@ pub struct Document {
     /// Master layers, drawn beneath every page's own layers.
     #[serde(default)]
     pub master: Vec<Layer>,
+    /// The master page's guidelines (#1928): shown on every page, set
+    /// once for all of them, beside each page's own guidelines.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub master_guides: Vec<Guide>,
     #[serde(default)]
     pub object_styles: Vec<ObjectStyle>,
     /// Named paragraph and character styles (see [`crate::text_styles`]).
@@ -5328,6 +5914,7 @@ impl Document {
             pages: vec![page],
             ids,
             master: Vec::new(),
+            master_guides: Vec::new(),
             object_styles: Vec::new(),
             text_styles: Vec::new(),
             sections: Vec::new(),
@@ -5486,6 +6073,18 @@ impl Document {
     /// behind the page, the page's own layers as they are stored, then
     /// applicable master layers in front of the page (#1132); what clicks
     /// and selections take objects from.
+    /// The guidelines shown on `page`: the master page's (every page
+    /// has them, #1928), then the page's own.
+    pub fn guides_on_page(&self, page: PageId) -> Result<Vec<Guide>> {
+        let p = self.page(page)?;
+        Ok(self
+            .master_guides
+            .iter()
+            .chain(p.guides.iter())
+            .copied()
+            .collect())
+    }
+
     pub fn layers_for_page(&self, page: PageId) -> Result<Vec<&Layer>> {
         self.layers_for_page_in(page, None)
     }
@@ -6771,41 +7370,6 @@ mod tests {
     }
     use crate::geometry::Point;
 
-    /// Tab stop details go by index with the stops; plain ones are not
-    /// written, so a drawing with plain stops saves as before, and a file
-    /// that knows only positions reads as left stops.
-    #[test]
-    fn tab_details_follow_their_stops_and_plain_ones_are_not_written() {
-        let mut p = ParagraphStyle {
-            tabs: vec![30.0, 10.0, 20.0],
-            ..Default::default()
-        };
-        p.set_tab_detail(
-            0,
-            TabDetail {
-                align: TabAlign::Right,
-                leader: ". ".into(),
-                ..Default::default()
-            },
-        );
-        p.set_tab_detail(5, TabDetail::default());
-        assert_eq!(p.tab_details.len(), 1);
-        p.sort_tabs();
-        assert_eq!(p.tabs, vec![10.0, 20.0, 30.0]);
-        assert_eq!(p.tab_detail(2).align, TabAlign::Right);
-        assert_eq!(p.tab_detail(0), TabDetail::default());
-        let json = serde_json::to_string(&p).unwrap();
-        assert!(json.contains("\"align\":\"right\""), "{json}");
-        let back: ParagraphStyle = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.tab_detail(2).leader, ". ");
-        p.remove_tab(2);
-        assert!(p.tab_details.is_empty());
-        let plain = serde_json::to_string(&p).unwrap();
-        assert!(!plain.contains("tab_details"), "{plain}");
-        let old: ParagraphStyle = serde_json::from_str(r#"{"tabs":[12.5]}"#).unwrap();
-        assert_eq!(old.tab_detail(0).align, TabAlign::Left);
-    }
-
     /// Balance Lines is written with the paragraph only when it is on, so
     /// drawings made before it existed open as they were.
     #[test]
@@ -7097,6 +7661,38 @@ mod tests {
         assert_eq!(m.rulers.tick_divisions, 10);
         assert!((m.grid.baseline_spacing - 4.938_888).abs() < 1e-5);
         assert_eq!(m.guides, GuideSettings::default());
+    }
+
+    #[test]
+    fn page_ranges_read_numbers_and_ranges_in_page_order() {
+        assert_eq!(parse_page_range("1-3, 7", 10), vec![0, 1, 2, 6]);
+        assert_eq!(parse_page_range(" 7 ; 3-1 ", 10), vec![0, 1, 2, 6]);
+        assert_eq!(parse_page_range("2,2,2-3", 10), vec![1, 2]);
+        // Pages past the end are left out; a huge range costs nothing.
+        assert_eq!(parse_page_range("4-99999999999", 5), vec![3, 4]);
+        assert_eq!(parse_page_range("9", 5), Vec::<usize>::new());
+        // Not a range: none.
+        for bad in ["", "a", "0", "1-x", "1,,b", "-3"] {
+            assert!(parse_page_range(bad, 5).is_empty(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_multipage_pages_are_kept_and_default_to_all() {
+        // A drawing saved before the setting existed shows every page.
+        let m: Metadata = serde_json::from_str(r#"{"author":"a"}"#).unwrap();
+        assert_eq!(m.multipage_pages, "");
+        assert_eq!(m.multipage_page_indices(5), None);
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(!json.contains("multipage_pages"), "{json}");
+        let mut m = m;
+        m.multipage_pages = "1-2, 5".into();
+        let back: Metadata = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back.multipage_page_indices(5), Some(vec![0, 1, 4]));
+        // Fewer pages now: the ones left; none of them: every page.
+        assert_eq!(back.multipage_page_indices(2), Some(vec![0, 1]));
+        m.multipage_pages = "7-9".into();
+        assert_eq!(m.multipage_page_indices(5), None);
     }
 
     #[test]
@@ -7914,6 +8510,36 @@ mod tests {
         );
     }
 
+    /// The column order of vertical text (#1986): older files read as
+    /// right to left, left to right is saved and read back, and such a
+    /// frame's text is placed from its top left.
+    #[test]
+    fn vertical_columns_default_to_right_to_left_and_round_trip() {
+        let old: ParagraphStyle = serde_json::from_str(r#"{"vertical":true}"#).expect("parses");
+        assert_eq!(old.vertical_columns, VerticalColumns::RightToLeft);
+        assert!(old.columns_from_right() && !old.columns_left_to_right());
+        let json = serde_json::to_string(&old).expect("writes");
+        assert!(!json.contains("vertical_columns"), "{json}");
+        let mut ltr = old.clone();
+        ltr.vertical_columns = VerticalColumns::LeftToRight;
+        let json = serde_json::to_string(&ltr).expect("writes");
+        assert!(
+            json.contains("\"vertical_columns\":\"left_to_right\""),
+            "{json}"
+        );
+        let back: ParagraphStyle = serde_json::from_str(&json).expect("reads");
+        assert_eq!(back, ltr);
+        assert!(back.columns_left_to_right() && !back.columns_from_right());
+        // Text set in lines keeps the setting but is not in columns.
+        let mut flat = ltr.clone();
+        flat.vertical = false;
+        assert!(!flat.columns_left_to_right() && !flat.columns_from_right());
+        let o = Point::new(10.0, 20.0);
+        let f = Some(geometry::Size::new(50.0, 80.0));
+        let shift = text_layout_shift(o, f, false, back.columns_from_right());
+        assert_eq!(shift * Point::ZERO, Point::new(10.0, 100.0));
+    }
+
     #[test]
     fn carried_fonts_are_saved_and_shared_between_copies() {
         let mut doc = Document::default();
@@ -8085,8 +8711,8 @@ mod tests {
     #[test]
     fn a_line_takes_its_tint_its_gaps_and_its_overprint_apart() {
         let mut s = TextSpan::new("ab", "Arial", 12.0);
-        s.underline = true;
-        s.underline_style = LineStyle {
+        s.underline = LineStyle::SingleThin;
+        s.underline_style = LineLook {
             kind: LineKind::Dashed,
             thickness_pt: Some(1.0),
             color: Some(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)),
@@ -8128,8 +8754,8 @@ mod tests {
         assert!(marks(&parts[2]).underline_gap && !marks(&parts[2]).underline);
         // A line overprinting in the characters' colour needs a part too.
         let mut s = TextSpan::new("cd", "Arial", 12.0);
-        s.strikethrough = true;
-        s.strike_style = LineStyle {
+        s.strikethrough = LineStyle::SingleThin;
+        s.strike_style = LineLook {
             overprint: true,
             ..Default::default()
         };
@@ -8155,9 +8781,9 @@ mod tests {
     /// a plain line leaves them out.
     #[test]
     fn a_line_keeps_its_tint_its_gaps_and_its_overprints() {
-        let json = serde_json::to_string(&LineStyle::default()).expect("json");
+        let json = serde_json::to_string(&LineLook::default()).expect("json");
         assert_eq!(json, "{\"kind\":\"single\"}");
-        let st = LineStyle {
+        let st = LineLook {
             kind: LineKind::Dotted,
             thickness_pt: Some(0.5),
             tint: 40.0,
@@ -8169,7 +8795,7 @@ mod tests {
             ..Default::default()
         };
         let json = serde_json::to_string(&st).expect("json");
-        let back: LineStyle = serde_json::from_str(&json).expect("back");
+        let back: LineLook = serde_json::from_str(&json).expect("back");
         assert_eq!(back, st);
         assert!(!st.is_plain());
     }
@@ -8200,10 +8826,10 @@ mod tests {
         use crate::color::Color;
         let red = Color::rgb8(255, 0, 0);
         let mut a = TextSpan::new("ab", "Arial", 12.0);
-        a.underline = true;
+        a.underline = LineStyle::SingleThin;
         a.underline_style.color = Some(red);
         let mut b = TextSpan::new("cd", "Arial", 12.0);
-        b.strikethrough = true;
+        b.strikethrough = LineStyle::SingleThin;
         let mut shape = Shape::new(
             ShapeId(1),
             ShapeKind::Text {
@@ -8281,7 +8907,7 @@ mod tests {
     #[test]
     fn a_plain_line_style_is_not_written_and_a_set_one_comes_back() {
         let mut s = TextSpan::new("a", "Arial", 12.0);
-        s.underline = true;
+        s.underline = LineStyle::SingleThin;
         let json = serde_json::to_string(&s).expect("json");
         assert!(!json.contains("underline_style"), "{json}");
         let back: TextSpan = serde_json::from_str(&json).expect("back");
@@ -8290,9 +8916,9 @@ mod tests {
             r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false,"underline":true}"#,
         )
         .expect("old");
-        assert_eq!(old.underline_style, LineStyle::default());
+        assert_eq!(old.underline_style, LineLook::default());
         let mut t = TextSpan::new("b", "Arial", 12.0);
-        t.strikethrough = true;
+        t.strikethrough = LineStyle::SingleThin;
         t.strike_style.kind = LineKind::Double;
         t.strike_style.thickness_pt = Some(1.5);
         t.strike_style.offset_pt = Some(3.0);
@@ -8301,5 +8927,214 @@ mod tests {
         assert!(json.contains("strike_style"), "{json}");
         let back: TextSpan = serde_json::from_str(&json).expect("back");
         assert_eq!(back.strike_style, t.strike_style);
+    }
+
+    /// OpenType features on and off (#1201): a tag turns a feature on, a
+    /// tag after a `-` turns a default feature off, and what the shaper
+    /// does anyway is not stored; superscript and subscript are kept
+    /// only when set, and older files read as plain text.
+    #[test]
+    fn features_switch_on_and_off_and_positions_round_trip() {
+        use super::{parse_feature, TextPosition, DEFAULT_ON_FEATURES};
+        assert_eq!(parse_feature("liga"), Some(("liga", true)));
+        assert_eq!(parse_feature("+liga"), Some(("liga", true)));
+        assert_eq!(parse_feature("-liga"), Some(("liga", false)));
+        assert_eq!(parse_feature("liga=0"), Some(("liga", false)));
+        assert_eq!(parse_feature("liga=1"), Some(("liga", true)));
+        assert_eq!(parse_feature(""), None);
+        assert_eq!(parse_feature("-"), None);
+        assert_eq!(parse_feature("toolong"), None);
+
+        let mut s = TextSpan::new("fi", "Quicksand", 12.0);
+        assert!(DEFAULT_ON_FEATURES.contains(&"liga"));
+        assert!(s.feature_on("liga"));
+        assert!(!s.feature_on("smcp"));
+        assert_eq!(s.feature_setting("liga"), None);
+        s.set_feature("liga", Some(false));
+        assert_eq!(s.features, vec!["-liga".to_string()]);
+        assert!(!s.feature_on("liga"));
+        assert_eq!(s.feature_setting("liga"), Some(false));
+        // Back on: nothing is stored, the shaper applies it anyway.
+        s.set_feature("liga", Some(true));
+        assert!(s.features.is_empty());
+        assert!(s.feature_on("liga"));
+        // A feature off by default is stored only when on.
+        s.set_feature("smcp", Some(true));
+        s.set_feature("onum", Some(true));
+        assert_eq!(s.features, vec!["smcp".to_string(), "onum".to_string()]);
+        s.set_feature("smcp", Some(false));
+        assert_eq!(s.features, vec!["onum".to_string()]);
+        s.set_feature("onum", None);
+        assert!(s.features.is_empty());
+        // The last entry for a tag wins, and an entry that is no feature
+        // is left alone.
+        s.features = vec!["liga".into(), "-liga".into(), "no feature".into()];
+        assert!(!s.feature_on("liga"));
+        s.set_feature("liga", None);
+        assert_eq!(s.features, vec!["no feature".to_string()]);
+
+        // Superscript and subscript.
+        assert_eq!(TextPosition::Superscript.feature(), Some("sups"));
+        assert_eq!(TextPosition::Subscript.feature(), Some("subs"));
+        assert_eq!(TextPosition::Normal.feature(), None);
+        assert!(TextPosition::Superscript.synthetic_shift() > 0.0);
+        assert!(TextPosition::Subscript.synthetic_shift() < 0.0);
+        let mut s = TextSpan::new("2", "Arial", 12.0);
+        s.features = vec!["-liga".into()];
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(!json.contains("position"), "{json}");
+        assert!(json.contains("\"-liga\""), "{json}");
+        s.position = TextPosition::Superscript;
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(json.contains("\"position\":\"superscript\""), "{json}");
+        let back: TextSpan = serde_json::from_str(&json).expect("back");
+        assert_eq!(back, s);
+        // Older files: no position, and features as they were written.
+        let old: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false,"features":["liga","smcp"]}"#,
+        )
+        .expect("old");
+        assert_eq!(old.position, TextPosition::Normal);
+        assert!(old.feature_on("liga") && old.feature_on("smcp"));
+    }
+
+    /// Underline and strike line styles (#1209): `true` and `false` of
+    /// older files read as a single thin line and no line and are written
+    /// back as they were; the other styles go by name; all caps, enclosed
+    /// and the overprints are kept only when set.
+    #[test]
+    fn line_styles_read_the_old_flags_and_write_them_back() {
+        let old: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false,"underline":true,"strikethrough":false}"#,
+        )
+        .expect("old");
+        assert_eq!(old.underline, LineStyle::SingleThin);
+        assert_eq!(old.strikethrough, LineStyle::None);
+        assert!(!old.all_caps && !old.enclosed);
+        assert_eq!(old.overprint_fill, None);
+        assert_eq!(old.overprint_outline, None);
+        let json = serde_json::to_string(&old).expect("json");
+        assert!(json.contains("\"underline\":true"), "{json}");
+        assert!(json.contains("\"strikethrough\":false"), "{json}");
+        for key in [
+            "all_caps",
+            "enclosed",
+            "overprint_fill",
+            "overprint_outline",
+        ] {
+            assert!(!json.contains(key), "{key}: {json}");
+        }
+        // A file without the two fields at all: no lines.
+        let none: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false}"#,
+        )
+        .expect("none");
+        assert_eq!(none.underline, LineStyle::None);
+        assert_eq!(none.strikethrough, LineStyle::None);
+
+        let mut s = TextSpan::new("a", "Arial", 12.0);
+        for style in LineStyle::ALL {
+            s.underline = style;
+            s.strikethrough = style;
+            let json = serde_json::to_string(&s).expect("json");
+            let back: TextSpan = serde_json::from_str(&json).expect("back");
+            assert_eq!(back, s, "{json}");
+        }
+        s.underline = LineStyle::DoubleThinWord;
+        s.strikethrough = LineStyle::SingleThick;
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(
+            json.contains("\"underline\":\"double_thin_word\""),
+            "{json}"
+        );
+        assert!(
+            json.contains("\"strikethrough\":\"single_thick\""),
+            "{json}"
+        );
+        s.all_caps = true;
+        s.enclosed = true;
+        s.overprint_fill = Some(true);
+        s.overprint_outline = Some(false);
+        let json = serde_json::to_string(&s).expect("json");
+        let back: TextSpan = serde_json::from_str(&json).expect("back");
+        assert_eq!(back, s);
+        assert!(json.contains("\"overprint_outline\":false"), "{json}");
+
+        assert_eq!(LineStyle::from(true), LineStyle::SingleThin);
+        assert_eq!(LineStyle::from(false), LineStyle::None);
+        assert!(!LineStyle::None.is_on() && LineStyle::None.is_none());
+        assert!(LineStyle::SingleThinWord.word_only());
+        assert!(!LineStyle::SingleThin.word_only());
+        assert!(LineStyle::DoubleThinWord.double() && LineStyle::DoubleThin.double());
+        assert_eq!(LineStyle::None.thickness_share(), 0.0);
+        assert!((LineStyle::SingleThin.thickness_share() - 1.0 / 14.0).abs() < 1e-12);
+        assert!((LineStyle::SingleThickWord.thickness_share() - 1.0 / 7.0).abs() < 1e-12);
+        assert_eq!(
+            LineStyle::DoubleThin.with_word_only(true),
+            LineStyle::DoubleThinWord
+        );
+        assert_eq!(
+            LineStyle::SingleThickWord.with_word_only(false),
+            LineStyle::SingleThick
+        );
+        assert_eq!(LineStyle::None.with_word_only(true), LineStyle::None);
+    }
+
+    /// Characters with their own overprint (#1209) are drawn as parts of
+    /// their own, each part marked as its characters say (the object's
+    /// overprint where they say nothing); characters that agree with the
+    /// object make no parts.
+    #[test]
+    fn text_parts_carry_the_characters_overprint() {
+        let mut plain = TextSpan::new("ab", "Arial", 12.0);
+        let mut over = TextSpan::new("cd", "Arial", 12.0);
+        let mut s = Shape::new(
+            ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![plain.clone(), over.clone()],
+                origin: Point::ZERO,
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        assert!(s.text_parts().is_none());
+        over.overprint_fill = Some(true);
+        over.overprint_outline = Some(true);
+        plain.overprint_outline = Some(false);
+        s.kind = ShapeKind::Text {
+            spans: vec![plain.clone(), over.clone()],
+            origin: Point::ZERO,
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        let parts = s.text_parts().expect("parts");
+        assert_eq!(parts.len(), 2);
+        assert!(!parts[0].overprint_fill && !parts[0].overprint_outline);
+        assert!(parts[1].overprint_fill && parts[1].overprint_outline);
+        for p in &parts {
+            let ShapeKind::Text { spans, .. } = &p.kind else {
+                panic!("text");
+            };
+            assert!(spans
+                .iter()
+                .all(|sp| sp.overprint_fill.is_none() && sp.overprint_outline.is_none()));
+        }
+        // The same overprint as the object: nothing to split.
+        s.overprint_fill = true;
+        s.overprint_outline = true;
+        plain.overprint_outline = None;
+        s.kind = ShapeKind::Text {
+            spans: vec![plain, over],
+            origin: Point::ZERO,
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        assert!(s.text_parts().is_none());
     }
 }

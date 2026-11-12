@@ -61,6 +61,9 @@ pub enum Pic {
     CornerRound,
     CornerScallop,
     CornerChamfer,
+    /// Clear the rounding of a curve's corners: a sharp corner and a
+    /// small cross.
+    CornerClear,
     /// Relative corner scaling: a small corner, a larger one, an arrow.
     CornerScaling,
     ToFront,
@@ -539,6 +542,14 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                 pts.push(q(r, 8.0 + 6.0 * t.cos(), 8.0 - 6.0 * t.sin()));
             }
             painter.add(epaint::PathShape::line(pts, s));
+        }
+        Pic::CornerClear => {
+            painter.add(epaint::PathShape::line(
+                vec![q(r, 2.0, 15.0), q(r, 2.0, 2.0), q(r, 15.0, 2.0)],
+                s,
+            ));
+            line((8.0, 8.0), (14.0, 14.0), s);
+            line((14.0, 8.0), (8.0, 14.0), s);
         }
         Pic::CornerScallop => {
             line((2.0, 15.0), (2.0, 8.0), s);
@@ -1425,7 +1436,13 @@ fn distance_in(
 
 /// [`distance`] for a value the selected objects do not share: the field
 /// is empty, a typed value goes to all of them.
-fn distance_mixed(ui: &mut Ui, app: &App, mm: f64, width: f32, mixed: bool) -> Option<f64> {
+pub(crate) fn distance_mixed(
+    ui: &mut Ui,
+    app: &App,
+    mm: f64,
+    width: f32,
+    mixed: bool,
+) -> Option<f64> {
     distance_in_mixed(ui, app, mm, width, Some(1.0), app.units.world_mm(), mixed)
 }
 
@@ -1451,8 +1468,7 @@ fn distance_in_mixed(
     let r = ui.add_sized(
         [width, ROW],
         crate::ui::field::NumField::new(&mut v)
-            .max_decimals(d.min(3))
-            .max_decimals(d)
+            .length_decimals(d)
             .suffix(format!(" {}", u.short()))
             .unit_mm(u.mm())
             .step(step.unwrap_or(1.0))
@@ -2247,6 +2263,7 @@ fn outline_width_box(
         if arrow.clicked() {
             egui::Popup::toggle_id(&ctx, popup_id);
         }
+        crate::ui::keynav::list_button_keys(&ctx, &arrow, popup_id);
         resp.rect.union(arrow_rect)
     });
     let anchor = inner.inner;
@@ -2302,6 +2319,7 @@ fn outline_width_box(
                             picked = Some(Some(w));
                         }
                     }
+                    crate::ui::keynav::scroll_into_view(ui);
                 });
         });
     if picked.is_some() {
@@ -3301,6 +3319,7 @@ fn wrap_style_list(app: &mut App, ui: &mut Ui) {
     if button.clicked() {
         egui::Popup::toggle_id(&ctx, popup_id);
     }
+    crate::ui::keynav::list_button_keys(&ctx, &button, popup_id);
     egui::Popup::new(popup_id, ctx.clone(), button.rect, ui.layer_id())
         .open_memory(None)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -3406,6 +3425,95 @@ pub fn order_part(app: &mut App, ui: &mut Ui) {
 mod tests {
     use super::*;
     use tracedraw_core::geometry::Rect as R;
+
+    /// The size and position fields show the decimals a value needs, at
+    /// least one and up to the drawing precision, with no trailing zeros:
+    /// 20.0 mm, 20.5 mm, 20.125 mm; a value typed with more decimals is
+    /// kept as typed (#1761).
+    #[test]
+    fn distance_fields_show_only_the_decimals_needed() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.units = Units::Millimeters;
+        app.settings.precision = 3;
+        let run = |app: &App, mm: f64, events: Vec<egui::Event>| {
+            let mut got = None;
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| got = distance(ui, app, mm, 90.0, Some(1.0)),
+            );
+            out.textures_delta.clear();
+            let texts: Vec<(String, egui::Rect)> = out
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    epaint::Shape::Text(t) => Some((
+                        t.galley.text().to_string(),
+                        t.galley.rect.translate(t.pos.to_vec2()),
+                    )),
+                    _ => None,
+                })
+                .collect();
+            (got, texts)
+        };
+        for (mm, shown) in [
+            (20.0, "20.0 mm"),
+            (20.5, "20.5 mm"),
+            (20.125, "20.125 mm"),
+            (0.0, "0.0 mm"),
+            (-0.0001, "0.0 mm"),
+            (-3.25, "-3.25 mm"),
+            (20.12345, "20.123 mm"),
+            (19.9999, "20.0 mm"),
+        ] {
+            let (_, texts) = run(&app, mm, Vec::new());
+            assert!(texts.iter().any(|(t, _)| t == shown), "{mm}: {texts:?}");
+        }
+        // More precision in Options shows more decimals, still trimmed.
+        app.settings.precision = 5;
+        let (_, texts) = run(&app, 20.12345, Vec::new());
+        assert!(texts.iter().any(|(t, _)| t == "20.12345 mm"), "{texts:?}");
+        let (_, texts) = run(&app, 20.5, Vec::new());
+        assert!(texts.iter().any(|(t, _)| t == "20.5 mm"), "{texts:?}");
+        // No decimals asked for: none shown.
+        app.settings.precision = 0;
+        let (_, texts) = run(&app, 20.0, Vec::new());
+        assert!(texts.iter().any(|(t, _)| t == "20 mm"), "{texts:?}");
+        // Typed with more decimals than shown: kept as typed.
+        app.settings.precision = 3;
+        let (_, texts) = run(&app, 20.0, Vec::new());
+        let at = texts
+            .iter()
+            .find(|(t, _)| t == "20.0 mm")
+            .map(|(_, r)| r.center())
+            .expect("the field");
+        run(&app, 20.0, vec![egui::Event::PointerMoved(at)]);
+        for pressed in [true, false] {
+            run(
+                &app,
+                20.0,
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        run(&app, 20.0, vec![egui::Event::Text("20.12345".into())]);
+        let key = |k: egui::Key| egui::Event::Key {
+            key: k,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let (got, _) = run(&app, 20.0, vec![key(egui::Key::Enter)]);
+        assert_eq!(got, Some(20.12345));
+    }
 
     /// The rotation field's arrows turn the selection a degree at each
     /// click, also when the box was clicked into first (its value

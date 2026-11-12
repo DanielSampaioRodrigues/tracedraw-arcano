@@ -29,6 +29,7 @@ tracedraw-text.workspace = true
 tracedraw-render.workspace = true
 tracedraw-vba.workspace = true
 tracedraw-vba-project.workspace = true
+tracedraw-tracecut.workspace = true
 kurbo.workspace = true
 tiny-skia.workspace = true
 serde.workspace = true
@@ -40,10 +41,17 @@ base64 = "0.22"
 qrcode = { version = "0.14", default-features = false }
 rqrr = "0.11"
 csv = "1"
-i_overlay = "9"
 eframe.workspace = true
 egui.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp", "tiff"] }
+# Reading CMYK TIFF files with their inks (Edit Bitmap, #1834); the same
+# version the image crate reads TIFF with.
+tiff = "0.11"
+# Reading the four channels of a CMYK JPEG as they are stored, to show
+# them through the colour management and keep them as inks (#2163); the
+# same versions the image crate reads JPEG with.
+zune-jpeg = "0.5"
+zune-core = { version = "0.5", default-features = false }
 log.workspace = true
 env_logger.workspace = true
 flate2 = "1"
@@ -92,12 +100,15 @@ eframe = { workspace = true, features = ["wgpu", "android-native-activity"] }
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 android_logger = "=0.15.1"
 jni = "=0.22.4"
+# The tool of each pointer (finger, pen) for palm rejection (#1832,
+# palm.rs): the patched winit eframe uses asks the app about each one.
+winit = { version = "0.30", default-features = false }
 
 # Where the pointer is while files are dragged over the window: the
 # system drag sends no pointer moves (#1142).
 [target.'cfg(windows)'.dependencies]
 # The spell checker of Windows (COM, #1405).
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Com"] }
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Com", "Win32_UI_Input_KeyboardAndMouse"] }
 # The window's message hook: characters input methods send that the
 # windowing layer drops (#1151). The same winit eframe uses.
 winit = { version = "0.30", default-features = false }
@@ -106,6 +117,10 @@ winit = { version = "0.30", default-features = false }
 # same winit eframe uses.
 [target.'cfg(target_os = "linux")'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["x11"] }
+# Whether the Wayland compositor draws title bars, for Options > General >
+# "Use the desktop's title bar" (#2070, title_bar.rs). The same Wayland
+# library winit uses.
+wayland-client = "0.31"
 
 # Files opened from Finder arrive as an event of the windowing layer
 # (#646). The same winit eframe uses.
@@ -123,9 +138,14 @@ getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 boa_engine = { version = "0.20", features = ["js"] }
 jiff = { version = "0.2", features = ["js"] }
+# Lossy WebP export in the browser (#592): a pure-Rust VP8 encoder (MIT OR
+# Apache-2.0); libwebp, which the desktop uses, is C.
+vaam_webp = { package = "vaam-image-webp", version = "0.1" }
 
-# Reads back the PDFs the tests publish; ICC profiles built for tests.
+# Reads back the PDFs the tests publish; ICC profiles built for tests;
+# the browser's lossy WebP encoder, run natively by the tests (#592).
 [dev-dependencies]
+vaam_webp = { package = "vaam-image-webp", version = "0.1" }
 lopdf = { version = "0.46", default-features = false }
 roxmltree = "0.21"
 ttf-parser.workspace = true
@@ -144,6 +164,8 @@ assets = [
     ["target/release/tracedraw", "usr/bin/", "755"],
     ["target/release/tracedraw-cli", "usr/bin/", "755"],
     ["../../packaging/linux/tracedraw.desktop", "usr/share/applications/", "644"],
+    ["../../packaging/linux/tracedraw-mime.xml", "usr/share/mime/packages/tracedraw.xml", "644"],
+    ["../../packaging/linux/tracedraw.thumbnailer", "usr/share/thumbnailers/", "644"],
     ["../../assets/icon/tracedraw-256.png", "usr/share/icons/hicolor/256x256/apps/tracedraw.png", "644"],
     ["../../README.md", "usr/share/doc/tracedraw/README", "644"],
 ]

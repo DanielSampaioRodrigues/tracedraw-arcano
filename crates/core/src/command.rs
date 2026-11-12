@@ -29,6 +29,20 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         layer: Option<String>,
     },
+    /// A page of `size` put at index `at` (past the end: at the end) with
+    /// one layer holding `shapes`, which get fresh ids: the pages of
+    /// another file brought in by File > Import, several in one undo
+    /// step.
+    InsertPage {
+        at: usize,
+        name: Option<String>,
+        size: Size,
+        /// The name of the page's layer ("Layer 1" when none).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        layer: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        shapes: Vec<Shape>,
+    },
     DeletePage {
         page: PageId,
     },
@@ -175,6 +189,14 @@ pub enum Command {
     AddSymbol {
         symbol: Symbol,
     },
+    /// Replace the objects of symbol `index` (Edit Symbol): every
+    /// instance draws the new ones. The symbol keeps its name. A
+    /// definition that would draw an instance of the symbol itself, at
+    /// any depth, is refused.
+    SetSymbolShape {
+        index: usize,
+        shape: Shape,
+    },
     /// Move a page to another index (Page Sorter drag).
     MovePage {
         page: PageId,
@@ -254,6 +276,11 @@ pub enum Command {
     SetSpline {
         shape: ShapeId,
         points: Vec<crate::geometry::Point>,
+        /// Which points are fixed (see [`Shape::spline_fixed`]); `None`
+        /// keeps the curve's own flags when the number of points stays,
+        /// else every point floats (#1758).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fixed: Option<Vec<bool>>,
     },
     /// A QR code object's settings (its children are set with
     /// [`Command::SetShapeKind`] in the same step).
@@ -326,6 +353,23 @@ pub enum Command {
         shapes: Vec<ShapeId>,
         wrap: bool,
     },
+    /// Link the text content of `shapes` (two texts or more, #1568): from
+    /// now on they hold the same characters, each with its own looks (see
+    /// [`crate::linked_text`]). The others take the characters of the
+    /// first; a text already linked brings its whole link along.
+    LinkTextContent {
+        shapes: Vec<ShapeId>,
+    },
+    /// Take `shapes` out of their content links; each keeps the text it
+    /// shows. A text left alone in its link leaves it too.
+    UnlinkTextContent {
+        shapes: Vec<ShapeId>,
+    },
+    /// How the fills of `shapes` cover overlapping contours (#1211).
+    SetFillRule {
+        shapes: Vec<ShapeId>,
+        rule: crate::shaping::FillRule,
+    },
     /// Turn wrapping on for `shapes` with this wrap style and offset.
     SetWrapStyle {
         shapes: Vec<ShapeId>,
@@ -334,6 +378,14 @@ pub enum Command {
     SetObjectData {
         shape: ShapeId,
         data: Vec<(String, String)>,
+    },
+    /// A bitmap's colour mode and the ink channels it prints from
+    /// ([`Shape::cmyk_bitmap`], [`Shape::picture_inks`]): a picture read
+    /// back from a CMYK file (#1834). Other kinds of object are refused.
+    SetPictureInks {
+        shape: ShapeId,
+        cmyk: bool,
+        inks: Option<Box<crate::picture_inks::PictureInks>>,
     },
     /// Set the text in font family `from` in family `to` throughout the
     /// drawing: every span of every text and table cell, on every layer,
@@ -429,6 +481,11 @@ pub enum Command {
         page: PageId,
         guides: Vec<Guide>,
     },
+    /// Replace the master page's guidelines, those every page shows
+    /// (#1928): one added, moved, deleted, locked or restyled.
+    SetMasterGuides {
+        guides: Vec<Guide>,
+    },
 }
 
 /// One object's change in [`Command::SetEffectsAndOpacity`].
@@ -477,7 +534,7 @@ impl Command {
     pub fn label(&self) -> &'static str {
         match self {
             Command::SetTitle { .. } => "Rename Document",
-            Command::AddPage { .. } => "Insert Page",
+            Command::AddPage { .. } | Command::InsertPage { .. } => "Insert Page",
             Command::DeletePage { .. } => "Delete Page",
             Command::ResizePage { .. } => "Resize Page",
             Command::AddLayer { .. } => "New Layer",
@@ -510,6 +567,7 @@ impl Command {
             Command::SetOpacityMask { .. } => "Opacity Mask",
             Command::SetRasterFx { .. } => "Effect",
             Command::AddSymbol { .. } => "New Symbol",
+            Command::SetSymbolShape { .. } => "Edit Symbol",
             Command::MovePage { .. } => "Move Page",
             Command::DeleteLayer { .. } => "Delete Layer",
             Command::SetLayerVisible { .. } => "Layer Visibility",
@@ -542,8 +600,12 @@ impl Command {
             Command::SetOverprint { .. } => "Overprint",
             Command::SetLink { .. } => "Hyperlink",
             Command::SetWrapText { .. } => "Wrap Paragraph Text",
+            Command::LinkTextContent { .. } => "Link Text Content",
+            Command::UnlinkTextContent { .. } => "Unlink Text Content",
+            Command::SetFillRule { .. } => "Fill Winding",
             Command::SetWrapStyle { .. } => "Wrap Style",
             Command::SetObjectData { .. } => "Object Data",
+            Command::SetPictureInks { .. } => "Edit Object",
             Command::ConvertColors { .. } => "Convert Colors",
             Command::ReplaceFontFamily { .. } => "Replace Font",
             Command::OrderRelative { in_front: true, .. } => "In Front Of",
@@ -565,6 +627,7 @@ impl Command {
             Command::MoveGuide { .. } => "Move Guideline",
             Command::DeleteGuide { .. } => "Delete Guideline",
             Command::SetGuides { .. } => "Guidelines",
+            Command::SetMasterGuides { .. } => "Guidelines",
         }
     }
 
@@ -589,6 +652,34 @@ impl Command {
                     guides: Vec::new(),
                     background: None,
                 });
+            }
+            Command::InsertPage {
+                at,
+                name,
+                size,
+                layer,
+                shapes,
+            } => {
+                let n = doc.pages.len() + 1;
+                let page_id = doc.ids_mut().page();
+                let layer_id = doc.ids_mut().layer();
+                let mut l = Layer::new(
+                    layer_id,
+                    layer.clone().unwrap_or_else(|| "Layer 1".to_string()),
+                );
+                l.shapes = shapes.iter().map(|s| reid_shape(s, doc)).collect();
+                let at = (*at).min(doc.pages.len());
+                doc.pages.insert(
+                    at,
+                    Page {
+                        id: page_id,
+                        name: name.clone().unwrap_or_else(|| format!("Page {n}")),
+                        size: *size,
+                        layers: vec![l],
+                        guides: Vec::new(),
+                        background: None,
+                    },
+                );
             }
             Command::DeletePage { page } => {
                 if doc.pages.len() <= 1 {
@@ -835,6 +926,17 @@ impl Command {
             Command::AddSymbol { symbol } => {
                 doc.symbols.push(symbol.clone());
             }
+            Command::SetSymbolShape { index, shape } => {
+                if *index >= doc.symbols.len() {
+                    return Err(Error::SymbolNotFound(*index));
+                }
+                if crate::document::draws_symbol(shape, *index, &doc.symbols) {
+                    return Err(Error::SymbolCycle(*index));
+                }
+                if let Some(sym) = doc.symbols.get_mut(*index) {
+                    sym.shape = shape.clone();
+                }
+            }
             Command::MovePage { page, to } => {
                 let from = doc
                     .pages
@@ -977,6 +1079,7 @@ impl Command {
             }
             Command::SetShapeKind { shape, kind } => {
                 let parent = doc.parent_transform(*shape).unwrap_or(Affine::IDENTITY);
+                let holder = clip_frame_of_frame(doc, *shape);
                 let s = any_mut(doc, *shape)?;
                 // A new outline of the same object (nodes moved, an area
                 // cropped off): its gradient fill and transparency stay
@@ -1001,29 +1104,49 @@ impl Command {
                 }
                 // A B-spline given any other outline is an ordinary curve.
                 s.spline = None;
+                s.spline_fixed.clear();
                 s.kind = kind.clone();
                 if let Some(before) = before {
                     let after = crate::geometry::Shape::bounding_box(&(parent * s.page_path()));
                     s.keep_paint_in_place(before, after);
                 }
+                keep_clip_frame_paint(doc, holder);
             }
-            Command::SetSpline { shape, points } => {
+            Command::SetSpline {
+                shape,
+                points,
+                fixed,
+            } => {
                 if points.len() < 2 || points.iter().any(|p| !p.is_finite()) {
                     return Err(Error::BadSpline);
                 }
                 let parent = doc.parent_transform(*shape).unwrap_or(Affine::IDENTITY);
+                let holder = clip_frame_of_frame(doc, *shape);
                 let s = any_mut(doc, *shape)?;
                 let closed = matches!(s.kind, ShapeKind::Path { closed: true, .. });
                 let before = crate::geometry::Shape::bounding_box(&(parent * s.page_path()));
+                let mut flags = match fixed {
+                    Some(f) => f.clone(),
+                    None if s.spline.as_ref().map(Vec::len) == Some(points.len()) => {
+                        s.spline_fixed.clone()
+                    }
+                    None => Vec::new(),
+                };
+                flags.resize(points.len(), false);
+                if !flags.contains(&true) {
+                    flags.clear();
+                }
                 s.kind = ShapeKind::Path {
-                    path: crate::geometry::bspline_path(points, closed),
+                    path: crate::geometry::bspline_path_fixed(points, &flags, closed),
                     closed,
                 };
+                s.spline_fixed = flags;
                 // Its gradients stay in place, as for any new outline.
                 let after = crate::geometry::Shape::bounding_box(&(parent * s.page_path()));
                 s.keep_paint_in_place(before, after);
                 s.node_types.clear();
                 s.spline = Some(points.clone());
+                keep_clip_frame_paint(doc, holder);
             }
             Command::SetNodeTypes { shape, types } => {
                 any_mut(doc, *shape)?.node_types = types.clone()
@@ -1178,6 +1301,33 @@ impl Command {
                     any_mut(doc, *id)?.wrap_text = *wrap;
                 }
             }
+            Command::LinkTextContent { shapes } => link_text_content(doc, shapes)?,
+            Command::UnlinkTextContent { shapes } => {
+                for id in shapes {
+                    any(doc, *id)?;
+                }
+                let mut links = std::collections::BTreeSet::new();
+                for id in shapes {
+                    let s = any_mut(doc, *id)?;
+                    if let Some(l) = s.content_link.take() {
+                        links.insert(l);
+                    }
+                }
+                // A text left alone in a link is linked to nothing.
+                for l in links {
+                    if let [last] = doc.content_link_members(l).as_slice() {
+                        any_mut(doc, *last)?.content_link = None;
+                    }
+                }
+            }
+            Command::SetFillRule { shapes, rule } => {
+                for id in shapes {
+                    any(doc, *id)?;
+                }
+                for id in shapes {
+                    any_mut(doc, *id)?.fill_rule = *rule;
+                }
+            }
             Command::SetWrapStyle { shapes, style } => {
                 for id in shapes {
                     any(doc, *id)?;
@@ -1203,6 +1353,14 @@ impl Command {
             }
             Command::SetObjectData { shape, data } => {
                 any_mut(doc, *shape)?.data = data.clone();
+            }
+            Command::SetPictureInks { shape, cmyk, inks } => {
+                let s = any_mut(doc, *shape)?;
+                if !matches!(s.kind, ShapeKind::Bitmap { .. }) {
+                    return Err(Error::NotBitmap(*shape));
+                }
+                s.cmyk_bitmap = *cmyk;
+                s.picture_inks = inks.clone();
             }
             Command::ConvertColors { shapes, to, spots } => {
                 for id in shapes {
@@ -1274,10 +1432,24 @@ impl Command {
                 let top = doc.shape(top_id)?.1.clone();
                 let layer_id = located[0].1;
                 let insert_at = located[0].2;
+                // Open curves stay open (#1934): the result is an open
+                // curve of several subpaths when any part is open, and the
+                // parts that were closed keep a close of their own, so
+                // they still fill and break apart as closed curves.
+                let any_open = located.iter().any(|(id, _, _)| {
+                    doc.shape(*id)
+                        .is_ok_and(|(_, s)| matches!(s.kind, ShapeKind::Path { closed: false, .. }))
+                });
                 let mut path = BezPath::new();
                 for (id, _, _) in &located {
                     let s = doc.shape(*id)?.1;
-                    path.extend(s.page_path());
+                    let part = s.page_path();
+                    let open = matches!(s.kind, ShapeKind::Path { closed: false, .. });
+                    if any_open && !open {
+                        path.extend(close_subpaths(&part));
+                    } else {
+                        path.extend(part);
+                    }
                 }
                 for (id, l, _) in &located {
                     let layer = doc.layer_mut(*l)?;
@@ -1285,8 +1457,18 @@ impl Command {
                         layer.shapes.remove(i);
                     }
                 }
-                let mut combined = Shape::new(top_id, ShapeKind::Path { path, closed: true });
-                combined.fill = top.fill;
+                // The parts lie in page space: a mesh fill goes there too,
+                // or becomes its mean colour where it would not cover them
+                // all (a live test of 0.41: the colour was lost).
+                let fill = top.fill.for_result(top.transform, &path);
+                let mut combined = Shape::new(
+                    top_id,
+                    ShapeKind::Path {
+                        path,
+                        closed: !any_open,
+                    },
+                );
+                combined.fill = fill;
                 combined.stroke = top.stroke;
                 combined.opacity = top.opacity;
                 let target = &mut doc.layer_mut(layer_id)?.shapes;
@@ -1295,6 +1477,42 @@ impl Command {
             Command::BreakApart { shape } => {
                 let (layer_id, idx) = doc.locate(*shape)?;
                 let s = doc.shape(*shape)?.1.clone();
+                // A brush stroke: its band becomes a group of plain filled
+                // curves where it was, and its path a plain line right
+                // above it, keeping the object (a live test of 0.41: the
+                // stroke stayed one object).
+                if let (Some(parts), Some(st)) = (s.brush_band_parts(), s.stroke.as_ref()) {
+                    let fill = st.fill.as_deref().cloned().unwrap_or(Fill::Solid(st.color));
+                    let children: Vec<Shape> = parts
+                        .into_iter()
+                        .map(|path| {
+                            let mut c = Shape::new(
+                                doc.ids_mut().shape(),
+                                ShapeKind::Path { path, closed: true },
+                            );
+                            c.fill = fill.clone();
+                            c.stroke = None;
+                            c
+                        })
+                        .collect();
+                    let mut band = Shape::new(doc.ids_mut().shape(), ShapeKind::Group { children });
+                    band.opacity = s.opacity;
+                    band.name = s.name.clone();
+                    let mut line = s.clone();
+                    line.stroke = Some(Stroke {
+                        width: Stroke::HAIRLINE,
+                        widths: Vec::new(),
+                        stretch: 1.0,
+                        fill: None,
+                        ..st.clone()
+                    });
+                    let layer = doc.layer_mut(layer_id)?;
+                    if let Some(slot) = layer.shapes.get_mut(idx) {
+                        *slot = line;
+                    }
+                    layer.shapes.insert(idx.min(layer.shapes.len()), band);
+                    return Ok(());
+                }
                 // A clip frame breaks apart through its frame: each part
                 // of the frame becomes a clip frame holding the contents
                 // (#1607).
@@ -1332,13 +1550,12 @@ impl Command {
                             .into_iter()
                             .zip(ids)
                             .map(|(p, id)| {
-                                let mut piece = Shape::new(
-                                    id,
-                                    ShapeKind::Path {
-                                        path: p,
-                                        closed: *closed,
-                                    },
-                                );
+                                // A closed part of an open curve (Combine
+                                // of open and closed curves) comes out
+                                // closed (#1934).
+                                let closed =
+                                    *closed || p.elements().last() == Some(&PathEl::ClosePath);
+                                let mut piece = Shape::new(id, ShapeKind::Path { path: p, closed });
                                 piece.transform = s.transform;
                                 piece.fill = s.fill.clone();
                                 piece.stroke = s.stroke.clone();
@@ -1358,6 +1575,7 @@ impl Command {
                                 };
                                 f.node_types.clear();
                                 f.spline = None;
+                                f.spline_fixed.clear();
                                 f
                             })
                             .collect();
@@ -1509,6 +1727,7 @@ impl Command {
                 }
             }
             Command::SetGuides { page, guides } => doc.page_mut(*page)?.guides = guides.clone(),
+            Command::SetMasterGuides { guides } => doc.master_guides = guides.clone(),
             Command::Ungroup { group } => {
                 let (layer_id, idx) = doc.locate(*group)?;
                 let g = doc.layer_mut(layer_id)?.shapes.remove(idx);
@@ -1617,6 +1836,94 @@ fn each_shape_mut(doc: &mut Document, f: &mut dyn FnMut(&mut Shape)) {
 }
 
 /// Any object to change, nested ones too.
+/// The page box of the object `id`, nested ones too.
+fn page_box(doc: &Document, id: ShapeId) -> Option<crate::geometry::Rect> {
+    let parent = doc.parent_transform(id)?;
+    let s = doc.find_shape(id)?;
+    Some(crate::geometry::Shape::bounding_box(
+        &(parent * s.page_path()),
+    ))
+}
+
+/// When `id` is the frame of a clip frame: that clip frame and its page
+/// box. A clip frame's gradient transparency is placed on its frame's
+/// box, so a new outline of the frame must keep it in place (#1491).
+fn clip_frame_of_frame(doc: &Document, id: ShapeId) -> Option<(ShapeId, crate::geometry::Rect)> {
+    let holder = *doc.ancestors(id).last()?;
+    match &doc.find_shape(holder)?.kind {
+        ShapeKind::ClipFrame { frame, .. } if frame.id == id => {
+            Some((holder, page_box(doc, holder)?))
+        }
+        _ => None,
+    }
+}
+
+/// Keep the paint of the clip frame found by [`clip_frame_of_frame`]
+/// where it lay on the page, now that its frame has a new outline.
+fn keep_clip_frame_paint(doc: &mut Document, holder: Option<(ShapeId, crate::geometry::Rect)>) {
+    let Some((id, before)) = holder else {
+        return;
+    };
+    if let Some(after) = page_box(doc, id) {
+        if let Some(s) = doc.find_shape_mut(id) {
+            s.keep_paint_in_place(before, after);
+        }
+    }
+}
+
+/// [`Command::LinkTextContent`]: every text of `shapes`, and every text
+/// linked with one of them already, under one key; the characters of the
+/// first given to the others.
+fn link_text_content(doc: &mut Document, shapes: &[ShapeId]) -> Result<()> {
+    let mut ids: Vec<ShapeId> = Vec::new();
+    for id in shapes {
+        if !matches!(any(doc, *id)?.kind, ShapeKind::Text { .. }) {
+            return Err(Error::NotText(*id));
+        }
+        if !ids.contains(id) {
+            ids.push(*id);
+        }
+    }
+    let Some(&first) = ids.first() else {
+        return Ok(());
+    };
+    // The links the texts are in already join the new one.
+    let old: std::collections::BTreeSet<u64> = ids
+        .iter()
+        .filter_map(|id| doc.find_shape(*id).and_then(|s| s.content_link))
+        .collect();
+    for l in &old {
+        for m in doc.content_link_members(*l) {
+            if !ids.contains(&m) {
+                ids.push(m);
+            }
+        }
+    }
+    if ids.len() < 2 {
+        return Ok(());
+    }
+    let first_shape = any(doc, first)?;
+    let key = match old.iter().next() {
+        Some(l) => *l,
+        None => {
+            let seed = first_shape
+                .uid
+                .map(|u| (u.0 as u64) ^ ((u.0 >> 64) as u64))
+                .unwrap_or(first.raw());
+            doc.fresh_content_link(seed)
+        }
+    };
+    let text = crate::linked_text::text_of(first_shape).unwrap_or_default();
+    for id in ids {
+        let s = any_mut(doc, id)?;
+        s.content_link = Some(key);
+        if let ShapeKind::Text { spans, .. } = &mut s.kind {
+            crate::linked_text::retext_spans(spans, &text);
+        }
+    }
+    Ok(())
+}
+
 fn any_mut(doc: &mut Document, id: ShapeId) -> Result<&mut Shape> {
     doc.find_shape_mut(id).ok_or(Error::ShapeNotFound(id))
 }
@@ -1697,6 +2004,30 @@ fn clip_frame_pieces(
             piece
         })
         .collect()
+}
+
+/// `path` with every subpath that has a segment ended by a close.
+pub fn close_subpaths(path: &BezPath) -> BezPath {
+    let mut out = BezPath::new();
+    // Whether the subpath being copied has a segment and no close yet.
+    let mut open = false;
+    for el in path.elements() {
+        match el {
+            PathEl::MoveTo(_) => {
+                if open {
+                    out.close_path();
+                }
+                open = false;
+            }
+            PathEl::ClosePath => open = false,
+            _ => open = true,
+        }
+        out.push(*el);
+    }
+    if open {
+        out.close_path();
+    }
+    out
 }
 
 fn reid_shape(s: &Shape, doc: &mut Document) -> Shape {
@@ -1854,6 +2185,48 @@ fn for_group_deep(shape: &mut Shape, f: &mut dyn FnMut(&mut Shape)) {
 
 #[cfg(test)]
 mod tests {
+    /// Fill winding (#1211): the command sets the objects' fill rule in
+    /// one undo step, an unknown object changes nothing, and the rule
+    /// survives a `.tdraw`-style round trip through serde.
+    #[test]
+    fn set_fill_rule_sets_the_rule_and_undoes() {
+        use crate::document::ShapeKind;
+        use crate::shaping::FillRule;
+        let mut e = crate::Engine::default();
+        let layer = e.document().pages[0].layers[0].id;
+        let id = e.new_shape_id();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: crate::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        e.run(&Command::AddShape { layer, shape }).unwrap();
+        let rule = |e: &crate::Engine| e.document().find_shape(id).unwrap().fill_rule;
+        assert_eq!(rule(&e), FillRule::EvenOdd);
+        e.run(&Command::SetFillRule {
+            shapes: vec![id],
+            rule: FillRule::NonZero,
+        })
+        .unwrap();
+        assert_eq!(rule(&e), FillRule::NonZero);
+        let json = serde_json::to_string(e.document().find_shape(id).unwrap()).unwrap();
+        let back: Shape = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.fill_rule, FillRule::NonZero);
+        e.undo().unwrap();
+        assert_eq!(rule(&e), FillRule::EvenOdd);
+        let json = serde_json::to_string(e.document().find_shape(id).unwrap()).unwrap();
+        assert!(!json.contains("fill_rule"), "even-odd is left out");
+        assert!(e
+            .run(&Command::SetFillRule {
+                shapes: vec![crate::ShapeId(4242)],
+                rule: FillRule::NonZero,
+            })
+            .is_err());
+    }
+
     /// Swap Colors: fill and outline colours change places on each
     /// object, inside groups each on its own; an object selected with its
     /// group swaps once; others stay; one undo step; an unknown object
@@ -2080,6 +2453,67 @@ mod tests {
         assert!(engine.document().comments.is_empty());
     }
 
+    /// A picture read back from a CMYK file takes its colour mode and
+    /// its ink channels (#1834); undo puts them back; other objects are
+    /// refused.
+    #[test]
+    fn a_picture_takes_its_ink_channels() {
+        use crate::picture_inks::PictureInks;
+        let mut doc = Document::default();
+        let page = doc.pages[0].id;
+        let layer = doc.page(page).expect("page").layers[0].id;
+        let pic = doc.ids_mut().shape();
+        let path = doc.ids_mut().shape();
+        let mut eng = crate::Engine::new(doc);
+        let bitmap = Shape::new(
+            pic,
+            ShapeKind::Bitmap {
+                rect: crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+                width_px: 1,
+                height_px: 1,
+                png: crate::SharedBytes::from(b"pixels".to_vec()),
+                fx: None,
+            },
+        );
+        eng.run(&Command::AddShape {
+            layer,
+            shape: bitmap,
+        })
+        .expect("added");
+        let curve = Shape::new(
+            path,
+            ShapeKind::Path {
+                path: BezPath::new(),
+                closed: false,
+            },
+        );
+        eng.run(&Command::AddShape {
+            layer,
+            shape: curve,
+        })
+        .expect("added");
+        let inks = PictureInks::cmyk(b"pixels", crate::SharedBytes::from(b"planes".to_vec()));
+        eng.run(&Command::SetPictureInks {
+            shape: pic,
+            cmyk: true,
+            inks: Some(Box::new(inks.clone())),
+        })
+        .expect("inks");
+        let s = eng.document().find_shape(pic).expect("picture");
+        assert!(s.cmyk_bitmap);
+        assert_eq!(s.picture_inks.as_deref(), Some(&inks));
+        eng.undo().expect("undo");
+        let s = eng.document().find_shape(pic).expect("picture");
+        assert!(!s.cmyk_bitmap && s.picture_inks.is_none());
+        assert!(eng
+            .run(&Command::SetPictureInks {
+                shape: path,
+                cmyk: true,
+                inks: None,
+            })
+            .is_err());
+    }
+
     #[test]
     fn a_spline_follows_its_control_points_until_the_outline_is_changed_otherwise() {
         use crate::geometry::Point;
@@ -2105,6 +2539,7 @@ mod tests {
         eng.run(&Command::SetSpline {
             shape: id,
             points: pts.clone(),
+            fixed: None,
         })
         .expect("spline");
         let s = eng.document().find_shape(id).expect("shape");
@@ -2120,17 +2555,71 @@ mod tests {
         let json = serde_json::to_string(eng.document()).expect("json");
         let back: Document = serde_json::from_str(&json).expect("parsed");
         assert_eq!(back.find_shape(id).expect("shape").spline, s.spline);
+        // A point made fixed: the curve goes through it; a move of the
+        // points keeps it fixed, a new number of points with no flags
+        // given floats them all; the native format keeps the flags (#1758).
+        eng.run(&Command::SetSpline {
+            shape: id,
+            points: pts.clone(),
+            fixed: Some(vec![false, true]),
+        })
+        .expect("fixed");
+        let s = eng.document().find_shape(id).expect("shape");
+        assert_eq!(s.spline_fixed, vec![false, true, false, false]);
+        assert_eq!(
+            s.kind,
+            ShapeKind::Path {
+                path: crate::geometry::bspline_path_fixed(&pts, &[false, true], false),
+                closed: false,
+            }
+        );
+        let json = serde_json::to_string(eng.document()).expect("json");
+        let back: Document = serde_json::from_str(&json).expect("parsed");
+        assert_eq!(
+            back.find_shape(id).expect("shape").spline_fixed,
+            s.spline_fixed
+        );
+        let mut moved = pts.clone();
+        moved[2].x += 5.0;
+        eng.run(&Command::SetSpline {
+            shape: id,
+            points: moved.clone(),
+            fixed: None,
+        })
+        .expect("moved");
+        let s = eng.document().find_shape(id).expect("shape");
+        assert_eq!(s.spline_fixed, vec![false, true, false, false]);
+        eng.run(&Command::SetSpline {
+            shape: id,
+            points: moved[..3].to_vec(),
+            fixed: None,
+        })
+        .expect("fewer");
+        assert!(eng
+            .document()
+            .find_shape(id)
+            .expect("shape")
+            .spline_fixed
+            .is_empty());
+        eng.run(&Command::SetSpline {
+            shape: id,
+            points: pts.clone(),
+            fixed: Some(Vec::new()),
+        })
+        .expect("back");
         // Fewer than two points, or a point that is not finite: refused.
         assert!(eng
             .run(&Command::SetSpline {
                 shape: id,
                 points: vec![Point::new(0.0, 0.0)],
+                fixed: None,
             })
             .is_err());
         assert!(eng
             .run(&Command::SetSpline {
                 shape: id,
                 points: vec![Point::new(0.0, 0.0), Point::new(f64::NAN, 0.0)],
+                fixed: None,
             })
             .is_err());
         // Any other outline makes it an ordinary curve.
@@ -2419,6 +2908,78 @@ mod tests {
         let s = eng.document().find_shape(id).unwrap();
         assert!(matches!(s.kind, ShapeKind::Rect { .. }));
         assert!(matches!(&s.fill, Fill::Fountain(f) if f.handles.is_none()));
+    }
+
+    /// #1491: a picture cropped with the Shape tool is a clip frame whose
+    /// frame gets the moved nodes. The clip frame's gradient transparency
+    /// lies on the frame's box, so it stays where it was on the page when
+    /// the frame takes a new outline, as it does for any other object.
+    #[test]
+    fn a_new_frame_outline_keeps_the_clip_frames_gradient_in_place() {
+        use crate::geometry::Point;
+        use crate::style::{Fountain, FountainKind};
+        let mut eng = crate::Engine::new(Document::new("t", Size::new(200.0, 200.0)));
+        let layer = eng.document().pages[0].layers[0].id;
+        let square = |x0: f64| {
+            let mut p = BezPath::new();
+            p.move_to((x0, 0.0));
+            p.line_to((100.0, 0.0));
+            p.line_to((100.0, 50.0));
+            p.line_to((x0, 50.0));
+            p.close_path();
+            ShapeKind::Path {
+                path: p,
+                closed: true,
+            }
+        };
+        let frame_id = eng.new_shape_id();
+        let mut frame = Shape::new(frame_id, square(0.0));
+        frame.fill = Fill::None;
+        let inner = Shape::new(eng.new_shape_id(), square(0.0));
+        let id = eng.new_shape_id();
+        let mut clip = Shape::new(
+            id,
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![inner],
+            },
+        );
+        clip.effects.push(crate::live::Effect::Transparency {
+            mask: Fill::Fountain(Fountain::two(
+                FountainKind::Linear,
+                Color::BLACK,
+                Color::WHITE,
+                0.0,
+            )),
+            merge: Default::default(),
+            target: 2,
+        });
+        eng.run(&Command::AddShape { layer, shape: clip }).unwrap();
+        eng.run(&Command::SetShapeKind {
+            shape: frame_id,
+            kind: square(50.0),
+        })
+        .unwrap();
+        let s = eng.document().find_shape(id).unwrap().clone();
+        let b = crate::geometry::Shape::bounding_box(&s.page_path());
+        assert!((b.x0 - 50.0).abs() < 1e-9, "{b:?}");
+        let Some(crate::live::Effect::Transparency {
+            mask: Fill::Fountain(f),
+            ..
+        }) = s.effects.first()
+        else {
+            panic!("a gradient transparency");
+        };
+        // Three quarters of the way along the ramp at x = 75, as before.
+        let t = f.param_at(b, Point::new(75.0, 25.0)).unwrap();
+        assert!((t - 0.75).abs() < 1e-9, "{t}");
+        eng.undo().unwrap();
+        let s = eng.document().find_shape(id).unwrap();
+        assert!(matches!(
+            s.effects.first(),
+            Some(crate::live::Effect::Transparency { mask: Fill::Fountain(f), .. })
+                if f.handles.is_none()
+        ));
     }
 
     fn rect(doc: &mut Document, x: f64) -> Shape {
@@ -2873,6 +3434,238 @@ mod tests {
         assert_eq!(doc.layer(layer).unwrap().shapes.len(), 2);
     }
 
+    /// A live test of 0.41: Combine of objects with a mesh fill lost the
+    /// colour (the mesh stayed in the object's own space while the result
+    /// lies in page space). A mesh that covers the whole result goes to
+    /// page space with it; one that would leave a part empty becomes its
+    /// mean colour, never black or nothing.
+    #[test]
+    fn combine_keeps_a_mesh_fill_or_its_mean_colour() {
+        use crate::geometry::{Affine, Point};
+        use crate::style::Mesh;
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        // A 10 mm square moved 50 mm right, with a mesh red on the left
+        // and blue on the right, in its own space.
+        let meshed = |doc: &mut Document| {
+            let mut s = rect(doc, 0.0);
+            let mut m = Mesh::new(Rect::new(0.0, 0.0, 10.0, 10.0), 1, 1, red);
+            for n in m.nodes.iter_mut().filter(|n| n.pos.x > 5.0) {
+                n.color = blue;
+            }
+            s.fill = Fill::Mesh(m);
+            s.transform = Affine::translate((50.0, 0.0));
+            s
+        };
+        let combine = |under: Shape, top: Shape| {
+            let mut doc = Document::default();
+            let layer = doc.pages[0].layers[0].id;
+            let ids = vec![under.id, top.id];
+            for shape in [under, top] {
+                Command::AddShape { layer, shape }.apply(&mut doc).unwrap();
+            }
+            Command::Combine { shapes: ids }.apply(&mut doc).unwrap();
+            doc.layer(layer).unwrap().shapes[0].fill.clone()
+        };
+        // A part inside the mesh's square: the mesh, on the page.
+        let mut doc = Document::default();
+        let top = meshed(&mut doc);
+        let mut inner = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(52.0, 2.0, 54.0, 4.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        inner.fill = Fill::Solid(Color::BLACK);
+        let Fill::Mesh(m) = combine(inner, top) else {
+            panic!("a mesh");
+        };
+        assert!(
+            m.nodes.iter().any(|n| n.pos == Point::new(60.0, 10.0)),
+            "{m:?}"
+        );
+        // A part elsewhere: the mesh's mean colour.
+        let mut doc = Document::default();
+        let top = meshed(&mut doc);
+        let other = rect(&mut doc, 0.0);
+        assert_eq!(combine(other, top), Fill::Solid(Color::rgb8(128, 0, 128)));
+    }
+
+    /// A live test of 0.41: Break Apart (Ctrl+K) on a brush stroke gives
+    /// two objects, the stroke's band as a group of plain filled curves
+    /// and its path as a plain line right above it, in one undo step.
+    #[test]
+    fn break_apart_sets_a_brush_stroke_apart_from_its_path() {
+        use crate::geometry::{Point, Shape as _};
+        use crate::style::WidthNode;
+        let mut e = crate::Engine::default();
+        let layer = e.document().pages[0].layers[0].id;
+        let id = e.new_shape_id();
+        let mut path = BezPath::new();
+        path.move_to(Point::new(10.0, 50.0));
+        path.curve_to(
+            Point::new(40.0, 80.0),
+            Point::new(70.0, 20.0),
+            Point::new(100.0, 50.0),
+        );
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Path {
+                path: path.clone(),
+                closed: false,
+            },
+        );
+        s.fill = Fill::None;
+        let red = Color::rgb8(200, 0, 0);
+        let mut st = Stroke::new(red, 8.0);
+        st.widths = vec![
+            WidthNode::symmetric(0.0, 0.0),
+            WidthNode::symmetric(0.5, 8.0),
+            WidthNode::symmetric(1.0, 0.0),
+        ];
+        s.stroke = Some(st);
+        s.name = Some("Brush stroke".into());
+        e.run(&Command::AddShape { layer, shape: s }).unwrap();
+        assert!(e.document().find_shape(id).unwrap().breaks_into_parts());
+        let before = e.document().clone();
+        e.run(&Command::BreakApart { shape: id }).unwrap();
+        let shapes = &e.document().layer(layer).unwrap().shapes;
+        assert_eq!(shapes.len(), 2);
+        // Below: the band, a group of filled curves in the stroke's
+        // colour with no outline, as wide as the brush in the middle.
+        let ShapeKind::Group { children } = &shapes[0].kind else {
+            panic!("a group: {:?}", shapes[0].kind);
+        };
+        assert!(!children.is_empty());
+        for c in children {
+            assert!(matches!(c.kind, ShapeKind::Path { closed: true, .. }));
+            assert_eq!(c.fill, Fill::Solid(red));
+            assert!(c.stroke.is_none());
+        }
+        let band = shapes[0].page_path();
+        // The middle of the curve, where the brush is widest (4 mm each
+        // way across it).
+        let mid = Point::new(55.0, 50.0);
+        assert!(band.contains(mid));
+        assert!(band.contains(Point::new(mid.x, mid.y + 3.0)));
+        assert!(!band.contains(Point::new(mid.x, mid.y + 5.0)));
+        assert!(band.bounding_box().width() > 85.0);
+        // Above: the path itself, the same object, now a plain line.
+        let line = &shapes[1];
+        assert_eq!(line.id, id);
+        let ShapeKind::Path { path: kept, .. } = &line.kind else {
+            panic!("a curve: {:?}", line.kind);
+        };
+        assert_eq!(kept.elements(), path.elements());
+        let st = line.stroke.as_ref().unwrap();
+        assert!(!st.is_brush());
+        assert_eq!(st.color, red);
+        assert!(!line.breaks_into_parts());
+        assert!(!shapes[0].breaks_into_parts());
+        // Breaking the line apart again changes nothing.
+        e.run(&Command::BreakApart { shape: id }).unwrap();
+        assert_eq!(e.document().layer(layer).unwrap().shapes.len(), 2);
+        // One step back gives the brush stroke again.
+        e.undo().unwrap();
+        e.undo().unwrap();
+        assert_eq!(
+            serde_json::to_string(e.document().layer(layer).unwrap()).unwrap(),
+            serde_json::to_string(before.layer(layer).unwrap()).unwrap()
+        );
+        // A calligraphic nib breaks apart the same way.
+        let mut nib = Stroke::new(red, 6.0);
+        nib.stretch = 0.2;
+        let shape = e.document().find_shape(id).unwrap().clone();
+        let mut shape = Shape {
+            stroke: Some(nib),
+            ..shape
+        };
+        shape.id = e.new_shape_id();
+        let nib_id = shape.id;
+        e.run(&Command::AddShape { layer, shape }).unwrap();
+        e.run(&Command::BreakApart { shape: nib_id }).unwrap();
+        let shapes = &e.document().layer(layer).unwrap().shapes;
+        assert_eq!(shapes.len(), 3);
+        assert!(matches!(shapes[1].kind, ShapeKind::Group { .. }));
+        assert_eq!(shapes[2].id, nib_id);
+    }
+
+    /// Combine of open curves gives one open curve with a subpath for
+    /// each; with a closed object among them, that part keeps its close
+    /// (it still fills) and Break Apart gives it back closed (#1934).
+    #[test]
+    fn combining_open_curves_keeps_them_open() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let line = |doc: &mut Document, y: f64| {
+            let mut p = BezPath::new();
+            p.move_to((0.0, y));
+            p.line_to((10.0, y));
+            Shape::new(
+                doc.ids_mut().shape(),
+                ShapeKind::Path {
+                    path: p,
+                    closed: false,
+                },
+            )
+        };
+        let a = line(&mut doc, 0.0);
+        let b = line(&mut doc, 5.0);
+        let mut square = BezPath::new();
+        square.move_to((20.0, 0.0));
+        square.line_to((30.0, 0.0));
+        square.line_to((30.0, 10.0));
+        square.line_to((20.0, 0.0));
+        let c = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Path {
+                path: square,
+                closed: true,
+            },
+        );
+        let (ia, ib, ic) = (a.id, b.id, c.id);
+        for shape in [a, b, c] {
+            Command::AddShape { layer, shape }.apply(&mut doc).unwrap();
+        }
+        Command::Combine {
+            shapes: vec![ia, ib],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let ShapeKind::Path { path, closed } = &doc.find_shape(ib).unwrap().kind else {
+            panic!("a curve");
+        };
+        assert!(!closed, "two lines combine into an open curve");
+        let moves = |p: &BezPath| {
+            p.elements()
+                .iter()
+                .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                .count()
+        };
+        assert_eq!(moves(path), 2);
+        assert!(!path.elements().contains(&PathEl::ClosePath));
+        Command::Combine {
+            shapes: vec![ib, ic],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let ShapeKind::Path { path, closed } = &doc.find_shape(ic).unwrap().kind else {
+            panic!("a curve");
+        };
+        assert!(!closed);
+        assert_eq!(moves(path), 3);
+        assert_eq!(path.elements().last(), Some(&PathEl::ClosePath));
+        Command::BreakApart { shape: ic }.apply(&mut doc).unwrap();
+        let shapes = &doc.layer(layer).unwrap().shapes;
+        let closed: Vec<bool> = shapes
+            .iter()
+            .map(|s| matches!(s.kind, ShapeKind::Path { closed: true, .. }))
+            .collect();
+        assert_eq!(closed, vec![false, false, true]);
+    }
+
     #[test]
     fn duplicate_page_copies_shapes_with_new_ids() {
         let mut doc = Document::default();
@@ -2962,6 +3755,79 @@ mod tests {
         assert!(Command::duplicate_page(PageId(9999))
             .apply(&mut Document::default())
             .is_err());
+    }
+
+    /// Pages of another file go in after the current one with their own
+    /// sizes, their objects under fresh ids, all in one undo step.
+    #[test]
+    fn inserted_pages_keep_their_sizes_and_undo_as_one_step() {
+        let mut doc = Document::default();
+        let first = doc.pages[0].id;
+        let layer = doc.pages[0].layers[0].id;
+        let a = rect(&mut doc, 0.0);
+        let a_id = a.id;
+        Command::AddShape {
+            layer,
+            shape: a.clone(),
+        }
+        .apply(&mut doc)
+        .unwrap();
+        Command::AddPage {
+            name: Some("Last".into()),
+            size: Size::new(100.0, 100.0),
+            layer: None,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let mut eng = crate::Engine::new(doc);
+        let landscape = Size::new(297.0, 210.0);
+        let small = Size::new(70.56, 35.28);
+        let cmds = vec![
+            Command::InsertPage {
+                at: 1,
+                name: Some("A".into()),
+                size: landscape,
+                layer: Some("Layer".into()),
+                shapes: vec![a.clone(), a.clone()],
+            },
+            Command::InsertPage {
+                at: 2,
+                name: Some("B".into()),
+                size: small,
+                layer: None,
+                shapes: Vec::new(),
+            },
+        ];
+        eng.run_batch("Import", &cmds).unwrap();
+        let d = eng.document();
+        let names: Vec<&str> = d.pages.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names[1..], ["A", "B", "Last"]);
+        assert_eq!(d.pages[0].id, first);
+        assert_eq!(d.pages[1].size, landscape);
+        assert_eq!(d.pages[2].size, small);
+        assert_eq!(d.pages[1].layers[0].name, "Layer");
+        assert_eq!(d.pages[2].layers[0].name, "Layer 1");
+        // The objects came with ids of their own.
+        let ids: Vec<ShapeId> = d.pages[1].layers[0].shapes.iter().map(|s| s.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids[0] != ids[1] && !ids.contains(&a_id));
+        assert_ne!(d.pages[1].layers[0].id, d.pages[2].layers[0].id);
+        // One undo takes every page back.
+        eng.undo().unwrap();
+        assert_eq!(eng.document().pages.len(), 2);
+        // An index past the end puts the page at the end.
+        let mut d = eng.document().clone();
+        Command::InsertPage {
+            at: 99,
+            name: None,
+            size: small,
+            layer: None,
+            shapes: Vec::new(),
+        }
+        .apply(&mut d)
+        .unwrap();
+        assert_eq!(d.pages.last().map(|p| p.size), Some(small));
+        assert_eq!(d.pages.last().map(|p| p.name.as_str()), Some("Page 3"));
     }
 
     #[test]
@@ -3559,7 +4425,7 @@ mod tests {
         assert!(p.stroke.is_none());
         // Paragraph layout defaults reach paragraph text, not artistic text.
         doc.defaults.paragraph.columns = 3;
-        doc.defaults.paragraph.tabs = vec![10.0];
+        doc.defaults.paragraph.tabs = vec![crate::document::TabStop::left(10.0)];
         let mut p = Shape::new(crate::id::ShapeId(98), text(Some(Size::new(10.0, 10.0))));
         doc.defaults.apply_to(&mut p);
         let mut a = Shape::new(crate::id::ShapeId(97), text(None));
@@ -3568,7 +4434,7 @@ mod tests {
             ShapeKind::Text { para, .. } => (para.columns, para.tabs.clone()),
             _ => (0, Vec::new()),
         };
-        assert_eq!(cols(&p), (3, vec![10.0]));
+        assert_eq!(cols(&p), (3, vec![crate::document::TabStop::left(10.0)]));
         assert_eq!(cols(&a), (1, Vec::new()));
         // Older files have none: the defaults of a new drawing.
         let mut json: serde_json::Value = serde_json::from_str(&doc.to_json().unwrap()).unwrap();
@@ -3985,5 +4851,105 @@ mod tests {
         assert!(f.handles.is_some());
         let t1 = f.param_at(s.bounds(), thirty * p0).expect("after");
         assert!((t0 - t1).abs() < 1e-9, "{t0} {t1}");
+    }
+
+    /// Edit Symbol (#1980): a new definition shows in every instance at
+    /// once, keeps the symbol's name, and one undo puts the old objects
+    /// back. A definition drawing the symbol itself, or a symbol that is
+    /// not there, changes nothing.
+    #[test]
+    fn editing_a_symbol_updates_every_instance_and_undoes() {
+        use crate::document::{ShapeKind, Symbol};
+        let rect = |w: f64| {
+            Shape::new(
+                ShapeId(0),
+                ShapeKind::Rect {
+                    rect: Rect::new(0.0, 0.0, w, 5.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            )
+        };
+        let instance = |index: usize| Shape::new(ShapeId(0), ShapeKind::SymbolInstance { index });
+        let mut e = crate::Engine::default();
+        let layer = e.document().pages[0].layers[0].id;
+        e.run(&Command::AddSymbol {
+            symbol: Symbol {
+                name: "Logo".into(),
+                shape: rect(10.0),
+            },
+        })
+        .unwrap();
+        let mut ids = Vec::new();
+        for x in [0.0, 50.0] {
+            let id = e.new_shape_id();
+            let mut inst = instance(0);
+            inst.id = id;
+            inst.transform = Affine::translate((x, 20.0));
+            e.run(&Command::AddShape { layer, shape: inst }).unwrap();
+            ids.push(id);
+        }
+        let widths = |e: &crate::Engine| -> Vec<f64> {
+            ids.iter()
+                .map(|id| {
+                    let s = e.document().find_shape(*id).unwrap();
+                    let parts = s.expand(&e.document().symbols);
+                    assert_eq!(parts.len(), 1);
+                    parts[0].bounds().width()
+                })
+                .collect()
+        };
+        assert_eq!(widths(&e), vec![10.0, 10.0]);
+        e.run(&Command::SetSymbolShape {
+            index: 0,
+            shape: rect(30.0),
+        })
+        .unwrap();
+        assert_eq!(e.undo_label(), Some("Edit Symbol"));
+        assert_eq!(widths(&e), vec![30.0, 30.0]);
+        assert_eq!(e.document().symbols[0].name, "Logo");
+        e.undo().unwrap();
+        assert_eq!(widths(&e), vec![10.0, 10.0]);
+        e.redo().unwrap();
+        assert_eq!(widths(&e), vec![30.0, 30.0]);
+
+        // An instance of the symbol inside its own definition, directly
+        // or through another symbol, is refused.
+        let mut own = Shape::new(
+            ShapeId(0),
+            ShapeKind::Group {
+                children: vec![rect(4.0), instance(0)],
+            },
+        );
+        own.fill = Fill::None;
+        assert!(matches!(
+            e.run(&Command::SetSymbolShape {
+                index: 0,
+                shape: own
+            }),
+            Err(Error::SymbolCycle(0))
+        ));
+        e.run(&Command::AddSymbol {
+            symbol: Symbol {
+                name: "Holder".into(),
+                shape: instance(0),
+            },
+        })
+        .unwrap();
+        assert!(matches!(
+            e.run(&Command::SetSymbolShape {
+                index: 0,
+                shape: instance(1)
+            }),
+            Err(Error::SymbolCycle(0))
+        ));
+        assert!(matches!(
+            e.run(&Command::SetSymbolShape {
+                index: 7,
+                shape: rect(1.0)
+            }),
+            Err(Error::SymbolNotFound(7))
+        ));
+        assert_eq!(widths(&e), vec![30.0, 30.0]);
     }
 }

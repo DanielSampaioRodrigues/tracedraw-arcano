@@ -437,7 +437,7 @@ mod tests {
         for _ in 0..2 {
             app.add_page();
         }
-        app.set_facing_pages(false);
+        app.set_facing_pages(false, tracedraw_core::spreads::PageSide::Right);
         let pages: Vec<PageId> = app.doc().pages.iter().map(|p| p.id).collect();
         let b = app.new_master("", "Avulsa", None).unwrap();
         app.apply_master(&pages, b);
@@ -466,7 +466,7 @@ mod tests {
         for _ in 0..3 {
             app.add_page();
         }
-        app.set_facing_pages(true);
+        app.set_facing_pages(true, tracedraw_core::spreads::PageSide::Right);
         app.set_multipage(false);
         let pages: Vec<PageId> = app.doc().pages.iter().map(|p| p.id).collect();
         let b = app.new_master("", "Abertura", None).unwrap();

@@ -6,7 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use android_activity::input::{InputEvent, KeyAction, Keycode, MotionAction};
+use android_activity::input::{
+    Axis, InputEvent, KeyAction, Keycode, MotionAction, Source, ToolType,
+};
 use android_activity::{
     AndroidApp, AndroidAppWaker, ConfigurationRef, InputStatus, MainEvent, Rect,
 };
@@ -19,6 +21,9 @@ use crate::error::EventLoopError;
 use crate::event::{self, Force, InnerSizeWriter, StartCause};
 use crate::event_loop::{self, ActiveEventLoop as RootAEL, ControlFlow, DeviceEvents};
 use crate::platform::pump_events::PumpStatus;
+// TraceDraw: palm rejection (#1832).
+use crate::android_mouse::{MouseAction, MouseOut, MouseState};
+use crate::pointer_filter::{self, PointerAction, PointerReport, PointerTool};
 use crate::platform_impl::Fullscreen;
 use crate::window::{
     self, CursorGrabMode, CustomCursor, CustomCursorSource, ImePurpose, ResizeDirection, Theme,
@@ -143,6 +148,12 @@ pub struct EventLoop<T: 'static> {
     cause: StartCause,
     ignore_volume_keys: bool,
     combining_accent: Option<char>,
+    // TraceDraw: the modifier keys last told to the app (#2052).
+    modifiers: crate::keyboard::ModifiersState,
+    // TraceDraw: the mouse's buttons and hover as told to the app, and
+    // the device and place of its last event (#2152).
+    mouse: MouseState,
+    mouse_at: Option<(i32, PhysicalPosition<f64>)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -192,6 +203,9 @@ impl<T: 'static> EventLoop<T> {
             cause: StartCause::Init,
             ignore_volume_keys: attributes.ignore_volume_keys,
             combining_accent: None,
+            modifiers: crate::keyboard::ModifiersState::empty(),
+            mouse: MouseState::default(),
+            mouse_at: None,
         })
     }
 
@@ -322,6 +336,13 @@ impl<T: 'static> EventLoop<T> {
             },
         }
 
+        // TraceDraw: a mouse whose hover ended with no press after it has
+        // left the window (#2152).
+        if let Some((device, at)) = self.mouse_at {
+            let out = self.mouse.flush();
+            self.tell_mouse(&out, device, at, callback);
+        }
+
         // Empty the user event buffer
         {
             while let Ok(event) = self.user_events_receiver.try_recv() {
@@ -362,6 +383,49 @@ impl<T: 'static> EventLoop<T> {
         self.pending_redraw = pending_redraw;
     }
 
+    /// TraceDraw: hand the window what `android_mouse` says of a mouse's
+    /// motion event (#2152): the pointer's place, its buttons, its wheel.
+    fn tell_mouse<F>(
+        &self,
+        out: &[MouseOut],
+        device: i32,
+        at: PhysicalPosition<f64>,
+        callback: &mut F,
+    ) where
+        F: FnMut(event::Event<T>, &RootAEL),
+    {
+        let device_id = event::DeviceId(DeviceId(device));
+        for o in out {
+            let event = match *o {
+                MouseOut::Entered => event::WindowEvent::CursorEntered { device_id },
+                MouseOut::Left => event::WindowEvent::CursorLeft { device_id },
+                MouseOut::Moved => event::WindowEvent::CursorMoved { device_id, position: at },
+                MouseOut::Button { button, pressed } => event::WindowEvent::MouseInput {
+                    device_id,
+                    state: if pressed {
+                        event::ElementState::Pressed
+                    } else {
+                        event::ElementState::Released
+                    },
+                    button: match button {
+                        crate::android_mouse::MouseButton::Left => event::MouseButton::Left,
+                        crate::android_mouse::MouseButton::Right => event::MouseButton::Right,
+                        crate::android_mouse::MouseButton::Middle => event::MouseButton::Middle,
+                        crate::android_mouse::MouseButton::Back => event::MouseButton::Back,
+                        crate::android_mouse::MouseButton::Forward => event::MouseButton::Forward,
+                    },
+                },
+                MouseOut::Wheel { x, y } => event::WindowEvent::MouseWheel {
+                    device_id,
+                    delta: event::MouseScrollDelta::LineDelta(x, y),
+                    phase: event::TouchPhase::Moved,
+                },
+            };
+            let event = event::Event::WindowEvent { window_id: window::WindowId(WindowId), event };
+            callback(event, self.window_target());
+        }
+    }
+
     fn handle_input_event<F>(
         &mut self,
         android_app: &AndroidApp,
@@ -377,7 +441,32 @@ impl<T: 'static> EventLoop<T> {
                 let window_id = window::WindowId(WindowId);
                 let device_id = event::DeviceId(DeviceId(motion_event.device_id()));
 
-                let phase = match motion_event.action() {
+                let action = motion_event.action();
+                // TraceDraw: a mouse (or a touchpad) is told as a mouse,
+                // with its buttons, its wheel and its hover, not as the
+                // touches of a finger (#2152, #2161).
+                if motion_event.pointer_count() > 0 {
+                    let pointer = motion_event.pointer_at_index(0);
+                    if motion_event.source() == Source::Mouse
+                        || pointer.tool_type() == ToolType::Mouse
+                    {
+                        if let Some(action) = mouse_action(action) {
+                            let at =
+                                PhysicalPosition { x: pointer.x() as f64, y: pointer.y() as f64 };
+                            let out = self.mouse.step(
+                                action,
+                                motion_event.button_state().0,
+                                pointer.axis_value(Axis::Hscroll),
+                                pointer.axis_value(Axis::Vscroll),
+                            );
+                            let device = motion_event.device_id();
+                            self.mouse_at = Some((device, at));
+                            self.tell_mouse(&out, device, at, callback);
+                        }
+                        return input_status;
+                    }
+                }
+                let phase = match action {
                     MotionAction::Down | MotionAction::PointerDown => {
                         Some(event::TouchPhase::Started)
                     },
@@ -388,6 +477,24 @@ impl<T: 'static> EventLoop<T> {
                         None // TODO mouse events
                     },
                 };
+                // TraceDraw: a pen near the screen, for the program's palm
+                // rejection (#1832); no touch comes of it.
+                let hover = match action {
+                    MotionAction::HoverEnter => Some(PointerAction::HoverEnter),
+                    MotionAction::HoverMove => Some(PointerAction::HoverMove),
+                    MotionAction::HoverExit => Some(PointerAction::HoverExit),
+                    _ => None,
+                };
+                if let Some(hover) = hover {
+                    for pointer in motion_event.pointers() {
+                        let _ = pointer_filter::judge(&PointerReport {
+                            device: motion_event.device_id(),
+                            pointer: pointer.pointer_id() as u64,
+                            tool: pointer_tool(pointer.tool_type()),
+                            action: hover,
+                        });
+                    }
+                }
                 if let Some(phase) = phase {
                     let pointers: Box<dyn Iterator<Item = android_activity::input::Pointer<'_>>> =
                         match phase {
@@ -402,6 +509,42 @@ impl<T: 'static> EventLoop<T> {
                         };
 
                     for pointer in pointers {
+                        // TraceDraw: the program's say on the pointer, with
+                        // its tool (#1832): touches it names are ended
+                        // first, and this one is delivered only if it says.
+                        let verdict = pointer_filter::judge(&PointerReport {
+                            device: motion_event.device_id(),
+                            pointer: pointer.pointer_id() as u64,
+                            tool: pointer_tool(pointer.tool_type()),
+                            action: match phase {
+                                event::TouchPhase::Started => PointerAction::Down,
+                                event::TouchPhase::Moved => PointerAction::Move,
+                                event::TouchPhase::Ended => PointerAction::Up,
+                                event::TouchPhase::Cancelled => PointerAction::Cancel,
+                            },
+                        });
+                        for other in motion_event.pointers() {
+                            if !verdict.cancel.contains(&(other.pointer_id() as u64)) {
+                                continue;
+                            }
+                            let event = event::Event::WindowEvent {
+                                window_id,
+                                event: event::WindowEvent::Touch(event::Touch {
+                                    device_id,
+                                    phase: event::TouchPhase::Cancelled,
+                                    location: PhysicalPosition {
+                                        x: other.x() as _,
+                                        y: other.y() as _,
+                                    },
+                                    id: other.pointer_id() as u64,
+                                    force: None,
+                                }),
+                            };
+                            callback(event, self.window_target());
+                        }
+                        if !verdict.deliver {
+                            continue;
+                        }
                         let location =
                             PhysicalPosition { x: pointer.x() as _, y: pointer.y() as _ };
                         trace!(
@@ -434,6 +577,19 @@ impl<T: 'static> EventLoop<T> {
                         input_status = InputStatus::Unhandled
                     },
                     keycode => {
+                        // TraceDraw: Shift, Ctrl, Alt and Meta of a hardware
+                        // keyboard, from the key event's meta state, which
+                        // winit's Android backend never passed on: the app
+                        // saw no modifier held (#2052).
+                        let modifiers = modifiers_of(key.meta_state());
+                        if modifiers != self.modifiers {
+                            self.modifiers = modifiers;
+                            let event = event::Event::WindowEvent {
+                                window_id: window::WindowId(WindowId),
+                                event: event::WindowEvent::ModifiersChanged(modifiers.into()),
+                            };
+                            callback(event, self.window_target());
+                        }
                         let state = match key.action() {
                             KeyAction::Down => event::ElementState::Pressed,
                             KeyAction::Up => event::ElementState::Released,
@@ -1137,5 +1293,47 @@ impl VideoModeHandle {
 
     pub fn monitor(&self) -> MonitorHandle {
         self.monitor.clone()
+    }
+}
+
+/// TraceDraw: the modifier keys an Android key event's meta state holds
+/// (#2052).
+fn modifiers_of(meta: android_activity::input::MetaState) -> crate::keyboard::ModifiersState {
+    use crate::keyboard::ModifiersState as M;
+    let mut m = M::empty();
+    m.set(M::SHIFT, meta.shift_on());
+    m.set(M::CONTROL, meta.ctrl_on());
+    m.set(M::ALT, meta.alt_on());
+    m.set(M::SUPER, meta.meta_on());
+    m
+}
+
+/// TraceDraw: a motion event's action as `android_mouse` names it
+/// (#2152); `None` for the actions a mouse does not send.
+fn mouse_action(action: MotionAction) -> Option<MouseAction> {
+    Some(match action {
+        MotionAction::Down => MouseAction::Down,
+        MotionAction::Move => MouseAction::Move,
+        MotionAction::Up => MouseAction::Up,
+        MotionAction::Cancel => MouseAction::Cancel,
+        MotionAction::HoverEnter => MouseAction::HoverEnter,
+        MotionAction::HoverMove => MouseAction::HoverMove,
+        MotionAction::HoverExit => MouseAction::HoverExit,
+        MotionAction::Scroll => MouseAction::Scroll,
+        MotionAction::ButtonPress => MouseAction::ButtonPress,
+        MotionAction::ButtonRelease => MouseAction::ButtonRelease,
+        _ => return None,
+    })
+}
+
+/// TraceDraw: a pointer's tool as the program's filter names it (#1832).
+fn pointer_tool(tool: ToolType) -> PointerTool {
+    match tool {
+        ToolType::Finger => PointerTool::Finger,
+        ToolType::Stylus => PointerTool::Stylus,
+        ToolType::Mouse => PointerTool::Mouse,
+        ToolType::Eraser => PointerTool::Eraser,
+        ToolType::Palm => PointerTool::Palm,
+        _ => PointerTool::Unknown,
     }
 }

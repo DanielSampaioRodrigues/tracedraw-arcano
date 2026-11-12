@@ -5,6 +5,25 @@ the bundled interface font. Toolbars,
 panels, palettes, the status bar and dialog bodies are `#F4F4F4`; light
 lines between bands are `#D8D8D8`.
 
+## Icon buttons
+
+Every icon button (toolbox, standard toolbar, property bar and its
+toggles such as Portrait and Landscape, the Outline Pen's picture
+buttons) has four looks, from one place in the theme
+(`Tokens::icon_button`):
+
+- Plain: no fill, no frame.
+- Hovered: a light blue fill (`#CCE8FF`) with a blue frame (`#99D1FF`).
+- On (the active tool, a toggle pressed in): white with a sharp 1 px
+  accent frame (`#0078D7`).
+- On and hovered: the light blue fill with the accent frame.
+
+The dark themes use the picked row's blue for the fill of a button that
+is on and a lighter blue (`#5CB2FF`) for its frame; high contrast uses
+the desktop's highlight and hot-track colours
+(`theme::theme_tests::icon_buttons_have_four_distinct_looks`,
+`theme::theme_tests::the_on_frame_contrasts_with_the_panel`).
+
 ## Menu bar
 
 A 24 px `#D8D8D8` band. Titles are 13 px, the first 11 px from the edge
@@ -19,6 +38,15 @@ the gutter; a submenu row ends in a grey triangle and stays highlighted
 while its submenu is open; a hovered row is the same blue box as the
 titles. The canvas, palette and New Document menus are drawn the same
 way.
+
+When the bar is too short for every title (a phone, a tablet upright
+in the Touch workspace, a narrow window), the titles that do not fit go
+under a last title, », whose menu lists them in order, each opening
+its menu as a submenu (#1301, #1691). Those menus keep the access keys
+they have on a wide bar (underlined in the » menu): Alt and the letter
+opens » with that menu open in it and its first row lit. Check:
+`ui::tests::phones_fit_and_tablets_keep_their_layout`,
+`ui::keynav::tests::alt_and_a_letter_open_a_menu_under_more`.
 
 The View menu has Zoom In, Zoom Out and Zoom
 To Fit (with their pictures) and no other zoom commands.
@@ -131,7 +159,15 @@ split by thin lines:
 
 1. New (a page with a green plus), Open with the recent drawings behind
    its arrow, Save, Print.
-2. Cut, Copy, Paste.
+2. Cut, Copy, Paste, Delete (a waste bin: what the Delete key does to
+   the selection: the selected characters of the text being edited, the
+   chosen nodes with the Shape tool, the selected guidelines, else the
+   selected objects; for a screen with no keyboard, #1611). Then, only
+   with a touch screen (Android, or once a finger has touched the
+   window), Shift, Ctrl and Alt, buttons that read the key's name: a tap
+   holds the key down until the next tap on it, the button drawn pressed
+   meanwhile, and every tool reads the held keys as the keyboard's
+   (`touch_modifiers.rs`, #1499).
 3. Undo and Redo, each with its list of steps behind the arrow (choosing
    a step undoes or redoes up to it).
 4. Import, Export, Export as PDF.
@@ -139,11 +175,13 @@ split by thin lines:
    and, behind its arrow, Zoom to Selected, to All Objects, to Page, to
    Page Width, to Page Height and levels from 10% to 1600%. Full-screen
    preview.
-6. Show Rulers, Show Grid, Show Guidelines: toggles drawn pressed (white
-   with a grey frame) while on.
+6. Show Rulers, Show Grid, Show Guidelines: toggles drawn pressed while
+   on (see Icon buttons above).
 7. Snap Off (Alt+Q), pressed while snapping is off; Snap To with the
    snapping list.
-8. Options (the TraceDraw options).
+8. Options (the TraceDraw options); Panels (a window with a side panel),
+   pressed while the dockers show: shows or hides them (the Touch
+   workspace starts without them, #1611).
 9. Launch, an icon with the list arrow (its name in the tooltip): Font
    Manager, Welcome Screen, Color Management.
 
@@ -160,6 +198,16 @@ A 52 px band (and its line); fields stack two to a column, 19 px each
 and sharing their middle border, 8 px from the top; fields and lists are
 white with a grey border and 13 px text, small pictures before fields
 name them (hover for a tooltip), and some fields have spin arrows.
+
+Length fields (position, size, corners and the other lengths of the
+property bars, the Contour, Extrude, Table, Variable outline and
+Transform bars and the paragraph lengths) show the decimals a value
+needs, at least one and up to the drawing precision (Options > Edit, 3
+by default), with no trailing zeros: 20.0 mm, 20.5 mm, 20.125 mm (none
+with a precision of 0); a value with more decimals shows rounded
+(20.12345 mm as 20.123 mm) and is kept as it is, and a value typed is
+applied as typed (#1761,
+`ui::propbar::tests::distance_fields_show_only_the_decimals_needed`).
 
 Number fields show their value at the left and are typed into: a click
 selects the value, Enter or leaving the field applies it, Esc puts it
@@ -267,6 +315,35 @@ the bar and work as there (the bar is drawn once). A bar that fits shows
 no buttons; the slide is worked out again when the window changes size
 (`ui::overflow::tests`).
 
+On a touch screen a finger dragged along a bar longer than its room
+slides the bar with the finger (#1997): once the finger has moved past a
+tap's distance (6 px), more along the bar than across it, the bar follows
+its movement from there and stays where the finger leaves it. A tap on a
+button stays a click; a finger that slid the bar clicks nothing when it
+lifts, not the button it came down on and not the one under it then. While
+a finger slides a bar its items start no drag of their own: a number
+field's label or arrows step no value, a tool button opens no flyout, a
+docker tab does not move, a palette swatch drags no colour, a slider's
+thumb stays; a finger that moves across the bar instead (a colour dragged
+off the palette onto the drawing, a tool button dragged sideways for its
+flyout) keeps those drags. The mouse slides nothing by dragging: its
+drags on the bars stay what they were. The same finger drag slides the
+toolbox on a side (up and down), a tab column of dockers, the document
+tabs and the colour palette (`color-palettes.md`); a docker's contents
+longer than the docker scroll under a finger too (egui's scroll areas do
+this on a touch screen, as soon as the screen has been touched once).
+Nothing of this costs a frame anything until the screen has been touched
+(`ui::overflow::finger_slide`, `ui::overflow::finger_sliding`,
+`ui::overflow::tests::a_finger_dragged_along_a_long_bar_slides_it_with_the_finger`,
+`ui::overflow::tests::a_finger_dragged_along_a_column_slides_it`,
+`ui::overflow::tests::a_tap_clicks_a_button_and_a_slide_clicks_nothing`,
+`ui::overflow::tests::a_finger_moving_across_the_bar_does_not_slide_it`,
+`ui::overflow::tests::a_mouse_drag_does_not_slide_the_bar`,
+`ui::tests::a_finger_slides_the_standard_toolbar_on_a_phone`,
+`ui::toolbox::tests::a_finger_dragged_along_the_toolbox_column_slides_it`,
+`ui::palette::tests::a_finger_dragged_along_the_palette_scrolls_it`,
+`ui::dockers::tests::a_finger_dragged_up_a_docker_scrolls_its_contents`).
+
 Ctrl+wheel over a toolbar (docked or floating) steps the default button
 size (the bars' menu > Customize > Default Button Size) by the notches
 turned: up larger, down smaller, through the five sizes from Extra
@@ -341,7 +418,11 @@ bar move (`ui/bars.rs`).
   narrow window) is cut with an ellipsis and shows whole as a tooltip
   of the title; a window is never narrower than 68 px, room for the
   close button and a few letters (`ui::bars::title_room`,
-  `ui::bars::tests::floating_titles_fit_their_windows`). Dragging the
+  `ui::bars::tests::floating_titles_fit_their_windows`). The title runs
+  the window's whole width, the close button at its right end, also
+  when the bar's controls make the window wider (the property bar of
+  another tool, #1921;
+  `ui::bars::tests::a_floating_bars_close_button_follows_its_width`). Dragging the
   title moves it (near an edge it docks), a double click puts the bar
   back at its first place, and the close button hides it (Window >
   Toolbars shows it again). The floating toolbox is a grid two buttons

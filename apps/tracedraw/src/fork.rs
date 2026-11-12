@@ -123,38 +123,6 @@ pub fn run_source_update(script: &std::path::Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Start a downloaded installer quietly; it closes TraceDraw and installs
-/// the new version, which then starts again (Windows).
-///
-/// The new version is started by a hidden PowerShell that waits for the
-/// installer, as the user, rather than by the installer itself: an
-/// installer that elevated itself and was started quietly cannot start a
-/// program as the user ("CallSpawnServer: Unexpected response").
-#[cfg(not(target_arch = "wasm32"))]
-pub fn run_installer(setup: &std::path::Path) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    if cfg!(windows) {
-        std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-WindowStyle",
-                "Hidden",
-                "-Command",
-            ])
-            .arg(relaunch_script(setup, &exe))
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    } else {
-        std::process::Command::new(setup)
-            .args(INSTALLER_FLAGS)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-}
-
 /// How a downloaded installer runs: quietly, closing TraceDraw, without
 /// restarting Windows.
 const INSTALLER_FLAGS: [&str; 4] = ["/SILENT", "/SP-", "/CLOSEAPPLICATIONS", "/NORESTART"];
@@ -169,7 +137,7 @@ const STOP_AGENT_BRIDGES: &str = "Get-CimInstance Win32_Process -Filter 'Name=''
 
 /// The PowerShell that stops the agents' bridges, runs the installer,
 /// waits for it and, when it succeeded, starts `exe` again.
-fn relaunch_script(setup: &std::path::Path, exe: &std::path::Path) -> String {
+pub(crate) fn relaunch_script(setup: &std::path::Path, exe: &std::path::Path) -> String {
     // A PowerShell string in single quotes: a quote is written twice.
     let quote = |p: &std::path::Path| format!("'{}'", p.display().to_string().replace('\'', "''"));
     let flags: Vec<String> = INSTALLER_FLAGS.iter().map(|f| format!("'{f}'")).collect();

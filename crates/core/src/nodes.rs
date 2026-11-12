@@ -334,8 +334,8 @@ pub fn move_handle(
 /// one length). With a straight segment on one side, the curve's handle
 /// lines up with it, keeping its length, so the join is smooth and the
 /// line stays straight. With straight segments on both sides they become
-/// curves first (as To Curve makes them), then the node is smoothed; a
-/// closing line that is only a close stays straight. An end node of an
+/// curves first (as To Curve makes them), then the node is smoothed, a
+/// closing line too (#1618). An end node of an
 /// open subpath has one side only and stays as it is.
 pub fn set_node_type(path: &BezPath, index: usize, ty: NodeType) -> BezPath {
     let n = normalize(path);
@@ -390,19 +390,26 @@ pub fn set_node_type(path: &BezPath, index: usize, ty: NodeType) -> BezPath {
             if !has_out || line_in_point(els, index).is_none() {
                 return n;
             }
+            // The segment arriving (for a closed subpath's start its
+            // closing segment, a closing line too) and the one leaving
+            // (a line, or the closing line of the subpath's last node)
+            // become curves, as at any other corner (#1618). The arriving
+            // one goes first: a closing line made a curve puts an element
+            // in before the close, past the leaving segment of a start.
             let mut m = n.clone();
             let mut curved = false;
-            let in_index = match els.get(index) {
-                Some(PathEl::MoveTo(_)) => twin_of(els, index),
-                _ => Some(index),
-            };
-            if let Some(i) = in_index.filter(|i| matches!(els.get(*i), Some(PathEl::LineTo(_)))) {
-                m = to_curve(&m, i);
-                curved = true;
-            }
-            if matches!(els.get(index + 1), Some(PathEl::LineTo(_))) {
-                m = to_curve(&m, index + 1);
-                curved = true;
+            let straight =
+                |i: usize| matches!(els.get(i), Some(PathEl::LineTo(_) | PathEl::ClosePath));
+            let arriving = segment_into(&n, index).filter(|&i| straight(i));
+            for i in arriving
+                .into_iter()
+                .chain(Some(index + 1).filter(|&i| straight(i)))
+            {
+                let c = to_curve(&m, i);
+                if c != m {
+                    m = c;
+                    curved = true;
+                }
             }
             if curved {
                 set_node_type(&m, index, ty)
@@ -411,6 +418,21 @@ pub fn set_node_type(path: &BezPath, index: usize, ty: NodeType) -> BezPath {
             }
         }
     }
+}
+
+/// Where `new` has one element more than `old` because a closing line
+/// was made a curve before its close (as [`to_curve`] and
+/// [`set_node_type`] do): the index of that curve. Elements from there on
+/// sit one index further in `new`, so callers keeping element indices
+/// (node choices, node types) move those up by one.
+pub fn curve_put_in_before_close(old: &BezPath, new: &BezPath) -> Option<usize> {
+    let (a, b) = (old.elements(), new.elements());
+    if b.len() != a.len() + 1 {
+        return None;
+    }
+    a.iter()
+        .zip(b)
+        .position(|(x, y)| matches!(x, PathEl::ClosePath) && !matches!(y, PathEl::ClosePath))
 }
 
 /// Where the straight segment leaving node `index` goes: a line's end, or
@@ -1259,8 +1281,39 @@ fn refine_span(span: &mut Span, tolerance: f64) -> f64 {
     best
 }
 
+/// The end tangents of a run of three or more lines that bends as a
+/// flattened curve does: every corner turns the same way, by 20 degrees
+/// at most. The tangents lean back from the first and the last line by
+/// half the turn next to them, as a curve's ends do from its chords. None
+/// for any other run: a straight stretch, or lines that meet at corners.
+fn flattened_tangents(run: &[&Span]) -> Option<(Vec2, Vec2)> {
+    if run.len() < 3 || !run.iter().all(|s| matches!(s.el, PathEl::LineTo(_))) {
+        return None;
+    }
+    let dirs: Vec<Vec2> = run
+        .iter()
+        .map(|s| unit(s.end() - s.start))
+        .collect::<Option<_>>()?;
+    let limit = 20f64.to_radians().sin();
+    let mut sense = 0.0;
+    for w in dirs.windows(2) {
+        let (cross, dot) = (w[0].cross(w[1]), w[0].dot(w[1]));
+        if dot <= 0.0 || cross.abs() > limit || cross.abs() < 1e-6 || cross * sense < 0.0 {
+            return None;
+        }
+        sense = cross;
+    }
+    let (first, second) = (*dirs.first()?, *dirs.get(1)?);
+    let (last, before) = (*dirs.last()?, *dirs.get(dirs.len() - 2)?);
+    Some((
+        unit(first * 1.5 - second * 0.5)?,
+        unit(before * 0.5 - last * 1.5)?,
+    ))
+}
+
 /// The one span that replaces the consecutive spans `run`: a line when
-/// they are all lines, otherwise a cubic keeping the outer tangents,
+/// they are all lines (a cubic when the lines follow a curve, see
+/// [`flattened_tangents`]), otherwise a cubic keeping the outer tangents,
 /// fitted to their original outline.
 fn merge_run(run: &[&Span]) -> Option<Span> {
     let (first, last) = (run.first()?, run.last()?);
@@ -1270,7 +1323,10 @@ fn merge_run(run: &[&Span]) -> Option<Span> {
     }
     let a = first.start;
     let c = last.end();
-    let el = if run.iter().all(|s| matches!(s.el, PathEl::LineTo(_))) {
+    let el = if let Some((t1, t2)) = flattened_tangents(run) {
+        let (h1, h2) = fit_cubic(a, c, t1, t2, &orig);
+        PathEl::CurveTo(h1, h2, c)
+    } else if run.iter().all(|s| matches!(s.el, PathEl::LineTo(_))) {
         PathEl::LineTo(c)
     } else {
         let ca = element_cubic(first.start, first.el)?;
@@ -2901,6 +2957,60 @@ mod reduce_tests {
         assert_eq!(reduce_nodes(&twelve, 1e-6), normalize(&twelve));
     }
 
+    /// #2209: an outline of short lines along a curve (as a flattened
+    /// outline is) was reduced to fewer lines only, a round shape to a
+    /// polygon.
+    #[test]
+    fn reduce_fits_curves_to_lines_that_follow_a_curve() {
+        let gon = |n: usize| {
+            let mut p = BezPath::new();
+            for i in 0..n {
+                let a = i as f64 / n as f64 * std::f64::consts::TAU;
+                let q = Point::new(10.0 * a.cos(), 10.0 * a.sin());
+                if i == 0 {
+                    p.move_to(q);
+                } else {
+                    p.line_to(q);
+                }
+            }
+            p.close_path();
+            p
+        };
+        let count = |p: &BezPath| {
+            let els = p.elements();
+            (
+                els.iter()
+                    .filter(|e| matches!(e, PathEl::LineTo(_)))
+                    .count(),
+                els.iter()
+                    .filter(|e| matches!(e, PathEl::CurveTo(..)))
+                    .count(),
+            )
+        };
+        let round = gon(64);
+        for tol in [0.1, 0.5, 1.0] {
+            let r = reduce_nodes(&round, tol);
+            let (lines, curves) = count(&r);
+            assert!(
+                lines <= 1 && (2..=12).contains(&curves),
+                "{tol}: {lines} lines, {curves} curves"
+            );
+            // Still the circle of radius 10, within the tolerance.
+            let mut worst = 0.0f64;
+            kurbo::flatten(r.elements().iter().copied(), 0.01, |el| {
+                if let PathEl::MoveTo(q) | PathEl::LineTo(q) = el {
+                    worst = worst.max((q.to_vec2().hypot() - 10.0).abs());
+                }
+            });
+            assert!(worst <= tol + 0.05, "{tol}: strays {worst}");
+        }
+        // Lines that meet at corners stay lines: a hexagon keeps its six.
+        let hexagon = gon(6);
+        let (lines, curves) = count(&reduce_nodes(&hexagon, 0.5));
+        assert_eq!((lines, curves), count(&normalize(&hexagon)));
+        assert_eq!(curves, 0);
+    }
+
     /// A wobbly, traced-looking closed curve of 200 nodes keeps its shape:
     /// it is not reduced to a single node.
     #[test]
@@ -3303,11 +3413,74 @@ mod segment_tests {
         assert!((h - away).hypot() < 1e-9, "{c2:?}");
         assert!(matches!(s.elements()[3], PathEl::ClosePath));
         // The start, with the closing line arriving and a line leaving:
-        // the close stays a close, the line out becomes a curve.
+        // both become curves, the closing line a curve before the close
+        // (#1618).
         let t = set_node_type(&p, 0, NodeType::Smooth);
         assert!(matches!(t.elements()[1], PathEl::CurveTo(..)));
-        assert!(matches!(t.elements()[3], PathEl::ClosePath));
-        assert_eq!(t.elements().len(), p.elements().len());
+        assert!(matches!(t.elements()[3], PathEl::CurveTo(_, _, q) if q == Point::ZERO));
+        assert!(matches!(t.elements()[4], PathEl::ClosePath));
+        assert_ne!(node_type(&t, 0), NodeType::Cusp);
+    }
+
+    #[test]
+    fn a_curve_put_in_before_a_close_is_found() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.line_to((10.0, 10.0));
+        p.close_path();
+        p.move_to((20.0, 0.0));
+        p.line_to((30.0, 0.0));
+        p.line_to((30.0, 10.0));
+        p.close_path();
+        let s = set_node_type(&p, 0, NodeType::Smooth);
+        assert_eq!(curve_put_in_before_close(&p, &s), Some(3));
+        assert!(matches!(s.elements()[5], PathEl::MoveTo(q) if q == Point::new(20.0, 0.0)));
+        assert_eq!(curve_put_in_before_close(&p, &p), None);
+        assert_eq!(curve_put_in_before_close(&p, &to_curve(&p, 1)), None);
+    }
+
+    /// Smooth and Symmetrical on any corner of a rectangle or polygon
+    /// converted to curves (closed by a ClosePath, which draws the last
+    /// side) make both sides at that corner curves, also at the start node
+    /// and the node before it, where the closing line meets them: there
+    /// the closing line stayed straight, so those two corners rounded on
+    /// one side only (#1618).
+    #[test]
+    fn smoothing_where_the_closing_line_meets_curves_both_sides() {
+        let rect =
+            crate::geometry::rect_path(crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0), 0.0);
+        let star =
+            crate::geometry::polygon_path(crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0), 5, 0.5);
+        for (name, p) in [("rectangle", rect), ("star", star)] {
+            let ns = nodes(&p);
+            let count = ns.len();
+            for ty in [NodeType::Smooth, NodeType::Symmetrical] {
+                for (k, node) in ns.iter().enumerate() {
+                    let s = set_node_type(&p, node.index, ty);
+                    let after = nodes(&s);
+                    assert_eq!(after.len(), count, "{name} {ty:?} node {k}: {s:?}");
+                    let n = after
+                        .iter()
+                        .find(|n| n.index == node.index)
+                        .expect("the node is kept");
+                    assert_eq!(n.pos, node.pos, "{name} {ty:?} node {k}");
+                    assert!(
+                        n.ctrl_in.is_some() && n.ctrl_out.is_some(),
+                        "{name} {ty:?} node {k}: a side stayed straight: {s:?}"
+                    );
+                    assert_ne!(
+                        node_type(&s, node.index),
+                        NodeType::Cusp,
+                        "{name} node {k}: {s:?}"
+                    );
+                    // The other nodes are where they were.
+                    for (a, b) in ns.iter().zip(after.iter()) {
+                        assert!(close_pt(a.pos, b.pos), "{name} {ty:?} node {k}");
+                    }
+                }
+            }
+        }
     }
 
     /// The segment ending at each node: its own, the closing one for the

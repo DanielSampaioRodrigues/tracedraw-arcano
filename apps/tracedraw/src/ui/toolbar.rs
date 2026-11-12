@@ -25,29 +25,11 @@ fn std_icon() -> f32 {
 }
 
 fn std_frame(ui: &Ui, rect: egui::Rect, hovered: bool, pressed: bool) {
-    if pressed {
-        ui.painter()
-            .rect_filled(rect, 0.0, crate::theme::Tokens::field());
-        ui.painter().rect_stroke(
-            rect.shrink(0.5),
-            0.0,
-            egui::Stroke::new(1.0, Tokens::control_border()),
-            egui::StrokeKind::Middle,
-        );
-    } else if hovered {
-        ui.painter()
-            .rect_filled(rect, 0.0, crate::theme::Tokens::hovered_row());
-        ui.painter().rect_stroke(
-            rect.shrink(0.5),
-            0.0,
-            egui::Stroke::new(1.0, crate::theme::Tokens::selected_row()),
-            egui::StrokeKind::Middle,
-        );
-    }
+    crate::theme::paint_icon_button(ui.painter(), rect, hovered, pressed);
 }
 
 /// A standard toolbar button; `pressed` draws it pushed in (toggles).
-fn std_button(
+pub(crate) fn std_button(
     ui: &mut Ui,
     action: icons::Action,
     tip: &str,
@@ -110,11 +92,27 @@ pub(crate) fn rich_tip(ui: &mut Ui, tip: &str) {
 
 /// The tip of the standard bar's button `key`: its title and the
 /// description kept under `key_desc`.
-fn tip(key: &str) -> String {
+pub(crate) fn tip(key: &str) -> String {
     // In the browser version a shortcut the browser keeps shows the key
     // that replaces it (#1409).
     let title = crate::shortcuts::shown_in(tr(key));
     format!("{}\n{}", title, tr(&format!("{key}_desc")))
+}
+
+/// A Standard toolbar button that reads `label` (a key's name), drawn
+/// pressed while `held` (#1499).
+pub(crate) fn mod_button(ui: &mut Ui, label: &str, tip: &str, held: bool) -> egui::Response {
+    let font = egui::FontId::proportional((std_icon() * 0.55).max(10.0));
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_string(), font, Tokens::icon());
+    let width = (galley.size().x + 10.0).max(std_btn());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, std_btn()), egui::Sense::click());
+    std_frame(ui, rect, resp.hovered(), held);
+    let resp = resp.on_hover_ui(|ui| rich_tip(ui, tip));
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2.0, galley, Tokens::icon());
+    resp
 }
 
 /// The small arrow after a button that opens its list.
@@ -228,8 +226,9 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
                         }
                     }
                 }
-                let (arrow, resp) =
-                    ui.allocate_exact_size(Vec2::new(22.0, 24.0), egui::Sense::click());
+                let (arrow, _) =
+                    ui.allocate_exact_size(Vec2::new(22.0, 24.0), egui::Sense::hover());
+                let resp = ui.interact(arrow, egui::Id::new((id, "arrow")), egui::Sense::click());
                 ui.painter().rect_filled(
                     arrow,
                     0.0,
@@ -249,8 +248,11 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
                     Tokens::text_dim(),
                     egui::Stroke::NONE,
                 ));
+                let levels_id = egui::Id::new((id, "levels"));
+                // Down, Alt+Down or F4 on the arrow opens the levels (#1839).
+                crate::ui::keynav::list_button_keys(ui.ctx(), &resp, levels_id);
                 egui::Popup::menu(&resp)
-                    .id(egui::Id::new((id, "levels")))
+                    .id(levels_id)
                     .show(|ui| zoom_level_menu(app, ui));
             });
         })
@@ -278,6 +280,7 @@ pub(crate) fn item_action(id: &str) -> Option<icons::Action> {
         "cut" => A::Cut,
         "copy" => A::Copy,
         "paste" => A::Paste,
+        "delete" => A::Delete,
         "undo" => A::Undo,
         "redo" => A::Redo,
         "import" => A::Import,
@@ -289,6 +292,7 @@ pub(crate) fn item_action(id: &str) -> Option<icons::Action> {
         "guidelines" => A::ShowGuidelines,
         "snap_off" | "snap_to" => A::SnapOff,
         "options" => A::Options,
+        "dockers" => A::Dockers,
         "launch" | "ai" => A::Launch,
         _ => return None,
     })
@@ -308,6 +312,7 @@ pub(crate) fn item_name(id: &str) -> Option<String> {
         "cut" => "toolbar.cut",
         "copy" => "toolbar.copy",
         "paste" => "toolbar.paste",
+        "delete" => "toolbar.delete",
         "undo" => "toolbar.undo",
         "redo" => "toolbar.redo",
         "import" => "toolbar.import",
@@ -321,6 +326,10 @@ pub(crate) fn item_name(id: &str) -> Option<String> {
         "snap_off" => "toolbar.snap_off",
         "snap_to" => "menu.view.snap_to",
         "options" => "toolbar.options",
+        "dockers" => "toolbar.dockers",
+        "shift" => "toolbar.mod_shift",
+        "ctrl" => "toolbar.mod_ctrl",
+        "alt" => "toolbar.mod_alt",
         "launch" => "toolbar.launch",
         "ai" => "toolbar.ai_generate",
         "zoom_in" => "menu.view.zoom_in",
@@ -498,6 +507,39 @@ pub(crate) fn draw_item(app: &mut App, ui: &mut Ui, bar: &str, id: &str) {
                 app.paste_any();
             }
         }
+        // What the Delete key does, for a finger with no keyboard (#1611).
+        "delete" => {
+            let can = doc && app.can_delete();
+            if std_button(
+                ui,
+                icons::Action::Delete,
+                &tip("toolbar.delete"),
+                can,
+                false,
+            )
+            .clicked()
+            {
+                app.delete_command();
+            }
+        }
+        // Shift, Ctrl and Alt for a finger sat here up to 0.42; they are
+        // keys on the drawing now (#1996, touch_modifiers.rs), and a bar
+        // kept with them draws nothing in their place.
+        "shift" | "ctrl" | "alt" => {}
+        // The dockers, which the Touch workspace starts without (#1611).
+        "dockers" => {
+            if std_button(
+                ui,
+                icons::Action::Dockers,
+                &tip("toolbar.dockers"),
+                true,
+                app.show_dockers,
+            )
+            .clicked()
+            {
+                app.show_dockers = !app.show_dockers;
+            }
+        }
         // Undo and Redo, each with the list of steps behind its arrow.
         "undo" | "redo" => {
             let undo = id == "undo";
@@ -561,7 +603,12 @@ pub(crate) fn draw_item(app: &mut App, ui: &mut Ui, bar: &str, id: &str) {
             )
             .clicked()
             {
-                app.export();
+                // Shift held shows the options whatever the setting says.
+                if ui.input(|i| i.modifiers.shift) {
+                    app.export_with_options();
+                } else {
+                    app.export();
+                }
             }
         }
         "publish_pdf" => {
@@ -884,14 +931,16 @@ fn launch_button(app: &mut App, ui: &mut Ui, bar: &str) {
                 app.dialog = crate::ui::dialogs::Dialog::FontManager(Default::default());
                 ui.close();
             }
+            if crate::ui::tracecut::shown(app) && ui.button(tr("menu.tools.tracecut")).clicked() {
+                app.open_tracecut();
+                ui.close();
+            }
             if ui.button(tr("menu.window.welcome_screen")).clicked() {
                 app.show_welcome = true;
                 ui.close();
             }
-            if ui.button(tr("menu.tools.color_management")).clicked() {
-                app.dialog = crate::ui::dialogs::Dialog::ColorManagement(Default::default());
-                ui.close();
-            }
+            // Color Management is a settings dialog, not a tool: it is in
+            // the Tools menu only.
         });
 }
 
@@ -1185,7 +1234,7 @@ fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> 
     let r = ui.add(
         crate::ui::field::NumField::new(&mut v)
             .speed(speed)
-            .max_decimals(app.settings.precision.min(10) as usize)
+            .length_decimals(app.settings.precision.min(10) as usize)
             .suffix(format!(" {}", app.units.short())),
     );
     // A value typed and applied, or a step of the arrows or the wheel:
@@ -1646,7 +1695,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         egui::StrokeKind::Inside,
                     );
                     ui.label(
-                        egui::RichText::new(crate::app::color_description(c))
+                        egui::RichText::new(crate::app::color_description_in(app.doc(), c))
                             .color(Tokens::text_dim())
                             .size(11.0),
                     );
@@ -2074,6 +2123,12 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
             egui::RichText::new("U").underline(),
             "toolbar.underline",
         ),
+        // Beside Underline (#1022).
+        (
+            app.text_strikethrough,
+            egui::RichText::new("S").strikethrough(),
+            "toolbar.strikethrough",
+        ),
     ] {
         if ui
             .add_sized([22.0, 22.0], egui::Button::selectable(on, label.size(14.0)))
@@ -2083,6 +2138,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
             match key {
                 "toolbar.bold" => app.text_bold = !app.text_bold,
                 "toolbar.italic" => app.text_italic = !app.text_italic,
+                "toolbar.strikethrough" => app.text_strikethrough = !app.text_strikethrough,
                 _ => app.text_underline = !app.text_underline,
             }
             changed = true;
@@ -2120,6 +2176,29 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
             && !on
         {
             app.set_vertical_text(true);
+        }
+        // The order of the columns of vertical text (#1986).
+        if let Some(cols) = app.vertical_columns() {
+            use tracedraw_core::VerticalColumns as C;
+            for (value, label, key) in [
+                (C::RightToLeft, "\u{25C0}", "toolbar.columns_right_to_left"),
+                (C::LeftToRight, "\u{25B6}", "toolbar.columns_left_to_right"),
+            ] {
+                if ui
+                    .add_sized(
+                        [22.0, 22.0],
+                        egui::Button::selectable(
+                            cols == value,
+                            egui::RichText::new(label).size(14.0),
+                        ),
+                    )
+                    .rich_tip(crate::ui::tips::keyed(key))
+                    .clicked()
+                    && cols != value
+                {
+                    app.set_vertical_columns(value);
+                }
+            }
         }
     }
     vsep(ui);
@@ -2486,6 +2565,7 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
             if arrow.clicked() {
                 egui::Popup::toggle_id(&ctx, popup_id);
             }
+            crate::ui::keynav::list_button_keys(&ctx, &arrow, popup_id);
             let anchor = field.rect.union(arrow_rect);
             (field, anchor)
         })
@@ -2518,6 +2598,7 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
                             hovered = Some(s);
                         }
                     }
+                    crate::ui::keynav::scroll_into_view(ui);
                 });
         });
     if shown.is_none() {
@@ -2589,6 +2670,7 @@ pub(crate) fn text_align_list(app: &mut App, ui: &mut Ui) -> bool {
     if button.clicked() {
         egui::Popup::toggle_id(&ctx, popup_id);
     }
+    crate::ui::keynav::list_button_keys(&ctx, &button, popup_id);
     let mut picked = None;
     let current = app.text_align;
     egui::Popup::new(popup_id, ctx.clone(), button.rect, ui.layer_id())
@@ -2884,6 +2966,56 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     if r.changed() {
         app.set_curve_smoothness(v);
     }
+    // The corners' rounding, as the corner widgets set it by dragging
+    // (#2057): the chosen rings' radius, or every corner's with none
+    // chosen; the button makes them sharp again.
+    if let Some((radius, mixed)) = app.corner_rounding() {
+        sep(ui);
+        // The kind of corner the radius makes (#1147), as the Corners
+        // docker cuts them.
+        use crate::corners::CornerOp;
+        for (op, pic, key) in [
+            (CornerOp::Fillet, Pic::CornerRound, "toolbar.corner_round"),
+            (
+                CornerOp::Scallop,
+                Pic::CornerScallop,
+                "toolbar.corner_scallop",
+            ),
+            (
+                CornerOp::Chamfer,
+                Pic::CornerChamfer,
+                "toolbar.corner_chamfer",
+            ),
+        ] {
+            if pic_button(ui, pic, &tr(key), true, app.corner_bar_op == op).clicked() {
+                app.corner_bar_op = op;
+            }
+        }
+        let mut set = None;
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::keyed("toolbar.corner_rounding"),
+            |ui| {
+                let size = Tokens::prop_icon();
+                let (spot, _) =
+                    ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+                crate::ui::propbar::draw_pic(ui.painter(), spot, Pic::CornerRound, Tokens::icon());
+                set = crate::ui::propbar::distance_mixed(ui, app, radius, 72.0, mixed);
+            },
+        );
+        if button(
+            ui,
+            Pic::CornerClear,
+            "toolbar.clear_rounding",
+            mixed || radius > 0.0,
+            false,
+        ) {
+            set = Some(0.0);
+        }
+        if let Some(r) = set {
+            app.set_corner_rounding(r);
+        }
+    }
     if !has_curve && !app.selection.is_empty() {
         sep(ui);
         if pic_button(
@@ -2950,6 +3082,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
         "docker.fill_pattern",
         "docker.fill_texture",
         "docker.fill_mesh",
+        "docker.fill_procedural",
     ]
     .iter()
     .enumerate()
@@ -2976,6 +3109,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                     front: base,
                     back: tracedraw_core::Color::WHITE,
                     size_mm: 10.0,
+                    placement: Default::default(),
                 }),
                 4 => Fill::Texture(tracedraw_core::style::Texture {
                     kind: tracedraw_core::style::TextureKind::Clouds,
@@ -2984,13 +3118,17 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                     scale: 20.0,
                     seed: 1,
                 }),
-                _ => Fill::Mesh(tracedraw_core::Mesh::new(
+                5 => Fill::Mesh(tracedraw_core::Mesh::new(
                     shapes
                         .first()
                         .map(|s| s.bounds())
                         .unwrap_or(Rect::new(0.0, 0.0, 100.0, 100.0)),
                     2,
                     2,
+                    base,
+                )),
+                _ => Fill::Procedural(tracedraw_core::Procedural::new(
+                    tracedraw_core::ProceduralPattern::Octagons,
                     base,
                 )),
             };
@@ -3152,16 +3290,22 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
 }
 
 /// The Common Shapes tool's bar: the shape picked from a grid of
-/// thumbnails, set by set.
+/// thumbnails, set by set; the last set, My shapes, holds the user's own
+/// shapes, added from the selection and removed there (`my_shapes.rs`).
 fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
-    use crate::common_shapes::{Category, CommonShape};
+    use crate::common_shapes::Category;
+    app.my_shapes.ensure_loaded();
     let popup = egui::Id::new("common_shapes_popup");
     let resp = dim_labelled(ui, "toolbar.shape", |ui| {
         ui.horizontal(|ui| {
-            let thumb = shape_thumbnail(ui, app.common_shape, false, true);
-            let name = ui.add(
-                egui::Button::new(format!("{} \u{23F7}", app.common_shape.name())).frame(false),
-            );
+            let (thumb, name) = match app.picked_my_shape() {
+                Some(mine) => (my_shape_thumbnail(ui, mine, false, true), mine.name.clone()),
+                None => (
+                    shape_thumbnail(ui, app.common_shape, false, true),
+                    app.common_shape.name(),
+                ),
+            };
+            let name = ui.add(egui::Button::new(format!("{name} \u{23F7}")).frame(false));
             thumb.union(name)
         })
         .inner
@@ -3170,30 +3314,81 @@ fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
         .id(popup)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            let shown = ui.data_mut(|d| {
-                *d.get_temp_mut_or_insert_with(popup, || app.common_shape.category())
+            // The tab shown: every set at once (All, #1650), one set, or
+            // My shapes.
+            let shown: ShapeTab = ui.data_mut(|d| {
+                *d.get_temp_mut_or_insert_with(popup, || match app.my_shape {
+                    Some(_) => ShapeTab::Mine,
+                    None => ShapeTab::Set(app.common_shape.category()),
+                })
             });
             ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(shown == ShapeTab::All, tr("shapes.all"))
+                    .clicked()
+                {
+                    ui.data_mut(|d| d.insert_temp(popup, ShapeTab::All));
+                }
                 for c in Category::ALL {
-                    if ui.selectable_label(shown == c, tr(c.key())).clicked() {
-                        ui.data_mut(|d| d.insert_temp(popup, c));
+                    if ui
+                        .selectable_label(shown == ShapeTab::Set(c), tr(c.key()))
+                        .clicked()
+                    {
+                        ui.data_mut(|d| d.insert_temp(popup, ShapeTab::Set(c)));
                     }
+                }
+                if ui
+                    .selectable_label(shown == ShapeTab::Mine, tr("shapes.mine"))
+                    .rich_tip(crate::ui::tips::pair("shapes.mine", "shapes.mine_desc"))
+                    .clicked()
+                {
+                    ui.data_mut(|d| d.insert_temp(popup, ShapeTab::Mine));
                 }
             });
             ui.separator();
-            egui::Grid::new("common_shapes_grid")
-                .spacing([2.0, 2.0])
+            let shown = match shown {
+                ShapeTab::Mine => {
+                    my_shapes_grid(app, ui, popup);
+                    return;
+                }
+                ShapeTab::All => None,
+                ShapeTab::Set(c) => Some(c),
+            };
+            let sections = common_shape_sections(shown);
+            let all = sections.len() > 1;
+            let max_height = (ui.ctx().content_rect().height() * 0.7).max(200.0);
+            // The popup's area keeps last frame's size: a scroll area
+            // asked to be as tall as its contents (up to the limit) lets
+            // it grow when the tab changes to All.
+            egui::ScrollArea::vertical()
+                .max_height(max_height)
+                .min_scrolled_height(max_height)
                 .show(ui, |ui| {
-                    for (i, s) in CommonShape::of(shown).enumerate() {
-                        let picked =
-                            shape_thumbnail(ui, s, app.common_shape == s, false).rich_tip(s.name());
-                        if picked.clicked() {
-                            app.common_shape = s;
-                            egui::Popup::close_id(ui.ctx(), popup);
+                    for (c, shapes) in sections {
+                        if all {
+                            ui.label(
+                                egui::RichText::new(tr(c.key()))
+                                    .color(Tokens::text_dim())
+                                    .size(11.0),
+                            );
                         }
-                        if i % 9 == 8 {
-                            ui.end_row();
-                        }
+                        egui::Grid::new(("common_shapes_grid", c.key()))
+                            .spacing([2.0, 2.0])
+                            .show(ui, |ui| {
+                                for (i, s) in shapes.into_iter().enumerate() {
+                                    let on = app.my_shape.is_none() && app.common_shape == s;
+                                    let picked =
+                                        shape_thumbnail(ui, s, on, false).rich_tip(s.name());
+                                    if picked.clicked() {
+                                        app.common_shape = s;
+                                        app.my_shape = None;
+                                        egui::Popup::close_id(ui.ctx(), popup);
+                                    }
+                                    if i % 9 == 8 {
+                                        ui.end_row();
+                                    }
+                                }
+                            });
                     }
                 });
         });
@@ -3204,10 +3399,145 @@ fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
     );
 }
 
+/// The Common Shapes picker's sections for the tab shown: the shapes of
+/// one set, or with `None` (the All tab) every set in its order, each
+/// under its name.
+fn common_shape_sections(
+    shown: Option<crate::common_shapes::Category>,
+) -> Vec<(
+    crate::common_shapes::Category,
+    Vec<crate::common_shapes::CommonShape>,
+)> {
+    use crate::common_shapes::{Category, CommonShape};
+    Category::ALL
+        .into_iter()
+        .filter(|c| shown.is_none_or(|s| s == *c))
+        .map(|c| (c, CommonShape::of(c).collect()))
+        .collect()
+}
+
+/// The tab of the Common Shapes picker: every set at once (All, #1650),
+/// one set, or the user's own shapes (My shapes).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ShapeTab {
+    All,
+    Set(crate::common_shapes::Category),
+    Mine,
+}
+
+/// The My shapes set of the Common Shapes picker: Add Selection as Common
+/// Shape, the shapes (a click picks one) and Remove for the one picked.
+fn my_shapes_grid(app: &mut App, ui: &mut Ui, popup: egui::Id) {
+    ui.horizontal(|ui| {
+        let has = !app.selection.is_empty();
+        if ui
+            .add_enabled(has, egui::Button::new(tr("menu.object.add_common_shape")))
+            .rich_tip(crate::ui::tips::pair(
+                "menu.object.add_common_shape",
+                "shapes.mine_add_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "menu.object.add_common_shape",
+                "shapes.mine_add_desc",
+            ))
+            .clicked()
+        {
+            app.add_selection_as_common_shape();
+        }
+        if ui
+            .add_enabled(
+                app.picked_my_shape().is_some(),
+                egui::Button::new(tr("shapes.mine_remove")),
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "shapes.mine_remove",
+                "shapes.mine_remove_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "shapes.mine_remove",
+                "shapes.mine_remove_desc",
+            ))
+            .clicked()
+        {
+            if let Some(uid) = app.my_shape {
+                app.remove_common_shape(uid);
+            }
+        }
+    });
+    if app.my_shapes.shapes.is_empty() {
+        ui.label(
+            egui::RichText::new(tr("shapes.mine_empty"))
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
+        return;
+    }
+    let mut picked = None;
+    let mut remove = None;
+    egui::ScrollArea::vertical()
+        .max_height(320.0)
+        .show(ui, |ui| {
+            egui::Grid::new("my_shapes_grid")
+                .spacing([2.0, 2.0])
+                .show(ui, |ui| {
+                    for (i, s) in app.my_shapes.shapes.iter().enumerate() {
+                        let on = app.my_shape == Some(s.uid);
+                        let r = my_shape_thumbnail(ui, s, on, false).rich_tip(s.name.clone());
+                        if r.clicked() {
+                            picked = Some(s.uid);
+                        }
+                        r.context_menu(|ui| {
+                            if ui.button(tr("shapes.mine_remove")).clicked() {
+                                remove = Some(s.uid);
+                                ui.close();
+                            }
+                        });
+                        if i % 9 == 8 {
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
+    if let Some(uid) = remove {
+        app.remove_common_shape(uid);
+    } else if let Some(uid) = picked {
+        app.my_shape = Some(uid);
+        egui::Popup::close_id(ui.ctx(), popup);
+    }
+}
+
+/// A shape of My shapes drawn small, in its own proportions.
+fn my_shape_thumbnail(
+    ui: &mut Ui,
+    shape: &crate::my_shapes::MyShape,
+    on: bool,
+    small: bool,
+) -> egui::Response {
+    let a = shape.aspect.clamp(0.05, 20.0);
+    let (w, h) = if a >= 1.0 { (1.0, 1.0 / a) } else { (a, 1.0) };
+    let r = Rect::new(
+        (1.0 - w) / 2.0,
+        (1.0 - h) / 2.0,
+        (1.0 + w) / 2.0,
+        (1.0 + h) / 2.0,
+    );
+    path_thumbnail(ui, &shape.path(r), on, small)
+}
+
 /// A shape's outline drawn small, as a button (`on`: the one picked).
 fn shape_thumbnail(
     ui: &mut Ui,
     shape: crate::common_shapes::CommonShape,
+    on: bool,
+    small: bool,
+) -> egui::Response {
+    path_thumbnail(ui, &shape.path(Rect::new(0.0, 0.0, 1.0, 1.0)), on, small)
+}
+
+/// An outline in the unit square drawn small, as a button.
+fn path_thumbnail(
+    ui: &mut Ui,
+    path: &tracedraw_core::geometry::BezPath,
     on: bool,
     small: bool,
 ) -> egui::Response {
@@ -3225,7 +3555,6 @@ fn shape_thumbnail(
     }
     let inner = rect.shrink(if small { 3.0 } else { 6.0 });
     // Page y runs up: the box's bottom is the thumbnail's bottom.
-    let path = shape.path(Rect::new(0.0, 0.0, 1.0, 1.0));
     let to_screen = |x: f64, y: f64| {
         egui::pos2(
             inner.left() + x as f32 * inner.width(),
@@ -3246,7 +3575,7 @@ fn shape_thumbnail(
         }
         run.clear();
     };
-    tracedraw_core::geometry::flatten(&path, 0.005, &mut |el| match el {
+    tracedraw_core::geometry::flatten(path, 0.005, &mut |el| match el {
         PathEl::MoveTo(p) => {
             flush(&mut run, false);
             run.push(to_screen(p.x, p.y));
@@ -3271,8 +3600,9 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
                 .size(11.0),
         );
     };
-    let first = shapes.first().and_then(|s| s.shadow);
-    let mut sh = first.unwrap_or(app.shadow_default);
+    // The shadow the handles are on: the first selected object with one.
+    let first = app.selected_shadow().map(|(_, sh, _)| sh);
+    let mut sh = app.shadow_bar_shadow();
     let mut changed = false;
     dim(ui, "toolbar.drop_shadow");
     if ui
@@ -3519,5 +3849,127 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
     }
     if shapes.is_empty() {
         dim(ui, "toolbar.shadow_hint");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::dialogs::Dialog;
+
+    /// One frame of the whole window; the texts it drew and where.
+    fn frame(
+        ctx: &egui::Context,
+        app: &mut App,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, egui::Rect)> {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        out.shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) => {
+                    Some((t.galley.text().to_string(), t.visual_bounding_rect()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The Common Shapes picker has an All tab listing every set at once,
+    /// each under its name, besides the tab of each set (#1650).
+    #[test]
+    fn the_common_shapes_picker_has_an_all_tab() {
+        use crate::common_shapes::{Category, CommonShape};
+        let all = common_shape_sections(None);
+        assert_eq!(
+            all.iter().map(|(c, _)| *c).collect::<Vec<_>>(),
+            Category::ALL.to_vec()
+        );
+        let listed: Vec<CommonShape> = all.iter().flat_map(|(_, s)| s.clone()).collect();
+        assert_eq!(listed.len(), CommonShape::ALL.len());
+        assert!(CommonShape::ALL.iter().all(|s| listed.contains(s)));
+        let arrows = common_shape_sections(Some(Category::Arrows));
+        assert_eq!(arrows.len(), 1);
+        assert!(arrows[0].1.iter().all(|s| s.category() == Category::Arrows));
+
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.set_tool(crate::tools::Tool::CommonShapes);
+        let popup = egui::Id::new("common_shapes_popup");
+        let count = |texts: &[(String, egui::Rect)], key: &str| {
+            let label = tr(key);
+            texts.iter().filter(|(t, _)| *t == label).count()
+        };
+        frame(&ctx, &mut app, Vec::new());
+        egui::Popup::open_id(&ctx, popup);
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            texts = frame(&ctx, &mut app, Vec::new());
+        }
+        // The tab of the shape picked shows alone: each set's name once.
+        assert_eq!(count(&texts, "shapes.all"), 1, "the All tab");
+        assert_eq!(count(&texts, "shapes.arrows"), 1);
+        ctx.data_mut(|d| d.insert_temp(popup, ShapeTab::All));
+        for _ in 0..2 {
+            texts = frame(&ctx, &mut app, Vec::new());
+        }
+        for c in Category::ALL {
+            assert_eq!(count(&texts, c.key()), 2, "{c:?}: its tab and heading");
+        }
+    }
+
+    /// The Launch list holds the tools (Font Manager, TraceCut, the
+    /// Welcome Screen) and no longer Color Management, a settings dialog
+    /// kept in the Tools menu; a click on an entry opens it.
+    #[test]
+    fn the_launch_list_holds_the_tools_and_opens_them() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.settings.tracecut.show = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut app, Vec::new());
+        }
+        egui::Popup::open_id(&ctx, egui::Id::new(("launch_menu", "standard")));
+        let mut texts = Vec::new();
+        for _ in 0..3 {
+            texts = frame(&ctx, &mut app, Vec::new());
+        }
+        let has = |key: &str| texts.iter().any(|(t, _)| *t == tr(key));
+        assert!(has("menu.tools.font_manager"));
+        assert!(has("menu.tools.tracecut"));
+        assert!(has("menu.window.welcome_screen"));
+        assert!(
+            !has("menu.tools.color_management"),
+            "not in the Launch list"
+        );
+        let at = texts
+            .iter()
+            .find(|(t, _)| *t == tr("menu.tools.font_manager"))
+            .map(|(_, r)| r.center())
+            .expect("Font Manager in the list");
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&ctx, &mut app, vec![egui::Event::PointerMoved(at)]);
+        frame(&ctx, &mut app, vec![button(true)]);
+        frame(&ctx, &mut app, vec![button(false)]);
+        for _ in 0..3 {
+            frame(&ctx, &mut app, Vec::new());
+        }
+        assert!(matches!(app.dialog, Dialog::FontManager(_)));
     }
 }

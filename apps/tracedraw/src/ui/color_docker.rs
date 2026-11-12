@@ -44,6 +44,9 @@ pub struct ColorDockerState {
     /// a new ink gets.
     pub tint: f32,
     pub new_ink: String,
+    /// The ink whose name is being typed over, and the name as typed
+    /// (#2187); it is given on Enter or when the field is left.
+    pub ink_rename: Option<(u32, String)>,
     /// Fill and outline locked together: Fill and Outline each give the
     /// selection the new colour as both, in one step.
     pub lock: bool,
@@ -58,6 +61,7 @@ impl Default for ColorDockerState {
             synced: None,
             tint: 100.0,
             new_ink: String::new(),
+            ink_rename: None,
             lock: false,
         }
     }
@@ -535,7 +539,7 @@ fn slider(
         // The rail goes under the slider: its shape is set once the
         // slider says where it is.
         let rail = ui.painter().add(Shape::Noop);
-        let resp = ui
+        let mut resp = ui
             .scope(|ui| {
                 ui.spacing_mut().slider_width = width;
                 ui.spacing_mut().slider_rail_height = RAIL_HEIGHT;
@@ -546,8 +550,10 @@ fn slider(
                         .max_decimals(1),
                 )
             })
-            .inner
-            .rich_tip(crate::ui::tips::pair(name, "color.channel_desc"));
+            .inner;
+        // The wheel on hover steps it by one, as the other sliders (#1335).
+        crate::ui::slider::wheel_on_hover(ui, &mut resp, &mut x, range.clone(), 1.0);
+        let resp = resp.rich_tip(crate::ui::tips::pair(name, "color.channel_desc"));
         let colors = rail_colors(
             ui,
             resp.id,
@@ -1207,6 +1213,7 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color, with_tint: bool) {
     let tint = app.color_docker.tint.clamp(0.0, 100.0) / 100.0;
     let inks = app.doc().inks.clone();
     let mut remove = None;
+    let mut rename = None;
     for ink in &inks {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
@@ -1219,7 +1226,23 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color, with_tint: bool) {
                 Stroke::new(0.5, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
-            ui.label(&ink.name);
+            // The name, typed over in place and given on Enter or when
+            // the field is left (#2187).
+            let mut name = match &app.color_docker.ink_rename {
+                Some((id, typed)) if *id == ink.id => typed.clone(),
+                _ => ink.name.clone(),
+            };
+            let field = ui
+                .add(egui::TextEdit::singleline(&mut name).desired_width(110.0))
+                .rich_tip(tr("docker.ink_name"));
+            if field.changed() {
+                app.color_docker.ink_rename = Some((ink.id, name));
+            }
+            if field.lost_focus() {
+                if let Some((id, typed)) = app.color_docker.ink_rename.take() {
+                    rename = Some((id, typed));
+                }
+            }
             if ui
                 .add_enabled(has, egui::Button::new(tr("docker.fill")).small())
                 .rich_tip(crate::ui::tips::pair("docker.fill", "docker.ink_fill_desc"))
@@ -1273,10 +1296,46 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color, with_tint: bool) {
             app.color_docker.new_ink.clear();
         }
     });
+    if let Some((id, name)) = rename {
+        rename_ink(app, id, &name);
+    }
     if let Some(id) = remove {
-        let inks: Vec<_> = inks.into_iter().filter(|i| i.id != id).collect();
+        let inks: Vec<_> = app
+            .doc()
+            .inks
+            .iter()
+            .filter(|i| i.id != id)
+            .cloned()
+            .collect();
         app.run(Command::SetInks { inks });
     }
+}
+
+/// Give spot ink `id` the name `name` (#2187), as one undo step.
+/// Objects and swatches refer to an ink by its number, so all of them
+/// take the new name, as does the separation it prints on. Nothing
+/// changes for an empty name, one another ink of the drawing has, or
+/// the name it has already. Says whether it was renamed.
+pub fn rename_ink(app: &mut App, id: u32, name: &str) -> bool {
+    let name = name.trim();
+    let inks = &app.doc().inks;
+    let taken = inks.iter().any(|i| i.id != id && i.name == name);
+    let same = inks.iter().any(|i| i.id == id && i.name == name);
+    if name.is_empty() || taken || same || app.doc().ink(id).is_none() {
+        return false;
+    }
+    let inks = inks
+        .iter()
+        .map(|i| {
+            let mut i = i.clone();
+            if i.id == id {
+                i.name = name.to_string();
+            }
+            i
+        })
+        .collect();
+    app.run(Command::SetInks { inks });
+    true
 }
 
 /// Add a spot ink named `name` standing for `c` in process inks.
@@ -1365,12 +1424,19 @@ fn tint_row(app: &mut App, ui: &mut Ui) {
         ui.spacing_mut().slider_width = (ui.available_width() - 70.0).clamp(60.0, 140.0);
         // A rail in the slider colour: a plain slider's groove has the
         // white of fields and vanished on the panel (#949).
-        ui.add(crate::ui::Rail(
+        let mut resp = ui.add(crate::ui::Rail(
             egui::Slider::new(&mut app.color_docker.tint, 0.0..=100.0)
                 .suffix(" %")
                 .max_decimals(0),
-        ))
-        .rich_tip(crate::ui::tips::pair("docker.tint", "docker.tint_desc"));
+        ));
+        crate::ui::slider::wheel_on_hover(
+            ui,
+            &mut resp,
+            &mut app.color_docker.tint,
+            0.0..=100.0,
+            1.0,
+        );
+        resp.rich_tip(crate::ui::tips::pair("docker.tint", "docker.tint_desc"));
     });
 }
 
@@ -1378,6 +1444,71 @@ fn tint_row(app: &mut App, ui: &mut Ui) {
 pub(crate) mod tests {
     use super::*;
     use tracedraw_core::ShapeKind;
+
+    /// The wheel over a colour slider or the tint slider steps it by one
+    /// on hover, as over the other sliders, with no click first (#1335).
+    #[test]
+    fn the_wheel_over_a_colour_slider_steps_it() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let mut c = Color::Rgb {
+            r: 100.0 / 255.0,
+            g: 0.5,
+            b: 0.5,
+        };
+        let run = |ctx: &egui::Context, app: &mut App, c: &mut Color, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 400.0))),
+                events,
+                ..Default::default()
+            };
+            let mut rows = Vec::new();
+            let mut out = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    let top = ui.cursor().top();
+                    sliders(ui, c);
+                    let mid = ui.cursor().top();
+                    tint_row(app, ui);
+                    rows.push((ui.min_rect().left(), top, mid, ui.cursor().top()));
+                });
+            });
+            out.textures_delta.clear();
+            rows
+        };
+        let notch = |up: bool| egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: Vec2::new(0.0, if up { 1.0 } else { -1.0 }),
+            modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+        };
+        run(&ctx, &mut app, &mut c, Vec::new());
+        // Where the colour sliders start, end and the tint row ends.
+        let (left, top, mid, bottom) = run(&ctx, &mut app, &mut c, Vec::new())[0];
+        // The red slider: the first row, on its groove.
+        let red = Pos2::new(left + 60.0, top + 9.0);
+        run(&ctx, &mut app, &mut c, vec![egui::Event::PointerMoved(red)]);
+        run(&ctx, &mut app, &mut c, vec![notch(true)]);
+        let Color::Rgb { r, .. } = c else {
+            panic!("still RGB")
+        };
+        assert!(
+            (r * 255.0 - 101.0).abs() < 1e-3,
+            "a notch up: {}",
+            r * 255.0
+        );
+        assert!(crate::ui::field::wheel_taken(&ctx), "the panel stays");
+        // The tint slider: the last row.
+        app.color_docker.tint = 50.0;
+        let tint = Pos2::new(left + 80.0, (mid + bottom) / 2.0);
+        run(
+            &ctx,
+            &mut app,
+            &mut c,
+            vec![egui::Event::PointerMoved(tint)],
+        );
+        run(&ctx, &mut app, &mut c, vec![notch(false)]);
+        assert_eq!(app.color_docker.tint, 49.0, "a notch down");
+    }
 
     /// The other places that drew the same remove cross as a spot ink.
     const CROSS_SOURCES: [(&str, &str); 11] = [
@@ -1552,6 +1683,59 @@ pub(crate) mod tests {
                 b: 0.0
             }
         );
+    }
+
+    /// #2187: a spot ink of the drawing is renamed in place, as one undo
+    /// step; its swatch and its PDF separation take the new name. An
+    /// empty name or one another ink has changes nothing.
+    #[test]
+    fn a_spot_ink_is_renamed() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        let spot = add_ink(
+            &mut app,
+            "Spot 1".into(),
+            Color::cmyk_pct(0.0, 100.0, 0.0, 0.0),
+        );
+        let other = add_ink(
+            &mut app,
+            "Gold".into(),
+            Color::cmyk_pct(0.0, 20.0, 80.0, 10.0),
+        );
+        app.select(vec![id]);
+        let c = app.doc().ink(spot).expect("ink").color(1.0);
+        app.apply_outline_color(Some(c));
+        let before = app.engine.history_labels().0.len();
+        assert!(rename_ink(&mut app, spot, "  CutContour "));
+        assert_eq!(app.engine.history_labels().0.len(), before + 1);
+        assert_eq!(
+            app.doc().ink(spot).map(|i| i.name.as_str()),
+            Some("CutContour")
+        );
+        assert_eq!(app.doc().ink(other).map(|i| i.name.as_str()), Some("Gold"));
+        assert_eq!(crate::ui::palette::name_of(&app, c), "CutContour");
+        let pdf = tracedraw_io::pdf::document_to_pdf(app.doc());
+        assert!(String::from_utf8_lossy(&pdf).contains("/Separation /CutContour"));
+        // Refused: empty, taken, unchanged, no such ink.
+        assert!(!rename_ink(&mut app, spot, " "));
+        assert!(!rename_ink(&mut app, spot, "Gold"));
+        assert!(!rename_ink(&mut app, spot, "CutContour"));
+        assert!(!rename_ink(&mut app, 9999, "Other"));
+        assert_eq!(app.engine.history_labels().0.len(), before + 1);
+        app.undo();
+        assert_eq!(app.doc().ink(spot).map(|i| i.name.as_str()), Some("Spot 1"));
+        // The docker draws the names as fields.
+        let ctx = crate::theme::ui_context();
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            spot_inks(&mut app, ui, Color::BLACK, true)
+        });
+        out.textures_delta.clear();
     }
 
     #[test]

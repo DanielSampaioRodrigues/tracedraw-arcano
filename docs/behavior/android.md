@@ -22,13 +22,15 @@ the owner does to publish it and what to test on a tablet first.
 | Feature | Desktop | Android, phase 2 |
 |---|---|---|
 | The editor: drawing tools, shapes, text, effects, menus, dockers, undo | yes | yes, the same code |
-| Workspace | the one chosen | a fresh install starts in the Touch workspace (`workspaces.md`: bars and buttons 1.4 times larger, no rulers, panels or status bar, two fingers pan, a pinch zooms); Window > Workspace picks another and it is kept |
+| Workspace | the one chosen | a fresh install starts in the Touch workspace (`workspaces.md`: bars and buttons 1.4 times larger, no rulers, panels or status bar, two fingers pan, a pinch zooms); Window > Workspace picks another and it is kept. A phone (smallest width under 600 dp) gets the phone layout in any workspace (`workspaces.md`, Touch): no enlargement, menu titles that do not fit under », panels as full sheets, sliding bars, toolbox and palette (#1301, #1497, #1691); a finger dragged along a bar, the toolbox or the palette that is longer than the screen slides it, a tap on a button still works, and a docker's contents scroll under a finger (#1997, `toolbars.md`) |
+| Camera cutout and rounded screen corners (#1917) | the whole window | the interface is laid out inside a safe area: with Options > Display > Screen margins > "Follow the system's cutout and corners" (on by default) it keeps clear of what the system reports at each layout through the activity's `getScreenInsets` (the visible system bars and the cutout, `WindowInsets.getInsets(systemBars \| displayCutout)`, before Android 11 the system window insets and `DisplayCutout`; from Android 12 the radius of each rounded corner, `getRoundedCorner`, which keeps both sides it joins `r (1 - 1/sqrt 2)` clear so nothing crosses the arc). Many phones report no corners, so Top, Bottom, Left and Right margins of the user's own, in dp (density-independent, the same at any interface size), are added on top, each from 0 to 32 dp (more than a corner or a cutout the system does not report needs; up to 0.43 a margin went to 200 dp: 90 dp at the left of a 360 dp phone left the Options dialog cut off, and two such margins took the whole screen, #2174), and the margins of two facing sides together take at most a fifth of the window's width or height, shrunk in proportion on a small window (a split screen, a phone on its side), so the interface always keeps four fifths of each side; a settings file that holds more is read the same way (`screen_margins::tests::margins_cannot_take_the_screen_away`); "Same on all sides" links them, Reset follows the system again with none. The room outside is filled with the theme's frame colour, and Corner radius (0 to 64 dp) rounds the interface's inner corners. Every change shows at once; the values are kept in the settings and stay the same when the screen turns. The margins are egui's safe area insets, so panels, dockers, dialogs and menus keep to `Context::content_rect` (`ui/screen_margins.rs`) |
+| Right click and keys, by finger | mouse and keyboard | Delete and Panels on the standard toolbar (with Cut, Copy, Paste, Undo, Redo); Shift, Ctrl, Alt and Delete keys floating over the drawing's bottom left corner (#1996; up to 0.42 Shift, Ctrl and Alt sat on the Standard toolbar, and a toolbar kept with them draws nothing in their place), Shift, Ctrl and Alt each held down by a tap until the next tap on it and drawn pressed meanwhile, so a finger adds objects or nodes to the selection (Shift), picks inside a group or keeps a drag to one direction (Ctrl) and picks the object behind (Alt): the held keys join every frame's input as the keyboard's would (`touch_modifiers.rs`, #1499); they show on Android and wherever a finger has touched the window unless Options > Display > Show Shift, Ctrl, Alt and Delete on the drawing (on at first) is off, and Alt held this way does not put the bars in their customize mode (`ui::tests::a_finger_holds_shift_from_the_keys_on_the_drawing_to_add_to_the_selection`); a tap of two fingers on the drawing undoes and of three redoes: every finger lifted within 0.35 s of the first one down, none moved more than 12 points, all on the drawing (not on a window, a menu or the keys), so a pinch or a pan never undoes (`touch_taps.rs`, `touch_taps::tests`); a finger held 0.8 s on the drawing opens the object's or the page's menu; on a palette swatch a hold of 0.5 s sets the outline, 1 s shows the shades (#1611, #1707) |
 | Open, Import, palettes, scripts, ICC profiles, every "pick a file" | system file dialog | the system's document picker (Storage Access Framework, `ACTION_OPEN_DOCUMENT`, any type): the picked document opens by the extension of its display name; the closure runs on a later frame, as in the browser |
 | Save on an opened drawing | writes the file | writes the document back through its content URI (the picker grants read and write, kept across restarts) |
 | Save As, Export, Export as PDF, Save Bitmap As, exports of dockers that use `save_file` | the Save Drawing dialog with folders, or the system save dialog | the Save Drawing dialog shows name, type and version only, then the system's picker (`ACTION_CREATE_DOCUMENT`) asks where, with that name and the type's MIME; the file is written when it answers. Export as PDF has no Browse button: OK opens the picker |
 | Tone curve and duotone presets, the mask file, macro scripts and exports, palette files | system save dialog | the system's save picker asks where, with the suggested name (`Dialog::save_file`, #1402); a macro export with more than one file (a form's `.frm` and `.frx`) asks for each in turn. `Dialog::save_path`, which would save into the app's documents folder without asking, is used only by Export as PDF's Browse, which Android does not show (`files::tests::saves_ask_where_on_android`) |
 | Recent files, Welcome screen thumbnails | paths | the same list: a picked document is named `/content/<its URI, escaped>/<its display name>` (`files::document_path`), so the name shows and the URI reopens it; the system keeps the permission (`takePersistableUriPermission`) |
-| Pick a folder | system folder dialog | never shown (#1399, see "Folder buttons" in `web.md`, the same table): the Export docker writes its assets into one zip file the save picker places; Font Manager > Add Folder, Print Merge's pictures folder, Picture Mosaic's Browse and Options > Spelling's More dictionaries open the picker for several files at once; the backup folders in Options > Save are greyed with the reason |
+| Pick a folder | system folder dialog | never shown (#1399, see "Folder buttons" in `web.md`, the same table): the Export docker writes its assets into one zip file the save picker places; Print Merge's pictures folder opens the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`, `Dialog::pick_folder_files`, #1926): the activity lists the documents of the folder chosen, leaving its subfolders out, and they come back as picked documents, kept to the picture types and gathered as the pictures folder, the right to read the folder kept; Font Manager > Add Folder, Picture Mosaic's Browse and Options > Spelling's More dictionaries open the picker for several files at once; the backup folders in Options > Save are greyed with the reason |
 | File > Package, Save As > Package | a folder with the drawing, its pictures, fonts and report | File > Package asks for the name and the PDF, then the system's save picker for `<name>.zip`, and writes the package as one zip file there (#1401, `behavior/package.md`); Save As's Package box is greyed with the reason |
 | Print | the system's printers, or the PDF viewer | the system's print service (#1398): the Print dialog's destination reads "System printer (through the Android print service)", the print PDF is made as on the desktop and handed to `PrintManager`, whose dialog picks the printer, the copies and the paper; PDF and PostScript files go through the save picker |
 | Send To | a PDF in the Desktop or Documents folder, or for a mail | Documents: the save picker asks where the PDF goes; Mail Recipient: the share sheet, limited to the apps that send mail, gets the PDF as an attachment; Desktop is greyed with the reason (Android has no desktop folder) |
@@ -36,6 +38,7 @@ the owner does to publish it and what to test on a tablet first.
 | Opening a page or a file (Help, links, Open Folder) | the system's browser and programs | web pages in the browser and files in the app picked for their type (`ACTION_VIEW`); Open Folder is greyed with the reason (Android shows no app's private folder to other apps) |
 | Clipboard | text, images and files through the system clipboard | text, pictures and files through the system's clipboard service: Copy puts the selection's SVG text there (other apps paste it as text, the editor as objects), Paste reads text copied elsewhere (artistic text, or objects when it is SVG), a picture copied elsewhere as a bitmap and documents copied elsewhere as imports (#1403); copies inside the editor work as before |
 | Text size and contrast (#1412) | the desktop's text size and high contrast | the system's font scale (Settings > Display > Font size, which reaches the running app: `fontScale` is among the configuration changes the activity handles) and Android 14's contrast setting or high contrast text, read through the activity's `getAccessibility` every 3 s (`behavior/options.md`) |
+| Options that do nothing on Android (#1415) | shown | hidden: Show the splash screen (the app starts without one), Use hardware acceleration and the graphics card (the app always draws with OpenGL ES, `gpu::ANDROID_BACKENDS`) and the AI agents section of Global > General (no agent on the phone to serve; a setting carried over from a desktop opens no link, `App::sync_mcp_link`); Edit Bitmap's program says Android asks which app edits the picture (#1398) |
 | Settings | `settings.json` in the configuration folder | `settings.json` in the app's private folder (`TRACEDRAW_CONFIG_DIR` set by `android_main`) |
 | Fonts | installed system fonts | the system's fonts (`/system/fonts`, `/product/fonts` and `/vendor/fonts`: Roboto, Noto and the rest; the font database looks in no folder on Android by itself, so `tracedraw_text` names these). Font Manager > Add Font copies the picked font into `fonts` in the app's private folder and installs it from there, at once and at every start (#1400); Add Folder picks several font files at once and adds each the same way (#1399) |
 | Keyboard | the physical keyboard | a physical or Bluetooth keyboard works. The on-screen keyboard shows while a text, a table cell or a field takes typed text and types into an invisible view of the activity (`TextInputView`): a `NativeActivity` offers input methods no text field, so before #1309 only the key presses of Latin letters arrived and Chinese, Japanese, Korean, Tamil and other composed scripts never did. What the input method composes, commits and deletes reaches the editor as an input method's events (`soft_keyboard.rs`), its Backspace, Enter and arrow presses as keys. A tap with the Text tool starts a text there and brings the keyboard up; a tap into the text or field once more brings it back after the system's key hid it; it hides only once three frames in a row take no text, so a lone frame without the caret does not hide it and end what the input method composes; when the system ignores the request (the view's focus reaches the input method a moment later), it is made again up to five times, 100 ms apart. The emulator check types through a test keyboard and as key presses (see "The emulator check"); not checked on a device |
@@ -45,6 +48,77 @@ the owner does to publish it and what to test on a tablet first.
 | Help | the user Help in the browser | the same pages open in the browser |
 | Errors | a message box and the log file | the system log only: `adb logcat -s tracedraw` |
 | Configuration changes (rotation, window size, keyboard, dark mode, language, font size) | the window follows them | the same: the activity declares them (`android:configChanges`), so the system does not relaunch it. A relaunch the manifest cannot prevent (a new screen density, a change of the system's resource overlays: wallpaper colours, icon shapes, display cutout) ends the process once the drawings are backed up, and the system starts the app again in a new process, which offers them (see "Relaunches" below) |
+
+## Mouse
+
+A Bluetooth or USB mouse, or a touchpad, works as a mouse (#2152,
+#2161): the left, right and middle buttons (the right one opens the
+menus a right click opens on the desktop), the wheel (it zooms and
+scrolls as on the desktop, with Ctrl and Shift from a keyboard too) and
+the pointer hovering over the buttons. winit's Android backend turned
+every pointer of a motion event into a touch and dropped the actions it
+had no touch for, so every button clicked like a finger, the wheel did
+nothing and nothing was hovered. The patched copy of winit
+(`vendor/winit/src/android_mouse.rs`, `vendor/README.md`) now takes the
+motion events whose source is a mouse (`SOURCE_MOUSE`) or whose pointer's
+tool is one (`TOOL_TYPE_MOUSE`) and tells the window what a desktop's
+mouse would:
+
+- every event puts the pointer at its place (`CursorMoved`), hover
+  events included, and a hover that ends with no press after it means
+  the pointer left the window;
+- the buttons come from the event's button state (`getButtonState`:
+  primary, secondary, tertiary, back, forward), compared with the one
+  told last, so each button goes down and up once whichever of
+  `ACTION_DOWN`, `ACTION_BUTTON_PRESS`, `ACTION_MOVE`,
+  `ACTION_BUTTON_RELEASE` and `ACTION_UP` the system sends; a press that
+  names no button is the left one;
+- `ACTION_SCROLL` turns the wheel by lines: `AXIS_VSCROLL` up and down,
+  `AXIS_HSCROLL` sideways.
+
+A finger and a pen are not touched by this, and palm rejection does not
+look at the mouse. Checks: `winit_android_mouse::tests` (fake motion
+events: a left and a right click as Android 6 and later and as older
+versions send them, a second button during a drag, the wheel, the hover
+and its end); the patched copy is type-checked for
+`aarch64-linux-android`. Not checked on a device or on the emulator (its
+check sends no mouse events).
+
+## Palm rejection
+
+A hand resting on a tablet while a pen draws touches the screen too, and
+before #1832 it drew, picked and panned like a finger. Android tells
+each pointer's tool (`MotionEvent.getToolType`: finger, stylus, eraser,
+mouse, or a palm the system recognised), and reports a pen hovering
+over the screen; winit drops both. The patched copy of winit
+(`vendor/winit/src/pointer_filter.rs`, `vendor/README.md`) asks the
+app's filter (`palm.rs`, set from `android_main`) about every pointer
+of each motion event, with its tool and action, and about each hover,
+before it hands the touch on; it delivers the touch only when the
+filter says so, and first ends with `Cancelled` the touches the filter
+names. With Options > Tools > Freehand/Bezier, "Ignore the hand while
+drawing with a pen" on (the default; the box shows on Android only):
+
+- a pen (stylus or its eraser end) always gets through;
+- a finger that comes down while a pen touches the screen or hovers
+  over it is ignored until it lifts;
+- a pen that comes down while fingers of the same screen are down
+  (the hand landed first) ends those touches, which are then ignored
+  until they lift;
+- with no pen near, fingers work as before, two of them pan and a pinch
+  zooms;
+- a touch the system calls a palm never gets through.
+
+Off, every touch gets through. The activity's Java code sees none of
+these events: a `NativeActivity` hands its input queue to the native
+code, so the tool type comes from the NDK's motion events
+(`AMotionEvent_getToolType`, through `android-activity`), and
+`TraceDrawActivity.java` has no touch handler of its own to pass it on
+(its `TextInputView` only takes the keyboard's input). Checks:
+`palm::tests` (fake motion events: the hand while the pen is down, while
+it hovers, a hand that landed first, fingers alone, the option off) and
+`winit_pointer_filter::tests`; not checked on a device (the emulator
+check has no pen).
 
 Pen pressure is #850 (another change): `android-activity` exposes
 `MotionEvent` pressure per pointer, so when winit passes it on the
@@ -353,8 +427,7 @@ Now:
 ## Later phases
 
 1. Opening a `.cdr` or `.tdraw` from a file manager (`ACTION_VIEW`).
-2. Pen pressure and tilt (#850), palm rejection, a long press as the
-   right click.
+2. Pen pressure and tilt (#850).
 3. The Help inside the app.
 4. A 32-bit ARM library for older devices; the store listing's
    screenshots from a device.

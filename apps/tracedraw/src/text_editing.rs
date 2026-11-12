@@ -263,6 +263,56 @@ impl App {
             .is_some_and(|s| matches!(&s.kind, ShapeKind::Text { para, .. } if para.vertical))
     }
 
+    /// The text being edited is vertical with its columns going left to
+    /// right.
+    pub fn editing_columns_left_to_right(&self) -> bool {
+        self.text_edit
+            .as_ref()
+            .and_then(|te| self.doc().find_shape(te.shape))
+            .is_some_and(
+                |s| matches!(&s.kind, ShapeKind::Text { para, .. } if para.columns_left_to_right()),
+            )
+    }
+
+    /// The column order of the vertical text acted on (the first one's):
+    /// for the property bar and the Text docker.
+    pub fn vertical_columns(&self) -> Option<tracedraw_core::VerticalColumns> {
+        self.vertical_text_targets()
+            .iter()
+            .find_map(|s| match &s.kind {
+                ShapeKind::Text { para, .. } if para.vertical => Some(para.vertical_columns),
+                _ => None,
+            })
+    }
+
+    /// Set the order of the columns of the vertical text acted on (the
+    /// selected texts and the one being edited): right to left or left to
+    /// right (#1986). One undo step; texts set in lines keep the setting
+    /// for when they turn vertical.
+    pub fn set_vertical_columns(&mut self, columns: tracedraw_core::VerticalColumns) {
+        let cmds: Vec<Command> = self
+            .vertical_text_targets()
+            .into_iter()
+            .filter_map(|s| {
+                let mut kind = s.kind.clone();
+                let ShapeKind::Text { para, .. } = &mut kind else {
+                    return None;
+                };
+                if para.vertical_columns == columns {
+                    return None;
+                }
+                para.vertical_columns = columns;
+                Some(Command::SetShapeKind { shape: s.id, kind })
+            })
+            .collect();
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Column Order", &cmds) {
+            self.status = e.to_string();
+        }
+    }
+
     /// Text > Vertical Text: set the selected text (and the one being
     /// edited) in columns, or back in lines. One undo step.
     pub fn set_vertical_text(&mut self, on: bool) {
@@ -483,6 +533,14 @@ impl App {
                     ..
                 } => {
                     self.alt_composed = None;
+                    // In the macOS desktop app Command+Shift+H stands for
+                    // Force Justify's Command+H, which hides the
+                    // application there (#1409).
+                    let mac = crate::shortcuts::mac_key_for(*key, *modifiers);
+                    let (key, modifiers) = mac
+                        .as_ref()
+                        .map(|(m, k)| (k, m))
+                        .unwrap_or((key, modifiers));
                     let shift = modifiers.shift;
                     // AltGr types characters (Polish ą ę ł ś ż, German
                     // @ € { }): its keys are neither Ctrl shortcuts (they
@@ -501,8 +559,15 @@ impl App {
                         }
                     }
                     // In vertical text the caret goes down the column with
-                    // Down and across the columns with Left and Right.
+                    // Down and across the columns with Left and Right: to
+                    // the next column with Left, or with Right where the
+                    // columns go left to right (#1986).
                     let vertical = self.editing_vertical();
+                    let (next_col, prev_col) = if self.editing_columns_left_to_right() {
+                        (Key::ArrowRight, Key::ArrowLeft)
+                    } else {
+                        (Key::ArrowLeft, Key::ArrowRight)
+                    };
                     match key {
                         Key::Num8 if ctrl => self.step_text_size(true),
                         Key::Num2 if ctrl => self.step_text_size(false),
@@ -515,10 +580,10 @@ impl App {
                         Key::ArrowDown if vertical && !ctrl => {
                             self.text_move(CaretMove::Right, shift)
                         }
-                        Key::ArrowLeft if vertical && !ctrl => {
+                        k if vertical && !ctrl && *k == next_col => {
                             self.text_move(CaretMove::Down, shift)
                         }
-                        Key::ArrowRight if vertical && !ctrl => {
+                        k if vertical && !ctrl && *k == prev_col => {
                             self.text_move(CaretMove::Up, shift)
                         }
                         Key::ArrowLeft if ctrl => self.text_move(CaretMove::WordLeft, shift),
@@ -566,7 +631,7 @@ impl App {
                         Key::U if ctrl => {
                             let on = !self.text_underline;
                             self.text_underline = on;
-                            self.text_apply_style(move |s| s.underline = on);
+                            self.text_apply_style(move |s| s.underline = on.into());
                         }
                         Key::Escape => {
                             self.finish_text();
@@ -1005,20 +1070,28 @@ impl App {
                     // around a wrap object share a baseline and count as
                     // one.
                     let here = layout.lines.get(li).map_or(0.0, |l| l.baseline);
+                    // How high a baseline is: the mirrored lines of
+                    // left to right columns go up (#1986).
+                    let up = if layout.columns_left_to_right {
+                        -1.0
+                    } else {
+                        1.0
+                    };
+                    let here = here * up;
                     let target = if m == CaretMove::Up {
                         layout
                             .lines
                             .get(..li)
                             .unwrap_or(&[])
                             .iter()
-                            .rposition(|l| l.baseline > here + 1e-6)
+                            .rposition(|l| l.baseline * up > here + 1e-6)
                     } else {
                         layout
                             .lines
                             .iter()
                             .enumerate()
                             .skip(li + 1)
-                            .find(|(_, l)| l.baseline < here - 1e-6)
+                            .find(|(_, l)| l.baseline * up < here - 1e-6)
                             .map(|(i, _)| i)
                     };
                     match target.and_then(|t| layout.lines.get(t)) {
@@ -1286,7 +1359,7 @@ pub fn layout_of_text_shape(
         *origin,
         *frame,
         on_path.is_some(),
-        para.vertical,
+        para.columns_from_right(),
     );
     // The lines of vertical text are reported as written; their frame
     // turns them into the columns.
@@ -1517,6 +1590,28 @@ mod tests {
         app.redo();
         app.undo();
         assert!(texts(&app).is_empty());
+    }
+
+    /// A paragraph text frame left empty stays, as a frame to type or
+    /// flow into later, in the one step that made it; only an artistic
+    /// text left empty goes (#1822).
+    #[test]
+    fn an_empty_text_frame_stays() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let size = tracedraw_core::geometry::Size::new(40.0, 60.0);
+        app.start_text(Point::new(10.0, 10.0), Some(size));
+        app.finish_text();
+        app.start_text(Point::new(60.0, 10.0), Some(size));
+        app.finish_text();
+        assert_eq!(texts(&app), vec![String::new(), String::new()]);
+        assert_eq!(app.engine.history_labels().0.len(), 2);
+        app.undo();
+        assert_eq!(texts(&app), vec![String::new()]);
+        // Esc on an empty artistic text still leaves nothing.
+        app.start_text(Point::new(10.0, 100.0), None);
+        app.finish_text();
+        assert_eq!(texts(&app), vec![String::new()]);
     }
 
     /// A text emptied by deleting its characters goes; Undo gives it
@@ -1984,6 +2079,42 @@ mod tests {
         assert_ne!(by_text("c").font_family, "Other");
         assert!((by_text("ab").size_pt - 40.0).abs() > 1e-9);
         assert!((by_text("ef").size_pt - 40.0).abs() > 1e-9);
+    }
+
+    /// The column order of vertical text (#1986): set for the selection
+    /// in one undo step, only where it changes, and kept by a text set
+    /// back in lines.
+    #[test]
+    fn vertical_columns_are_set_in_one_undo_step() {
+        use tracedraw_core::VerticalColumns as C;
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("\u{65E5}\u{672C}", "Selawik", 24.0)],
+                origin: Point::new(50.0, 100.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("a layer");
+        app.select(vec![id]);
+        assert_eq!(app.vertical_columns(), None, "not vertical");
+        app.set_vertical_text(true);
+        assert_eq!(app.vertical_columns(), Some(C::RightToLeft));
+        let depth = app.engine.history_labels().0.len();
+        app.set_vertical_columns(C::LeftToRight);
+        assert_eq!(app.vertical_columns(), Some(C::LeftToRight));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        app.set_vertical_columns(C::LeftToRight);
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1, "no change");
+        app.undo();
+        assert_eq!(app.vertical_columns(), Some(C::RightToLeft));
+        app.redo();
+        app.set_vertical_text(false);
+        assert_eq!(app.vertical_columns(), None);
+        app.set_vertical_text(true);
+        assert_eq!(app.vertical_columns(), Some(C::LeftToRight));
     }
 
     /// Vertical text (#257): the caret is a bar across the column, the

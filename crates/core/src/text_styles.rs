@@ -24,7 +24,7 @@
 //! dropped and the text keeps its formatting. See
 //! docs/behavior/text-styles.md.
 
-use crate::document::{spans_apply, LineStyle, Shape, ShapeKind, TextSpan};
+use crate::document::{spans_apply, LineLook, LineStyle, Shape, ShapeKind, TextSpan};
 use crate::paragraphs::{
     edit_paragraph_formats, paragraph_format, paragraph_of, paragraph_ranges, ParagraphFormat,
 };
@@ -53,16 +53,18 @@ pub struct CharFormat {
     pub bold: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub italic: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub underline: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub strikethrough: Option<bool>,
+    /// The underline; a style saved when it was on or off reads as a
+    /// thin line or none.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "opt_line")]
+    pub underline: Option<LineStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "opt_line")]
+    pub strikethrough: Option<LineStyle>,
     /// How the underline is drawn (kind, thickness, place, colour).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub underline_style: Option<LineStyle>,
+    pub underline_style: Option<LineLook>,
     /// How the strike line is drawn.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub strike_style: Option<LineStyle>,
+    pub strike_style: Option<LineLook>,
     /// Range kerning, percent of the em.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tracking_pct: Option<f64>,
@@ -663,6 +665,34 @@ pub fn count_uses(shape: &Shape, id: u32) -> usize {
     }
 }
 
+/// Serde for a style's underline or strike line: written as the span
+/// writes it, read from a style that said only on or off too.
+mod opt_line {
+    use crate::document::{line_style_serde, LineStyle};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Repr {
+        Flag(bool),
+        Style(LineStyle),
+    }
+
+    pub fn serialize<S: Serializer>(v: &Option<LineStyle>, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            Some(v) => line_style_serde::serialize(v, s),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<LineStyle>, D::Error> {
+        Ok(Option::<Repr>::deserialize(d)?.map(|r| match r {
+            Repr::Flag(on) => LineStyle::from(on),
+            Repr::Style(s) => s,
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -989,8 +1019,8 @@ mod tests {
     #[test]
     fn a_style_carries_the_look_of_the_two_lines() {
         use crate::color::Color;
-        use crate::document::{LineKind, LineStyle};
-        let look = LineStyle {
+        use crate::document::{LineKind, LineLook, LineStyle};
+        let look = LineLook {
             kind: LineKind::Wavy,
             thickness_pt: Some(1.5),
             offset_pt: Some(-3.0),
@@ -998,12 +1028,12 @@ mod tests {
             ..Default::default()
         };
         let mut sp = TextSpan::new("a", "Sans", 11.0);
-        sp.underline = true;
-        sp.strikethrough = true;
+        sp.underline = LineStyle::SingleThin;
+        sp.strikethrough = LineStyle::SingleThin;
         sp.underline_style = look.clone();
-        sp.strike_style = LineStyle {
+        sp.strike_style = LineLook {
             kind: LineKind::Double,
-            ..LineStyle::default()
+            ..LineLook::default()
         };
         // A style made from the text sets both looks.
         let chars = CharFormat::of(&sp);
@@ -1026,7 +1056,7 @@ mod tests {
         assert_eq!(span0.strike_style.kind, LineKind::Double);
         // Only what a mask names is taken.
         let mask = CharFormat {
-            underline_style: Some(LineStyle::default()),
+            underline_style: Some(LineLook::default()),
             ..Default::default()
         };
         let only = chars.only(&mask);

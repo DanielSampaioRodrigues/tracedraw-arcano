@@ -131,6 +131,7 @@ pub fn reply(status: u16, body: serde_json::Value) -> HttpResult {
     Ok(crate::net::HttpResponse {
         status,
         body: body.to_string(),
+        retry_after: None,
     })
 }
 

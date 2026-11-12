@@ -41,10 +41,19 @@ frame is edited node by node, and the clip frame stays one
   turned or resized since it was made comes apart where it shows: its
   own transform goes onto the frame and each content (#1562,
   `command::tests::extracting_a_moved_clip_frame_keeps_the_frame_and_contents_in_place`).
+- The canvas context menu of a selection holding a clip frame offers
+  Edit Contents and Extract Contents (the Object menu's commands); while
+  a clip frame's contents are edited, the menu on the contents or on the
+  empty page offers Finish Editing. Ctrl+Shift+F3 runs Edit Contents on
+  the selected clip frame and Finish Editing while inside; both menu
+  rows show it (#1273,
+  `pick_drag_tests::the_context_menu_and_a_key_edit_and_extract_clip_frame_contents`).
 - Edit Contents: takes the contents out of the frame to edit them (where
-  they show, as Extract Contents does); the rest of the page fades to a quarter of its strength while the frame
-  and the contents are drawn in full (`App::render_focus`, the
-  renderer's focus option with several objects, `CLIP_EDIT_VISIBILITY`).
+  they show, as Extract Contents does); the rest of the page fades to the
+  "Visibility of inactive objects" of focus mode (Tools > Options >
+  TraceDraw > Edit, 20 % at first) while the frame and the contents are
+  drawn in full (`App::render_focus`, the renderer's focus option with
+  several objects; #981). At 0 % the rest is not drawn at all.
   Finish Editing Contents (the bar's Finish) puts them back; so does a
   Ctrl+click off the contents, on bare canvas or on a faded object (a
   plain click there only empties the selection; #1337,
@@ -52,7 +61,10 @@ frame is edited node by node, and the clip frame stays one
   contents are every object on the page that was not there besides the
   frame when editing began (`App::clip_edit_contents`): a group inside
   ungrouped stays in as its members, drawn in full, and objects drawn or
-  pasted while editing go in too; the members of an ungrouped group were
+  pasted while editing go in too (a paste that would land wholly outside
+  the frame's box is centred on the frame, so it shows in it, #2044,
+  `pick_drag_tests::a_paste_while_editing_a_clip_frame_lands_inside_the_frame`);
+  the members of an ungrouped group were
   left out and faded, and Finish emptied the frame (#537,
   `a_group_inside_a_clip_frame_being_edited_drags_and_ungroups`).
   While editing, only the contents can be picked: the faded objects and
@@ -105,7 +117,12 @@ Frame Proportionally (scaled alike to cover it) and Stretch Contents to
 Fill (scaled to the frame's box), each one "Fit Contents" undo step
 (`App::fit_clip_contents`, `ops2::fit_contents_transform`). While the
 contents are edited the bar shows Finish, as the symmetry bar does
-(`ops2::clip_frame_tests::contents_fit_the_frame_four_ways`).
+(`ops2::clip_frame_tests::contents_fit_the_frame_four_ways`). The four
+Fit Contents choices are also rows of Object > Clip to Frame
+(`menus::CLIP_FIT_ROWS`), so Options > Customization > Commands lists
+them and they take shortcuts; from the menu each selected clip frame
+fits its own contents, one "Fit Contents" undo step for them all
+(`App::fit_clips_contents`, #1299).
 
 ## Dropping onto a frame
 
@@ -121,7 +138,10 @@ no tool during the move (`App::frame_under_pointer`, `drop_frame`,
 
 ## Picking
 
-A click selects the clip frame (anywhere in its box). Ctrl+click on a
+A click selects the clip frame (anywhere in its box). A double click
+brings it into focus mode with the content under the pointer selected;
+there a click picks a content and a double click on a text edits it in
+place (#2157, see `focus-mode.md`). Ctrl+click on a
 clip frame lying on a layer starts Edit Contents: the contents come out
 of the frame with the object under the pointer selected (every content
 when the click is off them, inside the frame's box), and while they are

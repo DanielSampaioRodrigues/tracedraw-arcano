@@ -98,15 +98,42 @@ pub fn printing_page(app: &mut App, ui: &mut Ui) {
             ui,
             crate::ui::tips::pair("print.gutter", "print.gutter_tip"),
             |ui| {
-                ui.add(
-                    crate::ui::field::NumField::new(&mut p.gutter)
-                        .range(0.0..=50.0)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                );
+                ui.horizontal(|ui| {
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut p.gutter)
+                            .range(0.0..=50.0)
+                            .speed(0.5)
+                            .suffix(" mm"),
+                    );
+                    ui.label(tr("print.gap_across"));
+                });
             },
         );
 
+        ui.end_row();
+        // The gap between the rows, set apart (#1795).
+        ui.label("");
+        let mut gy = p.gutter_y.unwrap_or(p.gutter);
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("print.gap_down", "print.gap_down_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            crate::ui::field::NumField::new(&mut gy)
+                                .range(0.0..=50.0)
+                                .speed(0.5)
+                                .suffix(" mm"),
+                        )
+                        .changed()
+                    {
+                        p.gutter_y = Some(gy);
+                    }
+                    ui.label(tr("print.gap_down"));
+                });
+            },
+        );
         ui.end_row();
     });
     ui.add_space(6.0);
@@ -221,45 +248,57 @@ pub fn file_formats_page(app: &mut App, ui: &mut Ui) {
             "options.export_remember",
             "options.export_remember_tip",
         ));
+    // The Export dialog's "Do not show this dialog again", where it can
+    // be found again once the dialog no longer shows.
+    ui.checkbox(&mut f.skip_export_dialog, tr("options.skip_export_dialog"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.skip_export_dialog",
+            "options.skip_export_dialog_tip",
+        ));
     hint(ui, "options.export_presets_hint");
     chrome::section(ui, &tr("options.import_section"));
-    ui.label(tr("options.import_place"));
-    ui.radio_value(
-        &mut f.import_place,
-        ImportPlace::AsInFile,
-        tr("options.import_as_in_file"),
-    )
-    .rich_tip(crate::ui::tips::pair(
-        "options.import_as_in_file",
-        "options.import_as_in_file_tip",
-    ));
-    ui.radio_value(
-        &mut f.import_place,
-        ImportPlace::ViewCenter,
-        tr("options.import_view_center"),
-    )
-    .rich_tip(crate::ui::tips::pair(
-        "options.import_view_center",
-        "options.import_view_center_tip",
-    ));
-    ui.horizontal(|ui| {
+    ui.checkbox(&mut f.import_with_cursor, tr("options.import_with_cursor"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.import_with_cursor",
+            "options.import_with_cursor_tip",
+        ));
+    // On one row, so the section keeps its height with the check box
+    // above it.
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("options.import_place"));
+        ui.radio_value(
+            &mut f.import_place,
+            ImportPlace::AsInFile,
+            tr("options.import_as_in_file"),
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.import_as_in_file",
+            "options.import_as_in_file_tip",
+        ));
+        ui.radio_value(
+            &mut f.import_place,
+            ImportPlace::ViewCenter,
+            tr("options.import_view_center"),
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.import_view_center",
+            "options.import_view_center_tip",
+        ));
+    });
+    ui.horizontal_wrapped(|ui| {
         ui.label(tr("pdf_import.text_as"));
-        ui.radio_value(&mut f.pdf_text_as_curves, false, tr("pdf_import.text"))
-            .rich_tip(crate::ui::tips::pair(
-                "pdf_import.text",
-                "pdf_import.text_tip",
-            ));
-        ui.radio_value(&mut f.pdf_text_as_curves, true, tr("pdf_import.curves"))
-            .rich_tip(crate::ui::tips::pair(
-                "pdf_import.curves",
-                "pdf_import.curves_tip",
-            ));
+        crate::ui::pdf_import_dialog::read_as_choices(
+            ui,
+            &mut f.pdf_text_as_curves,
+            Some((&mut f.pdf_as_picture, &mut f.pdf_picture_dpi)),
+        );
     });
     ui.checkbox(&mut f.pdf_ask_text, tr("pdf_import.ask"))
         .rich_tip(crate::ui::tips::pair(
             "pdf_import.ask",
             "pdf_import.ask_tip",
         ));
+    crate::ui::pdf_import_dialog::reduce_pictures_checkbox(ui, &mut f.pdf_reduce_pictures);
     chrome::section(ui, &tr("options.cdr_save_section"));
     f.cdr_version = f.cdr_version.clamp(
         tracedraw_cdr::write::CHECKED_SINCE,

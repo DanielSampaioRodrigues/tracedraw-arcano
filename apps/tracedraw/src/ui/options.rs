@@ -279,6 +279,7 @@ pub struct OptionsSnapshot {
     show_baseline_grid: bool,
     show_pixel_grid: bool,
     show_page_border: bool,
+    show_page_shadow: bool,
     show_status_bar: bool,
     show_standard_toolbar: bool,
     show_property_bar: bool,
@@ -333,6 +334,7 @@ impl OptionsSnapshot {
             show_baseline_grid: app.show_baseline_grid,
             show_pixel_grid: app.show_pixel_grid,
             show_page_border: app.show_page_border,
+            show_page_shadow: app.show_page_shadow,
             show_status_bar: app.show_status_bar,
             show_standard_toolbar: app.show_standard_toolbar,
             show_property_bar: app.show_property_bar,
@@ -385,6 +387,8 @@ impl OptionsSnapshot {
         }
         crate::i18n::set_language(&self.language);
         app.settings = self.settings;
+        // The default tab spacing acts at once while the dialog is open.
+        tracedraw_core::set_default_tab_step(app.settings.default_tab_mm);
         // The workspace first: choosing one sets the bars, which the
         // snapshot then puts back as they were.
         if app.workspace != self.workspace {
@@ -399,6 +403,7 @@ impl OptionsSnapshot {
         app.show_baseline_grid = self.show_baseline_grid;
         app.show_pixel_grid = self.show_pixel_grid;
         app.show_page_border = self.show_page_border;
+        app.show_page_shadow = self.show_page_shadow;
         app.show_status_bar = self.show_status_bar;
         app.show_standard_toolbar = self.show_standard_toolbar;
         app.show_property_bar = self.show_property_bar;
@@ -490,7 +495,17 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                             .max_height(page.height() - 30.0)
                             .show(ui, |ui| {
                                 ui.spacing_mut().item_spacing.y = 7.0;
+                                let from = shapes_drawn(ui);
+                                #[cfg(test)]
+                                let room = ui.max_rect().right();
                                 draw_page(app, ui);
+                                #[cfg(test)]
+                                {
+                                    let over = ui.min_rect().right() - room;
+                                    ui.ctx()
+                                        .data_mut(|d| d.insert_temp(page_overflow_id(), over));
+                                }
+                                highlight_setting(app, ui, from);
                             });
                     });
             });
@@ -521,17 +536,12 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                         app.status = tr("status.settings_saved");
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if chrome::button(ui, &tr("dialog.cancel"))
-                            .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
-                            .clicked()
-                        {
+                        // The buttons bring their own tips (#2367).
+                        if chrome::button(ui, &tr("dialog.cancel")).clicked() {
                             cancel = true;
                         }
                         ui.add_space(5.0);
-                        if chrome::button(ui, &tr("dialog.ok"))
-                            .rich_tip(crate::ui::tips::keyed("dialog.ok"))
-                            .clicked()
-                        {
+                        if chrome::button(ui, &tr("dialog.ok")).clicked() {
                             ok = true;
                         }
                     });
@@ -550,6 +560,13 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
         }
         *close = true;
     }
+}
+
+/// How far the page drawn last reached past the right edge of its
+/// panel (for tests).
+#[cfg(test)]
+fn page_overflow_id() -> egui::Id {
+    egui::Id::new("options_page_overflow")
 }
 
 /// Height of the tab row over the page list.
@@ -715,6 +732,232 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// A setting of an Options page or of Document Options, as Help > Search
+/// Commands finds it: the key of its label, the key of its tip when it
+/// has one, and the page (and tab of Options > Text) that shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingEntry {
+    pub key: String,
+    pub tip: Option<String>,
+    pub page: OptionsPage,
+    pub tab: usize,
+}
+
+/// Whether the translated text of `key` names a setting the search can
+/// list: a short label of one line, without placeholders (tips, hints
+/// and sentences are found through the label they belong to).
+fn is_setting_label(key: &str) -> bool {
+    const NOT_LABELS: [&str; 6] = ["_tip", "_desc", "_hint", "_help", "_note", "_title"];
+    if NOT_LABELS.iter().any(|s| key.ends_with(s)) || !key.contains('.') {
+        return false;
+    }
+    let text = tr(key);
+    let text = text.trim();
+    // A key with no text comes back as its last part.
+    let missing = key.rsplit('.').next() == Some(text);
+    !missing
+        && !text.is_empty()
+        && text.chars().count() <= 60
+        && !text.contains(['{', '\n'])
+        && text.chars().any(char::is_alphabetic)
+}
+
+/// The settings of every page of the Options and Document Options: each
+/// page is drawn once, out of sight, and the labels it translates are
+/// its settings, paired with their tips (`key_tip`, `key_desc`). The
+/// page's own name opens it too. Options > Customization > Commands is
+/// left out: its rows are the menu commands, listed already. Cheap
+/// enough to run when the search box opens; the dialog's state is put
+/// back.
+pub fn settings_index(app: &mut App, ctx: &Context) -> Vec<SettingEntry> {
+    let far = egui::Rect::from_min_size(
+        egui::pos2(-100_000.0, -100_000.0),
+        egui::vec2(620.0, 50_000.0),
+    );
+    let saved = (
+        app.options_page,
+        app.options_text_tab,
+        app.shortcut_editor.capture.take(),
+    );
+    let mut out: Vec<SettingEntry> = Vec::new();
+    for set in OptionsSet::ALL {
+        for &page in set.pages() {
+            if page == OptionsPage::Commands {
+                continue;
+            }
+            out.push(SettingEntry {
+                key: page.key().to_string(),
+                tip: None,
+                page,
+                tab: 0,
+            });
+            let tabs = if page == OptionsPage::Text {
+                TEXT_TABS.len()
+            } else {
+                1
+            };
+            for tab in 0..tabs {
+                app.options_page = page;
+                app.options_text_tab = tab;
+                let id = egui::Id::new(("settings_walk", format!("{page:?}"), tab));
+                let mut ui = Ui::new(
+                    ctx.clone(),
+                    id,
+                    egui::UiBuilder::new()
+                        .invisible()
+                        .max_rect(far)
+                        .layer_id(egui::LayerId::new(egui::Order::Background, id)),
+                );
+                let ((), keys) = crate::i18n::recording(|| draw_page(app, &mut ui));
+                let seen: std::collections::HashSet<&str> =
+                    keys.iter().map(String::as_str).collect();
+                for key in &keys {
+                    // A tab's name belongs to its own tab.
+                    let other_tab = page == OptionsPage::Text
+                        && TEXT_TABS
+                            .iter()
+                            .position(|k| k == key)
+                            .is_some_and(|i| i != tab);
+                    if other_tab
+                        || out.iter().any(|e| e.page == page && &e.key == key)
+                        || !is_setting_label(key)
+                    {
+                        continue;
+                    }
+                    let tip = ["_tip", "_desc"]
+                        .iter()
+                        .map(|s| format!("{key}{s}"))
+                        .find(|k| seen.contains(k.as_str()));
+                    out.push(SettingEntry {
+                        key: key.clone(),
+                        tip,
+                        page,
+                        tab,
+                    });
+                }
+            }
+        }
+    }
+    (
+        app.options_page,
+        app.options_text_tab,
+        app.shortcut_editor.capture,
+    ) = saved;
+    out
+}
+
+/// A setting found with Help > Search Commands, shown framed on its page
+/// for a moment when the Options open there.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingHighlight {
+    pub page: OptionsPage,
+    /// The setting's label as the page draws it.
+    pub label: String,
+    /// When the frame began (the input's time), once drawn.
+    pub since: Option<f64>,
+}
+
+/// Where a page lies, as the search shows it: "Options > Tools >
+/// Rectangle", "Document Setup > General".
+pub fn setting_place(page: OptionsPage) -> String {
+    let set = page.set();
+    let name = tr(page.key());
+    if set == OptionsSet::Document {
+        return format!("{} > {name}", set.tab_label());
+    }
+    format!(
+        "{} > {} > {name}",
+        tr("menu.tools.options"),
+        set.tab_label()
+    )
+}
+
+/// How long the frame stays, seconds.
+const HIGHLIGHT_SECS: f64 = 2.5;
+
+/// Open the Options (or Document Options) at `page` with the setting
+/// `key` framed.
+pub fn open_at_setting(app: &mut App, page: OptionsPage, tab: usize, key: &str) {
+    app.dialog = crate::ui::dialogs::Dialog::Options;
+    app.options_page = page;
+    if page == OptionsPage::Text {
+        app.options_text_tab = tab;
+    }
+    app.options_highlight = Some(SettingHighlight {
+        page,
+        label: tr(key).trim().to_string(),
+        since: None,
+    });
+}
+
+/// Where the page drew the text `label`, among the shapes of the
+/// layer from `from` on.
+fn text_rect(ctx: &Context, layer: egui::LayerId, from: usize, label: &str) -> Option<egui::Rect> {
+    fn find(shape: &egui::Shape, label: &str) -> Option<egui::Rect> {
+        match shape {
+            egui::Shape::Text(t) if t.galley.text().trim() == label => {
+                Some(t.galley.rect.translate(t.pos.to_vec2()))
+            }
+            egui::Shape::Vec(v) => v.iter().find_map(|s| find(s, label)),
+            _ => None,
+        }
+    }
+    ctx.graphics(|g| {
+        g.get(layer)?
+            .all_entries()
+            .skip(from)
+            .find_map(|c| find(&c.shape, label))
+    })
+}
+
+/// Tests: where the last frame around a found setting was drawn.
+#[cfg(test)]
+pub fn highlighted_rect(ctx: &Context) -> Option<egui::Rect> {
+    ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new("options_highlight_rect")))
+}
+
+/// How many shapes the layer of `ui` holds so far.
+fn shapes_drawn(ui: &Ui) -> usize {
+    ui.ctx()
+        .graphics(|g| g.get(ui.layer_id()).map_or(0, |l| l.all_entries().len()))
+}
+
+/// Frame the setting found with the search, drawn on this page since
+/// `from` shapes: scrolled into view the first time, gone after
+/// [`HIGHLIGHT_SECS`] or once another page shows.
+fn highlight_setting(app: &mut App, ui: &mut Ui, from: usize) {
+    let Some(mut h) = app.options_highlight.take() else {
+        return;
+    };
+    if h.page != app.options_page {
+        return;
+    }
+    let now = ui.input(|i| i.time);
+    let since = *h.since.get_or_insert(now);
+    if now - since > HIGHLIGHT_SECS {
+        return;
+    }
+    if let Some(r) = text_rect(ui.ctx(), ui.layer_id(), from, &h.label) {
+        let frame = r.expand2(egui::vec2(6.0, 3.0));
+        if since == now {
+            ui.scroll_to_rect(frame, Some(egui::Align::Center));
+        }
+        #[cfg(test)]
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::new("options_highlight_rect"), frame));
+        ui.painter().rect(
+            frame,
+            3.0,
+            Tokens::ACCENT.gamma_multiply(0.15),
+            egui::Stroke::new(2.0, Tokens::ACCENT),
+            egui::StrokeKind::Outside,
+        );
+    }
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_secs_f64(HIGHLIGHT_SECS));
+    app.options_highlight = Some(h);
+}
+
 /// A label right-aligned in a grid's first column.
 pub(crate) fn row_label(ui: &mut Ui, text: &str) {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -763,6 +1006,38 @@ fn rgb_button(ui: &mut Ui, rgb: &mut [u8; 3]) -> bool {
 
 // ----- TraceDraw options -------------------------------------------------
 
+/// Options that do something on the desktop only, and are not shown
+/// elsewhere (#1415): the splash screen (the browser shows its own page
+/// while loading; the Android app starts without one), hardware
+/// acceleration and the graphics card (the browser draws with WebGL;
+/// Android always draws with OpenGL ES, `gpu::ANDROID_BACKENDS`, and
+/// never reads the setting) and the link for AI agents on this computer
+/// (no agent on a phone or in a browser tab to serve).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopOnly {
+    Splash,
+    HardwareAcceleration,
+    Agents,
+}
+
+impl DesktopOnly {
+    pub const ALL: [DesktopOnly; 3] = [
+        DesktopOnly::Splash,
+        DesktopOnly::HardwareAcceleration,
+        DesktopOnly::Agents,
+    ];
+
+    /// Whether the option is shown on `platform`.
+    pub fn shown_on(self, platform: crate::files::Platform) -> bool {
+        platform == crate::files::Platform::Desktop
+    }
+
+    /// Whether the option is shown in this build.
+    pub fn shown(self) -> bool {
+        self.shown_on(crate::files::Platform::current())
+    }
+}
+
 fn general_page(app: &mut App, ui: &mut Ui) {
     chrome::section(ui, &tr("options.getting_started"));
     ui.indent("gs", |ui| {
@@ -784,12 +1059,24 @@ fn general_page(app: &mut App, ui: &mut Ui) {
             tr("options.show_new_document_dialog"),
         )
         .rich_tip(crate::ui::tips::keyed("options.show_new_document_dialog"));
-        if !crate::files::WEB {
+        if DesktopOnly::Splash.shown() {
             ui.checkbox(&mut app.settings.show_splash, tr("options.show_splash"))
                 .rich_tip(crate::ui::tips::keyed("options.show_splash"));
         }
+        ui.checkbox(&mut app.settings.tracecut.show, tr("options.show_tracecut"))
+            .rich_tip(crate::ui::tips::keyed("options.show_tracecut"));
         #[cfg(not(target_arch = "wasm32"))]
-        hardware_acceleration(app, ui);
+        if DesktopOnly::HardwareAcceleration.shown() {
+            hardware_acceleration(app, ui);
+        }
+        // Linux: the desktop's title bar on a Wayland desktop that leaves
+        // it to the application, from the next start (#2070).
+        #[cfg(target_os = "linux")]
+        ui.checkbox(
+            &mut app.settings.system_title_bar,
+            tr("options.system_title_bar"),
+        )
+        .rich_tip(crate::ui::tips::keyed("options.system_title_bar"));
     });
     chrome::section(ui, &tr("options.undo_levels"));
     ui.indent("undo", |ui| {
@@ -895,6 +1182,11 @@ fn display_page(app: &mut App, ui: &mut Ui) {
                 "options.node_tracking",
                 "options.node_tracking_tip",
             ));
+        ui.checkbox(&mut app.settings.touch_keys, tr("options.touch_keys"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.touch_keys",
+                "options.touch_keys_tip",
+            ));
     });
     chrome::section(ui, &tr("options.full_screen_preview"));
     ui.indent("fsp", |ui| {
@@ -936,15 +1228,30 @@ fn display_page(app: &mut App, ui: &mut Ui) {
         row_label(ui, &tr("options.open_view"));
         let mut view = app.settings.open_view;
         let tip = crate::ui::tips::pair("options.open_view", "options.open_view_tip");
-        crate::ui::tips::tip_over(ui, tip, |ui| {
-            combo(
-                ui,
-                "open_view",
-                &mut view,
-                &crate::settings::OpenView::ALL,
-                |v| tr(v.key()),
-                160.0,
-            );
+        ui.horizontal(|ui| {
+            crate::ui::tips::tip_over(ui, tip, |ui| {
+                combo(
+                    ui,
+                    "open_view",
+                    &mut view,
+                    &crate::settings::OpenView::ALL,
+                    |v| tr(v.key()),
+                    160.0,
+                );
+            });
+            // Zoom level: the percent beside the list (#1266).
+            if view == crate::settings::OpenView::Percent {
+                ui.add(
+                    crate::ui::field::NumField::new(&mut app.settings.open_zoom_percent)
+                        .range(crate::settings::OPEN_ZOOM_RANGE)
+                        .speed(1.0)
+                        .suffix(" %"),
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "options.open_view_percent",
+                    "options.open_zoom_tip",
+                ));
+            }
         });
         app.settings.open_view = view;
         ui.end_row();
@@ -984,6 +1291,10 @@ fn display_page(app: &mut App, ui: &mut Ui) {
         }
     });
     calibration_rulers(ui, crate::settings::screen_points_per_inch(&app.settings));
+    // The phone's notch and rounded corners (#1917).
+    if crate::ui::screen_margins::OFFERED {
+        crate::ui::screen_margins::options_section(ui, &mut app.settings.screen_margins);
+    }
 }
 
 /// Two rulers drawn at the calibrated resolution, 100 mm and 4 inches
@@ -1091,11 +1402,25 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
     crate::ui::chrome::section(ui, &tr("options.focus_inactive"));
     ui.horizontal(|ui| {
         let mut v = app.settings.focus_visibility as f32;
+        // The slider takes the rest of the row but for the Reset button
+        // after it, which stood past the panel's edge (#2199).
+        let reset = egui::WidgetText::from(tr("dialog.reset"))
+            .into_galley(
+                ui,
+                Some(egui::TextWrapMode::Extend),
+                f32::INFINITY,
+                egui::TextStyle::Button,
+            )
+            .size()
+            .x
+            + 2.0 * ui.spacing().button_padding.x
+            + ui.spacing().item_spacing.x;
         if ui
             .add(
                 crate::ui::Slider::new(&mut v, 0.0..=100.0)
                     .suffix(" %")
-                    .integer(),
+                    .integer()
+                    .reserve(reset),
             )
             .rich_tip(crate::ui::tips::pair(
                 "options.focus_inactive",
@@ -1222,10 +1547,7 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
 
         ui.end_row();
         ui.label("");
-        if chrome::button(ui, &tr("options.reset"))
-            .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
-            .clicked()
-        {
+        if chrome::button(ui, &tr("options.reset")).clicked() {
             let d = crate::settings::NodePrefs::default();
             n.cusp = d.cusp;
             n.smooth = d.smooth;
@@ -1259,6 +1581,17 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
                 .suffix(" px"),
         )
         .rich_tip(tr("options.node_pick_distance_tip"));
+        // On the same row, so the page keeps its height (#1679).
+        ui.add_space(12.0);
+        ui.label(tr("options.object_pick_distance"));
+        ui.add(
+            crate::ui::field::NumField::new(&mut n.object_pick_distance)
+                .range(0.0..=20.0)
+                .speed(0.2)
+                .max_decimals(0)
+                .suffix(" px"),
+        )
+        .rich_tip(tr("options.object_pick_distance_tip"));
     });
     chrome::section(ui, &tr("options.colors"));
     grid("node_colors").show(ui, |ui| {
@@ -2001,6 +2334,31 @@ fn paragraph_text_tab(app: &mut App, ui: &mut Ui) {
             "menu.text.use_hyphenation",
             "menu.text.use_hyphenation_tip",
         ));
+    // Where a tab goes in a paragraph with no stops of its own (#1852).
+    grid("default_tab_spacing").show(ui, |ui| {
+        row_label(ui, &tr("options.default_tab_spacing"));
+        let u = app.units;
+        let mut shown = u.from_mm(app.settings.default_tab_mm);
+        if ui
+            .add(
+                crate::ui::field::NumField::new(&mut shown)
+                    .range(u.from_mm(1.0)..=u.from_mm(100.0))
+                    .max_decimals(3)
+                    .unit_mm(u.mm())
+                    .suffix(format!(" {}", u.short())),
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "options.default_tab_spacing",
+                "options.default_tab_spacing_tip",
+            ))
+            .changed()
+        {
+            app.settings.default_tab_mm = u.to_mm(shown).clamp(1.0, 100.0);
+            tracedraw_core::set_default_tab_step(app.settings.default_tab_mm);
+            app.raster.borrow_mut().invalidate();
+        }
+        ui.end_row();
+    });
     // The pattern files, read when the tab shows a new folder.
     type Found = (
         Option<std::path::PathBuf>,
@@ -2875,64 +3233,8 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
             "options.palette_no_color",
             "options.palette_no_color_tip",
         ));
-    // Rows of the default palette (columns docked on a side, #610).
-    p.rows = p.rows.min(crate::settings::MAX_ROWS);
-    grid("palette_rows").show(ui, |ui| {
-        row_label(ui, &tr("options.palette_rows"));
-        crate::ui::tips::tip_over(
-            ui,
-            crate::ui::tips::pair("options.palette_rows", "options.palette_rows_tip"),
-            |ui| {
-                combo(
-                    ui,
-                    "opt_palette_rows",
-                    &mut p.rows,
-                    &[1, 2, 3, 4, 5, 6, 7, 8, crate::settings::ROWS_FIT],
-                    |n| {
-                        if n == crate::settings::ROWS_FIT {
-                            tr("palette.rows_fit")
-                        } else {
-                            n.to_string()
-                        }
-                    },
-                    90.0,
-                );
-            },
-        );
-        ui.end_row();
-        // The swatch size, as the palette menu names its steps; a size
-        // set with Ctrl+wheel between two shows as it is.
-        row_label(ui, &tr("options.palette_swatch_size"));
-        crate::ui::tips::tip_over(
-            ui,
-            crate::ui::tips::pair(
-                "options.palette_swatch_size",
-                "options.palette_swatch_size_tip",
-            ),
-            |ui| {
-                let mut sizes: Vec<u8> = crate::settings::SWATCH_STEPS
-                    .iter()
-                    .map(|(s, _)| *s)
-                    .collect();
-                if !sizes.contains(&p.swatch_size) {
-                    sizes.push(p.swatch_size);
-                    sizes.sort_unstable();
-                }
-                combo(
-                    ui,
-                    "opt_palette_swatch_size",
-                    &mut p.swatch_size,
-                    &sizes,
-                    |n| match crate::settings::swatch_step_of(n) {
-                        Some(i) => tr(crate::settings::SWATCH_STEPS[i].1),
-                        None => crate::i18n::trf("palette.size_custom", &[("n", &n.to_string())]),
-                    },
-                    140.0,
-                );
-            },
-        );
-        ui.end_row();
-    });
+    palette_layout_grid(app, ui);
+    let p = &mut app.settings.palette;
     crate::ui::chrome::section(ui, &tr("options.palette_right_button"));
     ui.radio_value(
         &mut p.right_click_outline,
@@ -2960,6 +3262,126 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
             );
         });
     }
+}
+
+/// The default palette's place, rows and swatch size on the Color
+/// Palette page, set as the palette's own menu sets them: a floating
+/// palette takes the rows at its length, and a palette put elsewhere goes
+/// there at once (#1983).
+fn palette_layout_grid(app: &mut App, ui: &mut Ui) {
+    use crate::ui::bars::{Bar, Dock};
+    use crate::ui::palette::Row;
+    use crate::ui::palette_bars::{set_dock, set_rows, set_swatch, PLACES};
+    let dock = app.settings.bars.dock(Bar::Palette);
+    let floating = dock == Dock::Floating;
+    grid("palette_rows").show(ui, |ui| {
+        // Where it lies: a side of the window, or floating.
+        row_label(ui, &tr("options.palette_position"));
+        let locked = app.settings.bars.locked;
+        let mut place = dock;
+        let changed = ui
+            .add_enabled_ui(!locked, |ui| {
+                crate::ui::tips::tip_over(
+                    ui,
+                    crate::ui::tips::pair(
+                        "options.palette_position",
+                        "options.palette_position_tip",
+                    ),
+                    |ui| {
+                        let docks: Vec<Dock> = PLACES.iter().map(|(d, _)| *d).collect();
+                        combo(
+                            ui,
+                            "opt_palette_position",
+                            &mut place,
+                            &docks,
+                            |d| {
+                                PLACES
+                                    .iter()
+                                    .find(|(p, _)| *p == d)
+                                    .map(|(_, k)| tr(k))
+                                    .unwrap_or_default()
+                            },
+                            140.0,
+                        )
+                    },
+                )
+            })
+            .inner;
+        if changed && place != dock {
+            set_dock(app, Row::Main, place, None);
+        }
+        ui.end_row();
+        // Rows of the default palette (columns docked on a side, #610);
+        // floating, the lines its window shows.
+        row_label(ui, &tr("options.palette_rows"));
+        let mut rows = if floating {
+            crate::ui::palette::lines_of(app, Row::Main).min(usize::from(crate::settings::MAX_ROWS))
+                as u8
+        } else {
+            app.settings.palette.rows.min(crate::settings::MAX_ROWS)
+        };
+        let before = rows;
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.palette_rows", "options.palette_rows_tip"),
+            |ui| {
+                combo(
+                    ui,
+                    "opt_palette_rows",
+                    &mut rows,
+                    &[1, 2, 3, 4, 5, 6, 7, 8, crate::settings::ROWS_FIT],
+                    |n| {
+                        if n == crate::settings::ROWS_FIT {
+                            tr("palette.rows_fit")
+                        } else {
+                            n.to_string()
+                        }
+                    },
+                    90.0,
+                );
+            },
+        );
+        if rows != before {
+            set_rows(app, Row::Main, rows);
+        }
+        ui.end_row();
+        // The swatch size, as the palette menu names its steps; a size
+        // set with Ctrl+wheel between two shows as it is.
+        row_label(ui, &tr("options.palette_swatch_size"));
+        let mut size = app.settings.palette.swatch_size;
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair(
+                "options.palette_swatch_size",
+                "options.palette_swatch_size_tip",
+            ),
+            |ui| {
+                let mut sizes: Vec<u8> = crate::settings::SWATCH_STEPS
+                    .iter()
+                    .map(|(s, _)| *s)
+                    .collect();
+                if !sizes.contains(&size) {
+                    sizes.push(size);
+                    sizes.sort_unstable();
+                }
+                combo(
+                    ui,
+                    "opt_palette_swatch_size",
+                    &mut size,
+                    &sizes,
+                    |n| match crate::settings::swatch_step_of(n) {
+                        Some(i) => tr(crate::settings::SWATCH_STEPS[i].1),
+                        None => trf("palette.size_custom", &[("n", &n.to_string())]),
+                    },
+                    140.0,
+                );
+            },
+        );
+        if size != app.settings.palette.swatch_size {
+            set_swatch(app, Row::Main, size);
+        }
+        ui.end_row();
+    });
 }
 
 /// Options > Customization > Commands: the menu commands found, the
@@ -3779,6 +4201,25 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
         "options.wheel_center_mouse",
         "options.wheel_center_mouse_tip",
     ));
+    // The wheel's glide and its step (#1648, #895).
+    ui.checkbox(&mut app.settings.smooth_zoom, tr("options.smooth_zoom"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.smooth_zoom",
+            "options.smooth_zoom_tip",
+        ));
+    ui.horizontal(|ui| {
+        ui.label(tr("options.wheel_zoom_step"));
+        ui.add(
+            crate::ui::field::NumField::new(&mut app.settings.wheel_zoom_step)
+                .range(1.0..=100.0)
+                .speed(0.5)
+                .suffix(" %"),
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.wheel_zoom_step",
+            "options.wheel_zoom_step_tip",
+        ));
+    });
     ui.separator();
     ui.label(tr("options.wheel_action"));
     ui.indent("wa", |ui| {
@@ -3840,6 +4281,12 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
             "options.pan_context_menu_tip",
         ));
     });
+    // A flick keeps the view sliding (#831).
+    ui.checkbox(&mut app.settings.pan_inertia, tr("options.pan_inertia"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.pan_inertia",
+            "options.pan_inertia_tip",
+        ));
 }
 
 fn rectangle_page(app: &mut App, ui: &mut Ui) {
@@ -4317,6 +4764,16 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
                 "options.pen_pressure_tip",
             ));
         ui.end_row();
+        // Palm rejection: Android tells a pen from a finger (#1832).
+        if crate::files::ANDROID {
+            ui.label("");
+            ui.checkbox(&mut c.pen_ignores_hand, tr("options.pen_ignores_hand"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.pen_ignores_hand",
+                    "options.pen_ignores_hand_tip",
+                ));
+            ui.end_row();
+        }
         row_label(ui, &tr("options.constrain_key"));
         crate::ui::tips::tip_over(
             ui,
@@ -4432,7 +4889,7 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
     }
     // AI agents on this computer and the open drawing (desktop only).
     #[cfg(not(target_arch = "wasm32"))]
-    {
+    if DesktopOnly::Agents.shown() {
         chrome::section(ui, &tr("options.agents"));
         ui.checkbox(&mut app.settings.mcp_window, tr("options.mcp_window"))
             .rich_tip(crate::ui::tips::pair(
@@ -4729,6 +5186,7 @@ fn layout_page(app: &mut App, ui: &mut Ui) {
         app.fit_pending = true;
     }
     page_spacing_row(app, ui);
+    facing_pages_row(app, ui);
     ui.separator();
     ui.strong(tr("options.master_layers"));
     type MasterRow = (
@@ -4794,6 +5252,49 @@ fn layout_page(app: &mut App, ui: &mut Ui) {
     // Which kinds of master layer are drawn in front of the page's
     // layers, now and when made (#1132, #1477).
     crate::ui::objects_docker::master_front_choices(app, ui);
+}
+
+/// Document Setup > Layout: Facing pages and the side the first page
+/// starts on (#1972, #1660), one undo step each.
+fn facing_pages_row(app: &mut App, ui: &mut Ui) {
+    use tracedraw_core::spreads::PageSide;
+    let (mut on, mut start) = {
+        let m = &app.doc().metadata;
+        (m.facing_pages, m.facing_start)
+    };
+    let r = ui
+        .checkbox(&mut on, tr("options.facing_pages"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.facing_pages",
+            "options.facing_pages_tip",
+        ));
+    let mut changed = r.changed();
+    ui.add_enabled_ui(on, |ui| {
+        grid("doc_facing_start").show(ui, |ui| {
+            row_label(ui, &tr("options.facing_start"));
+            ui.horizontal(|ui| {
+                for (side, key) in [
+                    (PageSide::Right, "options.facing_start_right"),
+                    (PageSide::Left, "options.facing_start_left"),
+                ] {
+                    if ui
+                        .radio_value(&mut start, side, tr(key))
+                        .rich_tip(crate::ui::tips::pair(
+                            "options.facing_start",
+                            "options.facing_start_tip",
+                        ))
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                }
+            });
+            ui.end_row();
+        });
+    });
+    if changed {
+        app.set_facing_pages(on, start);
+    }
 }
 
 /// Document Setup > Layout: the space between the pages of the
@@ -4925,6 +5426,89 @@ fn bleed_page(app: &mut App, ui: &mut Ui) {
 mod tests {
     use super::*;
 
+    /// #1415: the splash, hardware acceleration and AI agent options are
+    /// shown on the desktop and hidden on Android and in the browser,
+    /// where they do nothing; the pages and the agent link ask first.
+    #[test]
+    fn desktop_only_options_are_hidden_on_android_and_the_web() {
+        use crate::files::Platform;
+        for o in DesktopOnly::ALL {
+            assert!(o.shown_on(Platform::Desktop), "{o:?}");
+            assert!(!o.shown_on(Platform::Android), "{o:?}");
+            assert!(!o.shown_on(Platform::Web), "{o:?}");
+            assert_eq!(o.shown(), Platform::current() == Platform::Desktop);
+        }
+        let page = include_str!("options.rs");
+        for gate in [
+            "if DesktopOnly::Splash.shown() {",
+            "if DesktopOnly::HardwareAcceleration.shown() {",
+            "if DesktopOnly::Agents.shown() {",
+        ] {
+            assert!(page.contains(gate), "{gate}");
+        }
+        assert!(include_str!("../mcp_link.rs")
+            .contains("&& crate::ui::options::DesktopOnly::Agents.shown();"));
+    }
+
+    /// On the desktop the General page still shows the splash and the
+    /// hardware acceleration options.
+    #[test]
+    fn the_desktop_keeps_the_splash_and_hardware_options() {
+        let mut app = App::headless();
+        let ctx = crate::theme::ui_context();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| general_page(&mut app, ui));
+        out.textures_delta.clear();
+        let mut texts = Vec::new();
+        for c in &out.shapes {
+            if let egui::Shape::Text(t) = &c.shape {
+                texts.push(t.galley.text().to_string());
+            }
+        }
+        for key in ["options.show_splash", "options.hardware_acceleration"] {
+            let label = tr(key);
+            assert!(texts.contains(&label), "{label:?} in {texts:?}");
+        }
+    }
+
+    /// On Linux the General page offers the desktop's title bar, and its
+    /// box turns the setting on (#2070).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_offers_the_desktops_title_bar() {
+        let mut app = App::headless();
+        assert!(!app.settings.system_title_bar);
+        let ctx = crate::theme::ui_context();
+        let label = tr("options.system_title_bar");
+        let mut at = None;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| general_page(&mut app, ui));
+        out.textures_delta.clear();
+        for c in &out.shapes {
+            if let egui::Shape::Text(t) = &c.shape {
+                if t.galley.text() == label {
+                    at = Some(t.visual_bounding_rect().center());
+                }
+            }
+        }
+        let at = at.unwrap_or_else(|| panic!("{label:?} is not on the General page"));
+        for pressed in [true, false] {
+            let input = egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| general_page(&mut app, ui));
+            out.textures_delta.clear();
+        }
+        assert!(app.settings.system_title_bar);
+    }
+
     /// #1148: every command can take a shortcut. A bar button that runs
     /// a menu command shows that command's keys; rows the menus show only
     /// at times (Finish Editing Contents, Vertical Text) are listed too.
@@ -4942,6 +5526,11 @@ mod tests {
             "menu.object.clip_frame_finish",
             "menu.object.clip_frame_edit",
             "menu.text.vertical_text",
+            // The clip bar's Fit Contents choices (#1299).
+            "menu.object.clip_frame_fit_center",
+            "menu.object.clip_frame_fit_proportional",
+            "menu.object.clip_frame_fill_proportional",
+            "menu.object.clip_frame_stretch",
         ] {
             assert!(
                 app.shortcut_editor.entries.iter().any(|e| e.key == key),
@@ -5027,14 +5616,28 @@ mod tests {
     /// No two commands share a built-in shortcut in one context: every
     /// menu command's, every tool's and every panel's default keys are
     /// their own (#1779). The
-    /// one documented split is E, Align Centers Horizontally with a
+    /// documented splits are E, Align Centers Horizontally with a
     /// selection and the Roughen tool without one (`shortcuts.md`, Align
-    /// keys and tool keys) (#1595).
+    /// keys and tool keys) (#1595), the clip frame's Edit Contents
+    /// and Finish Editing, never offered together: one key goes in and
+    /// out (#1273), and Shift+L, Shift+B and Shift+C, node commands with
+    /// the Shape tool and nodes chosen and Distribute keys otherwise
+    /// (`shortcuts.md`, Distribute keys) (#2147).
     #[test]
     fn no_two_default_commands_share_a_shortcut() {
         let app = app_with_commands();
+        let shared = shared_default_shortcuts(&app);
+        assert!(
+            shared.is_empty(),
+            "shared shortcuts:\n{}",
+            shared.join("\n")
+        );
+    }
+
+    /// The built-in keys two commands share, past the documented split.
+    fn shared_default_shortcuts(app: &App) -> Vec<String> {
         let mut holders: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-        for c in command_items(&app, None, "") {
+        for c in command_items(app, None, "") {
             if c.built_in.is_empty() {
                 continue;
             }
@@ -5076,19 +5679,178 @@ mod tests {
             ids.retain(|id| !opens_panel(id, tab));
             ids.push(format!("panel {tab:?}"));
         }
-        let documented_split = |keys: &str, ids: &[String]| {
-            keys == "E" && ids == ["menu.object.align_centers_h", "roughen"]
+        // Shift+L, Shift+B and Shift+C: a node command with the Shape
+        // tool and nodes chosen, Distribute otherwise (#2147).
+        let node_or_distribute = |keys: &str, ids: &[String]| {
+            [
+                (
+                    "Shift+B",
+                    "menu.object.distribute_bottom",
+                    "menu.object.node_break",
+                ),
+                (
+                    "Shift+C",
+                    "menu.object.distribute_centers_v",
+                    "menu.object.node_cusp",
+                ),
+                (
+                    "Shift+L",
+                    "menu.object.distribute_left",
+                    "menu.object.node_to_line",
+                ),
+            ]
+            .iter()
+            .any(|(k, distribute, node)| keys == *k && ids == [*distribute, *node])
         };
-        let shared: Vec<String> = holders
+        let documented_split = |keys: &str, ids: &[String]| {
+            (keys == "E" && ids == ["menu.object.align_centers_h", "roughen"])
+                || node_or_distribute(keys, ids)
+                || (keys == crate::ui::menus::CLIP_EDIT_KEY
+                    && ids
+                        == [
+                            "menu.object.clip_frame_finish",
+                            "menu.object.clip_frame_edit",
+                        ])
+        };
+        holders
             .iter()
             .filter(|(keys, ids)| ids.len() > 1 && !documented_split(keys, ids))
             .map(|(keys, ids)| format!("{keys}: {}", ids.join(", ")))
+            .collect()
+    }
+
+    /// The built-in keys of every menu command, tool and panel, and the
+    /// Ctrl keys the canvas (`pressed(Key::X, cmd)` in `interaction.rs`)
+    /// and the text being typed (`Key::X if ctrl` in `text_editing.rs`)
+    /// check themselves, each as the build shows it
+    /// (`shortcuts::mac_shown`): (holder, keys).
+    fn default_keys_shown(app: &App) -> Vec<(String, String)> {
+        use crate::shortcuts::mac_shown;
+        let mut out: Vec<(String, String)> = command_items(app, None, "")
+            .into_iter()
+            .filter(|c| !c.built_in.is_empty())
+            .map(|c| (c.id, c.built_in))
             .collect();
-        assert!(
-            shared.is_empty(),
-            "shared shortcuts:\n{}",
-            shared.join("\n")
+        for tab in crate::app::DockerTab::ALL {
+            if !tab.shortcut().is_empty() {
+                out.push((format!("panel {tab:?}"), mac_shown(tab.shortcut().into())));
+            }
+        }
+        let ident = |k: &str| {
+            let k: String = k
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect();
+            k.strip_prefix("Num").map(str::to_string).unwrap_or(k)
+        };
+        for part in include_str!("../interaction.rs")
+            .split("pressed(Key::")
+            .skip(1)
+        {
+            let Some((k, rest)) = part.split_once(',') else {
+                continue;
+            };
+            let Some((m, _)) = rest.split_once(')') else {
+                continue;
+            };
+            if !(m.contains("cmd") || m.contains("COMMAND")) {
+                continue;
+            }
+            let mut text = "Ctrl+".to_string();
+            if m.contains("ALT") {
+                text.push_str("Alt+");
+            }
+            if m.contains("SHIFT") {
+                text.push_str("Shift+");
+            }
+            text.push_str(&ident(k.trim()));
+            out.push(("canvas".into(), mac_shown(text)));
+        }
+        for part in include_str!("../text_editing.rs").split("Key::").skip(1) {
+            let Some((head, _)) = part.split_once("=>") else {
+                continue;
+            };
+            let Some((k, cond)) = head.split_once(" if ") else {
+                continue;
+            };
+            if !cond.trim_start().starts_with("ctrl") || k.contains(char::is_whitespace) {
+                continue;
+            }
+            let text = if cond.contains("!shift") || !cond.contains("shift") {
+                format!("Ctrl+{}", ident(k))
+            } else {
+                format!("Ctrl+Shift+{}", ident(k))
+            };
+            out.push(("typing".into(), mac_shown(text)));
+        }
+        out
+    }
+
+    /// #1409: in the macOS desktop app no built-in key is a Command key
+    /// macOS keeps for itself (Quit, Log Out, Hide, Minimize, the
+    /// application switcher, Spotlight, Force Quit, the screenshots): the
+    /// commands that have one built in (Convert to Curves' Command+Q)
+    /// take the key of `shortcuts::MAC_KEYS` there, and the menus and
+    /// the Commands page show it. File > Exit alone shows Command+Q, the
+    /// system's own Quit. Each alternative is bound to nothing else, and
+    /// still no two commands share a key there.
+    #[test]
+    fn no_default_shortcut_is_a_macos_system_key() {
+        use crate::shortcuts::{mac_system_key, same, MAC_KEYS, MAC_QUIT};
+        crate::shortcuts::set_mac_keys_for_test(false);
+        let other = default_keys_shown(&app_with_commands());
+        assert!(other
+            .iter()
+            .any(|(id, k)| id == "menu.object.convert_to_curves" && k == "Ctrl+Q"));
+        crate::shortcuts::set_mac_keys_for_test(true);
+        let app = app_with_commands();
+        let mac = default_keys_shown(&app);
+        let taken: Vec<String> = mac
+            .iter()
+            .filter(|(id, k)| mac_system_key(k) && !(id == "menu.file.exit" && k == MAC_QUIT))
+            .map(|(id, k)| format!("{k}: {id}"))
+            .collect();
+        assert!(taken.is_empty(), "keys macOS keeps:\n{}", taken.join("\n"));
+        for (id, k) in [
+            ("menu.object.convert_to_curves", "Alt+Shift+C"),
+            ("menu.object.convert_outline_to_object", "Alt+Shift+Q"),
+            ("menu.table.merge_cells", "Ctrl+Shift+M"),
+            ("menu.file.exit", "Ctrl+Q"),
+            ("canvas", "Ctrl+Shift+Space"),
+            ("typing", "Ctrl+Shift+H"),
+        ] {
+            assert!(mac.iter().any(|(i, s)| i == id && s == k), "{id}: {k}");
+        }
+        // The menus and context menus show the same keys there.
+        crate::ui::menus::invoke::set_bindings(&[]);
+        assert_eq!(
+            crate::ui::menus::invoke::shown_shortcut("menu.object.convert_to_curves", "Ctrl+Q"),
+            "Alt+Shift+C"
         );
+        assert_eq!(
+            crate::ui::menus::invoke::shown_shortcut("menu.file.exit", "Alt+F4"),
+            "Ctrl+Q"
+        );
+        // An alternative is no key of the other systems' either.
+        for (k, alt) in MAC_KEYS {
+            assert!(!mac_system_key(alt), "{alt}");
+            assert!(
+                !other.iter().any(|(_, o)| same(o, alt)),
+                "{alt} (for {k}) is used"
+            );
+        }
+        // No two commands share a key in the macOS app.
+        assert_eq!(shared_default_shortcuts(&app), Vec::<String>::new());
+        // A Command key macOS keeps cannot be given as a shortcut there.
+        assert!(!crate::shortcuts::allowed(
+            egui::Modifiers::COMMAND,
+            egui::Key::H
+        ));
+        crate::shortcuts::set_mac_keys_for_test(false);
+        assert!(crate::shortcuts::allowed(
+            egui::Modifiers::COMMAND,
+            egui::Key::H
+        ));
     }
 
     /// A shortcut given to a command is taken from the command or tool
@@ -5377,6 +6139,61 @@ mod tests {
         assert_eq!(app.settings.recent_font_count, 5);
     }
 
+    /// Options > Text > Paragraph Text shows Default tab spacing, 12.7 mm
+    /// unless set; it is saved with the other settings (older settings
+    /// files without it give 12.7 mm) and given to the text engine when
+    /// the settings are applied (#1852).
+    #[test]
+    fn the_default_tab_spacing_is_a_saved_setting() {
+        let app = App::headless();
+        assert_eq!(app.settings.default_tab_mm, 12.7);
+        let mut s = app.settings.clone();
+        s.default_tab_mm = 8.0;
+        let json = serde_json::to_string(&s).expect("saved");
+        let back: crate::settings::Settings = serde_json::from_str(&json).expect("read");
+        assert_eq!(back.default_tab_mm, 8.0);
+        let mut v: serde_json::Value = serde_json::from_str(&json).expect("json");
+        v.as_object_mut().expect("object").remove("default_tab_mm");
+        let old: crate::settings::Settings = serde_json::from_value(v).expect("old file");
+        assert_eq!(old.default_tab_mm, 12.7);
+        // Its row on the Paragraph Text tab.
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.options_page = OptionsPage::Text;
+        app.options_text_tab = 1;
+        let label = tr("options.default_tab_spacing");
+        let mut seen = false;
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                let mut close = false;
+                options_dialog(&mut app, ui.ctx(), &mut close);
+            });
+            out.textures_delta.clear();
+            seen = out.shapes.iter().any(|c| {
+                fn has(s: &egui::Shape, t: &str) -> bool {
+                    match s {
+                        egui::Shape::Text(x) => x.galley.text() == t,
+                        egui::Shape::Vec(v) => v.iter().any(|s| has(s, t)),
+                        _ => false,
+                    }
+                }
+                has(&c.shape, &label)
+            });
+        }
+        assert!(seen, "the setting's row is drawn");
+        // Applied with the settings (at its default, so that tests laying
+        // out text at the same time see the spacing they expect).
+        app.apply_runtime_settings();
+        assert_eq!(tracedraw_core::default_tab_step(), 12.7);
+    }
+
     /// Text > Proofing > Autocorrect opens the Autocorrect tab.
     #[test]
     fn the_autocorrect_command_opens_its_tab() {
@@ -5392,6 +6209,130 @@ mod tests {
         assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::Options));
         assert_eq!(app.options_page, OptionsPage::Text);
         assert_eq!(app.options_text_tab, AUTOCORRECT_TAB);
+    }
+
+    /// Customization > Color Palette sets the default palette's layout as
+    /// its own menu does: Rows on a floating palette gives its window that
+    /// many lines (before, only the docked rows were set, and a floating
+    /// palette stayed as it was), and Position docks or floats it (#1983).
+    #[test]
+    fn the_color_palette_page_sets_the_palette_layout() {
+        use crate::ui::bars::{Bar, Dock};
+        use crate::ui::palette::{lines_of, Row};
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.options_page = OptionsPage::ColorPalette;
+        crate::ui::palette_bars::set_dock(&mut app, Row::Main, Dock::Floating, None);
+        assert_eq!(lines_of(&app, Row::Main), 1);
+        let clock = std::cell::Cell::new(0.0);
+        // One frame of the dialog with `events`; each text drawn and where.
+        let mut frame = |app: &mut App, events: Vec<egui::Event>| {
+            clock.set(clock.get() + 0.1);
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                events,
+                time: Some(clock.get()),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                let mut close = false;
+                options_dialog(app, ui.ctx(), &mut close);
+            });
+            out.textures_delta.clear();
+            fn walk(s: &egui::Shape, texts: &mut Vec<(String, egui::Rect)>) {
+                match s {
+                    egui::Shape::Text(t) => texts.push((
+                        t.galley.text().to_string(),
+                        t.galley.rect.translate(t.pos.to_vec2()),
+                    )),
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, texts)),
+                    _ => {}
+                }
+            }
+            let mut texts = Vec::new();
+            out.shapes.iter().for_each(|c| walk(&c.shape, &mut texts));
+            texts
+        };
+        let click = |p: egui::Pos2| {
+            vec![
+                egui::Event::PointerMoved(p),
+                egui::Event::PointerButton {
+                    pos: p,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerButton {
+                    pos: p,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        };
+        // The value shown on the row of `label`, right of it.
+        let value_of = |texts: &[(String, egui::Rect)], label: &str, value: &str| {
+            let (_, l) = texts
+                .iter()
+                .find(|(t, _)| t == label)
+                .unwrap_or_else(|| panic!("no {label} row"));
+            texts
+                .iter()
+                .find(|(t, r)| {
+                    t == value && r.left() > l.right() && (r.center().y - l.center().y).abs() < 6.0
+                })
+                .map(|(_, r)| r.center())
+                .unwrap_or_else(|| panic!("no {value} on the {label} row"))
+        };
+        // A choice in the open list: the one away from the row.
+        let choice = |texts: &[(String, egui::Rect)], value: &str, row: egui::Pos2| {
+            texts
+                .iter()
+                .filter(|(t, r)| t == value && (r.center().y - row.y).abs() > 6.0)
+                .map(|(_, r)| r.center())
+                .next()
+                .unwrap_or_else(|| panic!("no {value} in the list"))
+        };
+        frame(&mut app, Vec::new());
+        let texts = frame(&mut app, Vec::new());
+        let rows = tr("options.palette_rows");
+        let at = value_of(&texts, &rows, "1");
+        frame(&mut app, click(at));
+        let texts = frame(&mut app, Vec::new());
+        let three = choice(&texts, "3", at);
+        frame(&mut app, click(three));
+        frame(&mut app, Vec::new());
+        assert_eq!(
+            app.settings.bars.dock(Bar::Palette),
+            Dock::Floating,
+            "still floating"
+        );
+        assert_eq!(lines_of(&app, Row::Main), 3, "the floating palette's lines");
+        // Position: docked at the left.
+        let texts = frame(&mut app, Vec::new());
+        let position = tr("options.palette_position");
+        let at = value_of(&texts, &position, &tr("palette.float"));
+        frame(&mut app, click(at));
+        let texts = frame(&mut app, Vec::new());
+        let left = choice(&texts, &tr("bars.left"), at);
+        frame(&mut app, click(left));
+        frame(&mut app, Vec::new());
+        assert_eq!(app.settings.bars.dock(Bar::Palette), Dock::Left);
+        // Locked toolbars keep it where it is.
+        app.settings.bars.locked = true;
+        let texts = frame(&mut app, Vec::new());
+        let at = value_of(&texts, &position, &tr("bars.left"));
+        frame(&mut app, click(at));
+        let texts = frame(&mut app, Vec::new());
+        assert!(
+            !texts
+                .iter()
+                .any(|(t, r)| t == &tr("bars.right") && (r.center().y - at.y).abs() > 6.0),
+            "no list while locked"
+        );
     }
 
     #[test]
@@ -5427,6 +6368,58 @@ mod tests {
         // Drawing a page never changes what it shows (fields clamp the
         // values they hold to their ranges).
         assert_eq!(app.star_sharpness, 0.5);
+    }
+
+    /// #2199: the window stays where it is from one page to the next
+    /// and from frame to frame (its first frame aside, which sizes it),
+    /// on a large screen and on one smaller than the dialog; and no page
+    /// is wider than its panel (the Edit page's slider row was, by 32
+    /// points, which made the window wider while it showed).
+    #[test]
+    fn the_window_keeps_its_place_from_page_to_page() {
+        for screen in [egui::vec2(1600.0, 1000.0), egui::vec2(1280.0, 680.0)] {
+            let ctx = crate::theme::ui_context();
+            let mut app = App::headless();
+            let mut first: Option<(OptionsPage, egui::Rect)> = None;
+            let mut frames = 0;
+            let mut wide: Vec<String> = Vec::new();
+            for set in OptionsSet::ALL {
+                for p in set.pages() {
+                    app.options_page = *p;
+                    for _ in 0..3 {
+                        let input = egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen)),
+                            ..Default::default()
+                        };
+                        let mut out = ctx.run_ui(input, |ui| {
+                            let mut close = false;
+                            options_dialog(&mut app, ui.ctx(), &mut close);
+                        });
+                        out.textures_delta.clear();
+                        frames += 1;
+                        if frames == 1 {
+                            continue;
+                        }
+                        let rect = ctx
+                            .memory(|m| m.area_rect(egui::Id::new("options_dialog")))
+                            .expect("the dialog is drawn");
+                        let (at, was) = *first.get_or_insert((*p, rect));
+                        assert!(
+                            (rect.min - was.min).length() < 0.01
+                                && (rect.max - was.max).length() < 0.01,
+                            "{p:?} at {rect:?}, {at:?} at {was:?} (screen {screen:?})"
+                        );
+                        let over: f32 = ctx
+                            .data(|d| d.get_temp(page_overflow_id()))
+                            .expect("a page is drawn");
+                        if over >= 0.5 && !wide.contains(&format!("{p:?} by {over}")) {
+                            wide.push(format!("{p:?} by {over}"));
+                        }
+                    }
+                }
+            }
+            assert!(wide.is_empty(), "wider than the panel: {wide:?}");
+        }
     }
 
     /// A frame of the whole window with `events` as its input.

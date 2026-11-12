@@ -11,7 +11,7 @@ Intermediate objects between a start and an end object.
 | Spacing (along a path) | off, 5 mm | the steps follow from the path's length: `floor(length / spacing) - 1`, 1 to 999 |
 | Loop | off | with a rotation, the steps' centres leave the straight way and curve from the start to the end (a half circle at 180 degrees, a curl through the middle at 360) |
 | Blend along full path | off | along a path, the first and last steps sit on the path's ends |
-| Apply to sizing | off | the object acceleration changes the steps' sizes too |
+| Apply to sizing | off | the object acceleration changes the steps' outlines and sizes too |
 | Color blend | Direct | Direct (straight through RGB), Clockwise (hue increasing), Counterclockwise (hue decreasing), through HSB |
 
 A blend asking for more than 999 steps (from a file or a script) draws
@@ -126,6 +126,14 @@ file, whose end lives only in the effect, is one object whose box is
 the whole blend (#1540,
 `pick_drag_tests::a_blend_s_start_object_shows_its_own_box_and_handles`,
 `tracedraw_core::live::tests::a_blend_start_s_own_box_leaves_the_steps_out`).
+Object > Group (Ctrl+G, and the context menu's Group) groups a blend
+however it is selected: with its start or end object selected alone
+(the blend just made, or a click on a step or on either object) the
+group holds both objects and whatever else is selected; a selection
+box or Ctrl+A selects both already. The blend stays live in the group,
+and one undo takes the group back. Before, a blend selected by a click
+was one object, so Group stayed off and Ctrl+G did nothing (#1842,
+`pick_drag_tests::a_blend_groups_however_it_is_selected`).
 
 Clear Blend removes the blend and leaves both objects; Break
 Apart turns the steps into objects. Files from before this kept the end
@@ -174,6 +182,15 @@ curve and the range the `.cdr` files' blends use, #1192;
   next (#1260,
   `live::tests::a_blend_to_a_turned_copy_turns_its_steps_evenly`). Two
   different outlines are mixed point by point as above.
+- Object acceleration: each step's centre goes `t'` of the way between
+  the two centres, while its outline is the even morph at `t` (moved
+  there). With Apply to sizing the step is the morph at `t'` itself,
+  outline and size: a square blended into a circle with the steps
+  packed toward the circle has round steps by the circle and square
+  ones far from it, as the previews of the `.cdr` files with that
+  setting show. Before, the even morph was only scaled to the size at
+  `t'`, so the steps by the circle stayed square (#1576,
+  `live::tests::apply_to_sizing_morphs_each_step_at_its_accelerated_place`).
 - Colour: mixed directly (each colour's values from start to end), or
   through HSB around the hue circle (Clockwise: the hue rising from the
   start; Counterclockwise: falling), `t'` of the colour acceleration of

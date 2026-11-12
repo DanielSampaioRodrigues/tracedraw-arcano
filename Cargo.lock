@@ -4261,7 +4261,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "tracedraw"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "android-activity",
  "android_logger",
@@ -4276,7 +4276,6 @@ dependencies = [
  "flate2",
  "getrandom 0.2.17",
  "getrandom 0.3.4",
- "i_overlay",
  "image",
  "jiff",
  "jni",
@@ -4292,18 +4291,22 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tiff",
  "tiny-skia",
  "tracedraw-cdr",
  "tracedraw-core",
  "tracedraw-io",
  "tracedraw-render",
  "tracedraw-text",
+ "tracedraw-tracecut",
  "tracedraw-vba",
  "tracedraw-vba-project",
  "ttf-parser",
  "ureq",
+ "vaam-image-webp",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wayland-client",
  "web-sys",
  "web-time",
  "webp",
@@ -4312,11 +4315,13 @@ dependencies = [
  "winresource",
  "x11rb",
  "zip",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
 name = "tracedraw-cdr"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "encoding_rs",
  "flate2",
@@ -4333,7 +4338,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-cdr-format"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "flate2",
  "log",
@@ -4344,7 +4349,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-cli"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "env_logger",
  "flate2",
@@ -4360,7 +4365,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-core"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "base64 0.22.1",
  "i_overlay",
@@ -4372,7 +4377,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-io"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "aes 0.8.4",
  "base64 0.22.1",
@@ -4386,7 +4391,9 @@ dependencies = [
  "md-5 0.10.6",
  "roxmltree 0.21.1",
  "sha2 0.10.9",
+ "simplecss",
  "subsetter",
+ "svgtypes",
  "thiserror 2.0.21",
  "tiny-skia",
  "tracedraw-core",
@@ -4400,7 +4407,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-render"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "log",
  "tiny-skia",
@@ -4409,7 +4416,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-text"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "encoding_rs",
  "fontconfig-parser",
@@ -4425,15 +4432,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracedraw-thumbnailer"
+version = "0.44.0"
+dependencies = [
+ "tracedraw-core",
+ "tracedraw-render",
+ "tracedraw-text",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
+name = "tracedraw-tracecut"
+version = "0.44.0"
+dependencies = [
+ "serde",
+ "tracedraw-core",
+]
+
+[[package]]
 name = "tracedraw-vba"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "boa_engine",
 ]
 
 [[package]]
 name = "tracedraw-vba-project"
-version = "0.39.0"
+version = "0.44.0"
 dependencies = [
  "cfb",
  "chardetng",
@@ -4649,6 +4675,16 @@ checksum = "97277d36b9c3ace13e58fa6e753f8b0bbbf302a18dd193240d70f9e29681059a"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "vaam-image-webp"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f8674acd014f07b7d26cf5cdca65396df4048aa049cef5eb515847216ca7bf4"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
 ]
 
 [[package]]

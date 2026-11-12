@@ -4,8 +4,8 @@
 //! polygons, artistic and paragraph text, groups, clip frames, bitmaps
 //! with and without see-through pixels, uniform, fountain, pattern,
 //! texture and mesh fills, outlines, transparency, blends,
-//! contours, envelopes and extrusions, pages, layers, hidden objects and
-//! page backgrounds) is written in every version the writer produces (7
+//! contours, envelopes and extrusions, pages and their names, layers,
+//! hidden objects and page backgrounds) is written in every version the writer produces (7
 //! to 27), read back, and checked to survive as the writer promises for
 //! that version (`docs/cdr-format.md`, Writing: a few things are written
 //! as what they draw, or lost, in some versions; those limits are the
@@ -117,6 +117,24 @@ fn page_layers(v: u16, page: &tracedraw_core::Page, names: &[&str]) {
 /// `lgob` from version 16; before, every page has the document's size.
 fn keeps_page_sizes(v: u16) -> bool {
     v >= 16
+}
+
+/// A page the user named keeps the name in its own `lgob` (argument
+/// 1000) from version 14; before, pages are read back as "Page N".
+fn keeps_page_names(v: u16) -> bool {
+    v >= 14
+}
+
+/// The names the pages of `doc` read back with: `named` from version 14,
+/// "Page N" before.
+fn page_names(v: u16, doc: &Document, named: &[&str]) {
+    let got: Vec<&str> = doc.pages.iter().map(|p| p.name.as_str()).collect();
+    let want: Vec<String> = if keeps_page_names(v) {
+        named.iter().map(|n| n.to_string()).collect()
+    } else {
+        (1..=named.len()).map(|i| format!("Page {i}")).collect()
+    };
+    assert_eq!(got, want, "version {v}: page names");
 }
 
 // ---- building drawings ---------------------------------------------------
@@ -610,7 +628,7 @@ fn artistic_text_runs_and_lines() {
         red.fill = Some(Fill::Solid(Color::rgb8(255, 0, 0)));
         red.italic = true;
         let mut lined = TextSpan::new("under\nnext line", "Arial", 20.0);
-        lined.underline = true;
+        lined.underline = true.into();
         vec![
             text(ids, vec![bold], Point::new(20.0, 80.0), TextAlign::Left),
             text(
@@ -654,7 +672,11 @@ fn artistic_text_runs_and_lines() {
         let joined: String = spans.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(joined, "Red under\nnext line", "version {}: {spans:?}", r.v);
         assert_eq!(spans[0].font_family, "Georgia", "version {}", r.v);
-        assert!(spans[0].italic && !spans[0].underline, "version {}", r.v);
+        assert!(
+            spans[0].italic && !spans[0].underline.is_on(),
+            "version {}",
+            r.v
+        );
         assert_eq!(
             spans[0].fill,
             Some(Fill::Solid(Color::rgb8(255, 0, 0))),
@@ -664,11 +686,48 @@ fn artistic_text_runs_and_lines() {
         let last = spans.last().expect("span");
         assert_eq!(last.font_family, "Arial", "version {}", r.v);
         assert!(near(last.size_pt, 20.0, 0.01), "version {}", r.v);
-        assert!(last.underline && !last.italic, "version {}", r.v);
+        assert!(last.underline.is_on() && !last.italic, "version {}", r.v);
         let ShapeKind::Text { align, .. } = &r.shape(2).kind else {
             panic!("version {}", r.v);
         };
         assert_eq!(*align, TextAlign::Right, "version {}", r.v);
+    });
+}
+
+/// Texts whose content is linked (#1568) go out as plain texts, each
+/// with its own characters and looks: the link is TraceDraw's own and
+/// reads back as no link.
+#[test]
+fn linked_text_content_goes_out_as_plain_texts() {
+    let doc = drawing(200.0, 100.0, |ids| {
+        let mut a = text(
+            ids,
+            vec![TextSpan::new("SALE", "Verdana", 18.0)],
+            Point::new(20.0, 80.0),
+            TextAlign::Left,
+        );
+        let mut b = text(
+            ids,
+            vec![TextSpan::new("SALE", "Georgia", 30.0)],
+            Point::new(20.0, 40.0),
+            TextAlign::Left,
+        );
+        a.content_link = Some(7);
+        b.content_link = Some(7);
+        vec![a, b]
+    });
+    every_version(&doc, |r| {
+        r.count(2);
+        for (i, font) in [(0, "Verdana"), (1, "Georgia")] {
+            let s = r.shape(i);
+            let ShapeKind::Text { spans, .. } = &s.kind else {
+                panic!("version {}: {}", r.v, kind_name(&s.kind));
+            };
+            let joined: String = spans.iter().map(|s| s.text.as_str()).collect();
+            assert_eq!(joined, "SALE", "version {}", r.v);
+            assert_eq!(spans[0].font_family, font, "version {}", r.v);
+            assert_eq!(s.content_link, None, "version {}", r.v);
+        }
     });
 }
 
@@ -733,35 +792,10 @@ fn paragraph_text_keeps_its_words_and_place() {
     let frame_box = doc.pages[0].layers[0].shapes[0].bounds();
     every_version(&doc, |r| {
         r.count(1);
-        // Paragraph text with its frame (#1226), except in version 8,
-        // whose frames go out as one text per line.
-        if r.v != 8 {
-            let t = r.shape(0);
-            let ShapeKind::Text {
-                spans,
-                frame: Some(f),
-                ..
-            } = &t.kind
-            else {
-                panic!("version {}: {:?}", r.v, t.kind);
-            };
-            let text: String = spans.iter().map(|s| s.text.as_str()).collect();
-            assert_eq!(text, words, "version {}", r.v);
-            assert!(
-                near(f.width, 60.0, 0.01) && near(f.height, 60.0, 0.01),
-                "version {}: {f:?}",
-                r.v
-            );
-            // The frame lies where it did.
-            let corners = t.text_frame_corners().expect("a frame");
-            let b = corners
-                .iter()
-                .fold(Rect::from_points(corners[0], corners[0]), |r, p| {
-                    r.union_pt(*p)
-                });
-            same_box(r.v, b, Rect::new(20.0, 90.0, 80.0, 150.0), 0.01);
-            return;
-        }
+        // Paragraph text goes out as one artistic text per line in every
+        // version: the other program hung on TraceDraw's paragraph frames
+        // (#1698), which are written only when asked for (the writer's own
+        // tests check them, #1226).
         // One text per line, grouped when there are several.
         let mut texts: Vec<&Shape> = Vec::new();
         fn collect<'a>(s: &'a Shape, out: &mut Vec<&'a Shape>) {
@@ -1065,6 +1099,7 @@ fn pattern_texture_and_mesh_fills_go_out_as_one_colour() {
         front: Color::rgb8(255, 0, 0),
         back: Color::rgb8(0, 0, 255),
         size_mm: 5.0,
+        placement: Default::default(),
     });
     let tile = picture(4, 4, false);
     let bitmap_pattern = Fill::Pattern(Pattern::Bitmap {
@@ -1072,6 +1107,7 @@ fn pattern_texture_and_mesh_fills_go_out_as_one_colour() {
         width_px: 4,
         height_px: 4,
         size_mm: 8.0,
+        placement: Default::default(),
     });
     let texture = Fill::Texture(Texture {
         kind: TextureKind::Clouds,
@@ -1495,6 +1531,7 @@ fn pages_layers_hidden_objects_and_backgrounds() {
     ];
     doc.pages[0].layers.push(front);
     doc.pages[0].background = Some(Fill::Solid(Color::rgb8(255, 250, 200)));
+    doc.pages[0].name = "厨房拐角".into();
     let mut second = tracedraw_core::Page {
         id: ids.page(),
         name: "Second".into(),
@@ -1517,6 +1554,7 @@ fn pages_layers_hidden_objects_and_backgrounds() {
     doc.set_ids(ids);
     every_version(&doc, |r| {
         assert_eq!(r.doc.pages.len(), 2, "version {}", r.v);
+        page_names(r.v, &r.doc, &["厨房拐角", "Second"]);
         let first = &r.doc.pages[0];
         assert!(
             near(first.size.width, 200.0, 0.01) && near(first.size.height, 100.0, 0.01),
@@ -1571,6 +1609,43 @@ fn pages_layers_hidden_objects_and_backgrounds() {
             r.v
         );
     });
+}
+
+/// Page names of the user's own survive two round trips, pages of the
+/// document's size included (they have no `lgob` of their own
+/// otherwise); a page still named "Page N" at its place stays unnamed in
+/// the file, while "Page 1" on the second page is a name of its own
+/// (#1807).
+#[test]
+fn page_names_survive_two_round_trips() {
+    let mut doc = Document::new("page names", Size::new(100.0, 100.0));
+    let mut ids = doc.ids().clone();
+    for name in ["Page 1", "Kitchen corner", "Page 3", "Page 1"] {
+        let mut layer = tracedraw_core::Layer::new(ids.layer(), "Layer 1");
+        layer.shapes = vec![rect(&mut ids, Rect::new(10.0, 10.0, 50.0, 50.0), 0.0)];
+        doc.pages.push(tracedraw_core::Page {
+            id: ids.page(),
+            name: name.into(),
+            size: Size::new(100.0, 100.0),
+            layers: vec![layer],
+            guides: Vec::new(),
+            background: None,
+        });
+    }
+    doc.pages.remove(0);
+    doc.pages[0].name = "Cover".into();
+    doc.set_ids(ids);
+    let want = ["Cover", "Kitchen corner", "Page 3", "Page 1"];
+    for v in versions() {
+        let once = document_to_cdr_version(&doc, v);
+        structure::verify(&once, v);
+        let (back, _) = open_bytes(&once, "once").unwrap_or_else(|e| panic!("version {v}: {e}"));
+        assert_eq!(back.pages.len(), 4, "version {v}");
+        page_names(v, &back, &want);
+        let twice = document_to_cdr_version(&back, v);
+        let (again, _) = open_bytes(&twice, "twice").unwrap_or_else(|e| panic!("version {v}: {e}"));
+        page_names(v, &again, &want);
+    }
 }
 
 /// A file written from a drawing read back from a file is the same

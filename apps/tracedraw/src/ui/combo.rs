@@ -4,14 +4,15 @@
 use egui::style::WidgetVisuals;
 use egui::{Painter, Rect, Stroke};
 
-/// A list identified by `id`.
-pub fn from_id_salt(id: impl egui::AsIdSalt) -> egui::ComboBox {
-    egui::ComboBox::from_id_salt(id).icon(chevron)
+/// A list identified by `id`, with the keys of the desktop's lists
+/// (`keynav.rs`).
+pub fn from_id_salt(id: impl egui::AsIdSalt) -> crate::ui::keynav::ComboBox {
+    crate::ui::keynav::ComboBox::from_id_salt(id)
 }
 
 /// A list with a label beside it.
-pub fn from_label(label: impl Into<egui::WidgetText>) -> egui::ComboBox {
-    egui::ComboBox::from_label(label).icon(chevron)
+pub fn from_label(label: impl Into<egui::WidgetText>) -> crate::ui::keynav::ComboBox {
+    crate::ui::keynav::ComboBox::from_label(label)
 }
 
 /// The arrow: a thin chevron pointing down (up while the list is open

@@ -85,6 +85,9 @@ fn android_main(app: AndroidApp) {
     }
     tracedraw_text::install();
     tracedraw_io::emf::install();
+    // The hand resting on the screen does not draw while a pen does
+    // (#1832): winit asks about every pointer with its tool.
+    crate::palm::install();
     // A fresh install starts in the Touch workspace (larger bars and
     // buttons, no rulers or panels, two fingers pan and a pinch zooms);
     // another one picked under Window > Workspace is kept.
@@ -376,6 +379,22 @@ pub mod documents {
                     JValue::Int(request),
                     JValue::Bool(multiple as jni::sys::jboolean),
                 ],
+            )?
+            .v()
+        })
+        .is_some()
+    }
+
+    /// Show the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`); the
+    /// documents in the folder chosen arrive through [`take_answers`]
+    /// with `request`, as picked documents (#1926).
+    pub fn open_tree(request: i32) -> bool {
+        with_activity("open document tree", |env, activity| {
+            env.call_method(
+                activity,
+                jni_str!("openDocumentTree"),
+                jni_sig!("(I)V"),
+                &[JValue::Int(request)],
             )?
             .v()
         })
@@ -864,6 +883,35 @@ pub mod accessibility {
                 .call_method(
                     activity,
                     jni_str!("getAccessibility"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )?
+                .l()?;
+            let s: JString = env.cast_local::<JString>(result)?;
+            Ok(string_of(env, &s))
+        })
+        .flatten()
+    }
+}
+
+/// The screen's safe area (#1917): the room the system bars and the
+/// camera cutout take on each side and the radii of the screen's rounded
+/// corners, in pixels, as the activity last read them at a layout (it
+/// answers at once, without waiting for its UI thread).
+pub mod screen_insets {
+    use super::*;
+    use jni::objects::JString;
+    use jni::{jni_sig, jni_str};
+
+    /// The activity's answer, "top bottom left right tl tr br bl" (such
+    /// as "120 66 0 0 90 90 90 90"), which `screen_margins::parse_system`
+    /// reads; empty before the first layout.
+    pub fn read() -> Option<String> {
+        with_activity("screen insets", |env, activity| {
+            let result = env
+                .call_method(
+                    activity,
+                    jni_str!("getScreenInsets"),
                     jni_sig!("()Ljava/lang/String;"),
                     &[],
                 )?

@@ -28,7 +28,7 @@ określa sposób działania programu. Wybierz stronę z listy po lewej stronie.
   [[options.wheel_scroll]].
 - [[options.open_view]]: [[options.open_view_page]] (domyślnie),
   [[options.open_view_objects]], [[options.open_view_width]],
-  [[options.open_view_height]], [[options.open_view_actual]] lub
+  [[options.open_view_height]], [[options.open_view_actual]], [[options.open_view_percent]] lub
   [[options.open_view_saved]] (strona, miejsce i powiększenie zapamiętane
   przy każdym zapisie pliku TraceDraw).
 - [[options.ruler_calibration]]: przyłóż linijkę do ekranu i zmieniaj wartość
@@ -109,6 +109,7 @@ Strona ma pięć kart.
 - [[options.paragraph_text]]: [[menu.text.show_text_frames]],
   [[menu.text.use_hyphenation]] i [[options.hyphenation_patterns]]
   (wbudowane lub słownik dzielenia wyrazów dla Twojego języka).
+  - [[options.default_tab_spacing]]: dokąd skacze <kbd>Tab</kbd> w akapicie bez własnych znaczników tabulacji (12,7 mm, pół cala).
 - [[docker.fonts]]: [[options.show_recent_fonts]] na górze list czcionek,
   [[options.recent_font_count]] (5, do 20) i
   [[options.font_sample_size]].

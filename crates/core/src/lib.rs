@@ -27,6 +27,7 @@ pub mod geometry;
 pub mod icc;
 pub mod id;
 pub mod join;
+pub mod linked_text;
 pub mod live;
 pub mod nodes;
 pub mod painterly;
@@ -34,8 +35,10 @@ pub mod paragraphs;
 pub mod patch;
 pub mod picture_inks;
 mod press;
+pub mod procedural;
 pub mod shadow;
 pub mod shaping;
+pub mod spreads;
 pub mod style;
 pub mod table;
 pub mod text_flow;
@@ -45,15 +48,15 @@ pub use bytes::SharedBytes;
 pub use color::Color;
 pub use command::Command;
 pub use document::{
-    merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
-    split_spans_at, Baseline, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners,
-    DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc,
-    FollowBlack, FontVariation, Layer, LeadingUnit, MasterPage, MasterScope, MasterView, Metadata, ObjectDefaults, PrimaryFrame,
-    PageMaster, NO_MASTER,
-    ObjectStyle, Page, ParagraphStyle, PathTextOrientation, PathTextVertical, QrCode, QrKind,
-    Shadow, Shape, ShapeKind, StyleParts, Symbol, TabAlign, TabDetail, Table, TableCell,
-    TextAlign, TextOnPath,
-    TextSpan, TimeTracker, TrackedTask, VerticalAlign,
+    default_tab_step, merge_equal_spans, normalized_tabs, set_default_tab_step, spans_apply,
+    spans_char_count, spans_delete, spans_insert, spans_text, split_spans_at, Baseline,
+    BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners, DefaultKind, DefaultProperties,
+    Document, DocumentFont, DocumentProfile, EllipseArc, FollowBlack, FontVariation, Layer,
+    LeadingUnit, LineStyle, MasterPage, MasterScope, MasterView, Metadata, ObjectDefaults,
+    ObjectStyle, Page, PageMaster, ParagraphStyle, PathTextOrientation, PathTextVertical,
+    PrimaryFrame, QrCode, QrKind, Shadow, Shape, ShapeKind, StyleParts, Symbol, TabKind, TabStop,
+    Table, TableCell, TextAlign, TextOnPath, TextPosition, TextSpan, TimeTracker, TrackedTask,
+    VerticalAlign, VerticalColumns, DEFAULT_TAB_STEP, NO_MASTER,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
@@ -61,9 +64,10 @@ pub use icc::{Intent as RenderingIntent, Profile as IccProfile, Transform as Icc
 pub use id::{LayerId, PageId, ShapeId};
 pub use paragraphs::ParagraphFormat;
 pub use style::{
-    arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, FountainRepeat, LineCap, LineJoin,
-    Mesh, MeshHandle, MeshNode, OutlinePosition, Pattern, PatternTile, Stop, Stroke, Texture,
-    TextureKind, WidthNode,
+    arrowhead_paths, Arrowhead, ArrowheadPlacement, ColorBlend, Fill, Fountain, FountainKind,
+    FountainRepeat, LineCap, LineJoin, Mesh, MeshHandle, MeshNode, OutlinePosition, Pattern,
+    PatternTile, Procedural, ProceduralParam, ProceduralParams, ProceduralPattern, Stop, Stroke,
+    Texture, TextureKind, WidthNode,
 };
 pub use table::{BorderSet, CellBorders, CellMargins, CellSide, EdgeBorder, TableHit};
 pub use text_flow::{TextWrap, WrapMode, WrapSide};
@@ -93,12 +97,20 @@ pub enum Error {
     SelectionGroup(u8),
     #[error("object {0:?} is not a clip frame")]
     NotClipFrame(ShapeId),
+    #[error("object {0:?} is not a bitmap")]
+    NotBitmap(ShapeId),
+    #[error("object {0:?} is not a text")]
+    NotText(ShapeId),
     #[error("a B-spline needs two finite control points or more")]
     BadSpline,
     #[error("master page not found: {0}")]
     MasterNotFound(u32),
     #[error("a master page cannot be based on itself, directly or not")]
     MasterLoop,
+    #[error("symbol {0} not found")]
+    SymbolNotFound(usize),
+    #[error("symbol {0} cannot hold an instance of itself")]
+    SymbolCycle(usize),
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }

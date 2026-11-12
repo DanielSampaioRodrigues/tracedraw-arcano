@@ -708,8 +708,8 @@ fn marks(kind: &ShapeKind) -> Vec<(bool, bool, bool, bool, i8, Vec<String>)> {
         let m = (
             sp.bold,
             sp.italic,
-            sp.underline,
-            sp.strikethrough,
+            sp.underline.is_on(),
+            sp.strikethrough.is_on(),
             (sp.baseline_shift_pt.signum()) as i8,
             sp.features.clone(),
         );

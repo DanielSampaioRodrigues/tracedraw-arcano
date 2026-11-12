@@ -55,17 +55,143 @@ Updates opens the releases page).
   Windows on arm64) no file is downloaded and Download opens the release
   page instead; a file for another processor or package is never offered
   (#1038: the x86_64 AppImage took the arm64 one, listed first).
-- Install in place (Linux AppImage only): when TraceDraw runs as an
-  AppImage (the AppImage runtime names its file in `APPIMAGE`) and the
-  release's AppImage for this processor has a SHA-256 digest (GitHub gives one for every
-  uploaded file), the dialog offers Install first. It downloads the
-  AppImage next to the running one (`.<name>.update`), showing the
-  megabytes done, checks its size and digest, gives it the running
-  file's permissions and moves it over the running file. A short, long
-  or mismatched download is deleted and the running file is left as it
-  was; the dialog says why and offers Download. The new version runs
-  from the next start. Windows, macOS, the `.deb` and the tar.gz keep
-  Download and the system's installer.
+- The update card (`ui/update_card.rs`): once a newer release is known
+  (found by the check at start or by Help > Updates) and was not
+  skipped, a card opens in the middle of the window, over a dimmed
+  window, with the TraceDraw icon, the name, an UPDATE badge, the two
+  versions ("v0.28.0 to 0.29.0") and a line of text. Update now starts
+  the install described below (where the copy cannot install by itself
+  it opens the Updates box, which offers Download); nothing is
+  downloaded before the click. Once the install runs the card shows the
+  same step, bar and detail line as the progress dialog below
+  (`ui::update_progress::status`), with Cancel while the file downloads;
+  once it is ready the button becomes Restart Now, after a failure Try
+  Again. What's new opens the release notes. Dismiss, the cross and Escape
+  close it for the session; a card dismissed during the download comes
+  back once, when the file is ready. It waits for any dialog (the
+  first-start question, recovery) and does not show over one. Help >
+  Updates shows its own box instead of the card.
+- Every start while an update is known: the check at start runs once a
+  day, and also at every start while the last check found a newer release
+  that is not installed or skipped (`settings.pending_update`), so the
+  card is there each time TraceDraw opens until the update is done. It is
+  the same request the daily check makes (GitHub's latest release, nothing
+  about the user); a check that finds this version the latest forgets it.
+  Skip this version in the Updates box stops it.
+- Install in place: a copy that can replace itself shows Install first
+  in the dialog (no uninstalling, the settings and drawings stay). It
+  needs the release file for this system, processor and kind of install
+  to carry a SHA-256 digest (GitHub gives one for every uploaded file); a
+  release without one only gets Download. The download is checked for
+  size and digest before anything is touched; a short, long or mismatched
+  download is deleted and the installed copy is left as it was.
+- The progress dialog (`ui/update_progress.rs`), opened by Install in
+  the Updates box: a window of a fixed size (500 x 280 points with its
+  title bar, so nothing moves while the numbers change), moved by its
+  title bar, with the TraceDraw icon, "Updating TraceDraw" and "Version
+  <this> to <new>". Below them the step (`updates::InstallState`):
+  - Downloading: an egui progress bar, the whole percent done (rounded
+    down, 100 only with the last byte, `updates::percent`) and the line
+    "12.3 MB of 45.0 MB, 3.2 MB/s, about 10 s left". The speed is the
+    rate between samples at least 0.25 s apart, smoothed exponentially
+    with a time constant of 2.5 s; after more than a second without data
+    it decays as if nothing arrived (`updates::Meter`). The time left is
+    the bytes left over that speed, shown once the download has run 3 s
+    with three samples and under a day; under 10 s in whole seconds,
+    under 90 s in steps of 5 s, else in minutes. Cancel stops the
+    download at once (`Installer::cancel`): the state is Idle straight
+    away, the body is read on a thread of its own that the install stops
+    waiting for within a tenth of a second (a hanging connection does not
+    hold it), the partial file is removed and the Updates box offers
+    Install again. A new install waits for the cancelled thread to end.
+    The close button and Escape close the window; the download goes on
+    and the update card shows it.
+  - Checking the download (the size and SHA-256 digest are compared) and
+    Installing (the file is moved, unpacked or copied into place): a
+    moving bar, Cancel greyed (a file is not stopped half way).
+  - Ready (`Installed` or `Ready`): a green check mark, "TraceDraw <new>
+    is ready", a line saying what Restart does, Restart Now (the default,
+    Enter) and Later.
+  - Failed: a red mark, "The update could not be installed", the reason
+    in plain words (`updates::trouble`: the server could not be reached,
+    the download was incomplete or damaged, the folder cannot be
+    written, the disk is full, or something else), the error itself in
+    small type, Try Again (Enter) and Download from the website.
+  The window asks for a frame every 200 ms while downloading (the
+  download also asks when it has news, at most every 150 ms), every
+  40 ms while the bar moves, and none once the update is ready or failed.
+  Six kinds of copy (`updates::InstallTarget`), every one that has a
+  release file:
+  - Linux AppImage (`APPIMAGE` names the running file): the release's
+    AppImage is written next to the running one (`.<name>.update`), given
+    the running file's permissions and moved over it. The new version is
+    in place (`InstallState::Installed`).
+  - Windows installed with setup (not the portable copy, not the Store
+    copy): the release's `tracedraw-<v>-windows-<arch>-setup.exe` is
+    downloaded to `%TEMP%\tracedraw-update` (`InstallState::Ready`) and
+    nothing is run yet.
+  - macOS app bundle (`X.app/Contents/MacOS/<program>`; a build run from
+    the source tree has no bundle and gets Download): the disk image is
+    downloaded, mounted read-only and hidden (`hdiutil attach -nobrowse`),
+    its app is copied next to the running bundle with `ditto`, and the
+    two are swapped by renaming (the old bundle moves aside first and
+    comes back if the new one cannot be moved in). The image is
+    unmounted and the download removed on every outcome. A bundle in a
+    folder the user cannot write to fails the install and offers
+    Download.
+  - Linux unpacked from the tar.gz: the archive is downloaded, checked,
+    and its `tracedraw` replaces the running program (under the running
+    file's name, in case the copy was renamed) and its `tracedraw-cli`
+    the tool beside it, if one is there. Every new file is written as a
+    hidden `.<name>.update` first and moved over the old one by rename
+    (a running program can be replaced that way); a damaged archive, one
+    without the program, or a folder that cannot be written changes
+    nothing.
+  - Windows portable zip: the zip's top-level files (the program, the
+    tool, README and licences) replace the ones beside the running
+    program. Entries in a folder, with a path separator, a drive or a
+    leading dot are skipped, so the `tracedraw-settings` folder, in the
+    zip and beside the program, is never touched. Windows cannot
+    overwrite a running program but can rename it: the old file is set
+    aside as `.<name>.old`, the new one moved in (the old one moves back
+    if that fails) and the leftover removed at the next start
+    (`updates::clean_leftovers`).
+  - Linux installed from the `.deb` (offered only when `pkexec` is on the
+    `PATH`): the package is downloaded and checked to
+    `$XDG_CACHE_HOME/tracedraw-update` (`~/.cache/...`, mode 0700; never
+    a shared `/tmp`, because the file is installed as the administrator
+    and must not be swappable after the check) and nothing is run yet
+    (`InstallState::Ready`).
+  After an in-place install (AppImage, app, tar.gz, portable zip) and
+  after a Windows or `.deb` download the dialog offers Restart Now and
+  Later (for the Windows setup and the `.deb` it says that TraceDraw
+  closes, installs the update and starts again). Later
+  closes the dialog and changes nothing: the new version runs from the
+  next start (Windows: the downloaded setup is not run). Restart exits
+  the usual way (File > Exit): drawings with unsaved changes are asked
+  about first, and answering Cancel to any of them cancels Restart
+  (`Installer::arm`/`disarm`). At exit, after the settings are saved,
+  `Installer::run_pending` starts the new version once:
+  - AppImage: the new file, without `APPDIR`, `ARGV0` and `OWD` of the old
+    mount;
+  - Windows: `cmd /C start "" <setup> /SILENT /SUPPRESSMSGBOXES
+    /NORESTART /relaunch=1`. The shell is used so that the setup can ask
+    for administrator approval (a copy installed for all users). Setup
+    keeps the install folder and install mode of the existing copy, its
+    settings and file associations, and `packaging/windows/tracedraw.iss`
+    starts the new TraceDraw at the end when `/relaunch=1` is given;
+  - macOS: `open -n <bundle>`;
+  - tar.gz and portable zip: the program again;
+  - `.deb`: `sh -c 'pkexec dpkg -i "$1"; rm -f "$1"; exec "$2"'`: the
+    password is asked by the system's authentication dialog, the file is
+    removed and the program (`/usr/bin/tracedraw`) starts whether the
+    install worked or not (a refused password leaves the old version,
+    which starts).
+  Copies with no release file (an rpm or other system package, Flatpak,
+  Snap) keep Download or their store; the Microsoft Store and Google Play
+  copies are updated by the store and the browser build is always the
+  latest. The path of the running program is taken once, before an update
+  replaces it (afterwards the system no longer names it).
 - First start: before any check runs on its own, a question asks
   whether to check for updates, Always check or Never check
   (`Dialog::UpdatePolicy`, settings `update_check_asked`). It waits for
@@ -75,8 +201,8 @@ Updates opens the releases page).
   updating. The answer sets the option below.
 - Options > Global > General, Check for updates at start (set by the
   first-start answer): once a day, the same check runs in the background
-  at start; only a newer release that was not skipped is shown, nothing
-  otherwise.
+  at start; only a newer release that was not skipped is shown (by the update
+  card), nothing otherwise.
 - A failed check (no connection) says why and offers the releases page.
 
 ## Checks
@@ -103,3 +229,40 @@ Updates opens the releases page).
   redirect, its digest checked and the file put in place.
   Run again against v0.19.8: the x86_64 AppImage is picked, downloaded
   and checked.
+- `updates::tests::the_setup_and_the_disk_image_come_with_their_digest`
+- `updates::tests::the_app_bundle_is_found_from_the_program`
+- `updates::tests::swapping_the_bundle_never_leaves_the_app_missing`
+- `updates::tests::a_downloaded_file_is_kept_only_when_it_checks_out`
+- `updates::tests::restart_starts_the_new_version` (the commands, and the
+  `/relaunch` entry in `tracedraw.iss`)
+- `updates::tests::the_new_version_starts_only_after_restart`
+- `ui::dialogs::tests::the_updates_dialog_draws_every_state` (Ready too)
+- `documents::tests::cancelling_the_exit_cancels_restart`
+- `updates::tests::every_kind_of_copy_with_a_file_updates_in_place`
+- `updates::tests::the_tar_gz_replaces_the_program_and_its_tool`
+- `updates::tests::a_bad_tar_gz_changes_nothing`
+- `updates::tests::the_portable_zip_keeps_the_settings_folder`
+- `updates::tests::a_running_program_is_set_aside_not_overwritten`
+- `updates::tests::archive_entries_are_installed_under_safe_names_only`
+- `updates::tests::the_deb_installs_as_the_administrator_then_starts_the_program`
+- Not run in CI: the Windows setup run, the macOS mount and copy and
+  `pkexec dpkg` (they need those systems); their commands are built by
+  tested functions.
+- `ui::update_card::tests::the_card_shows_only_for_a_release_to_update_to`
+- `ui::update_card::tests::update_now_installs_when_it_can`
+- `ui::update_card::tests::restart_needs_an_update_in_place`
+- `ui::update_card::tests::a_dismissed_card_comes_back_when_the_download_is_ready`
+- `app::tests::a_found_update_is_remembered_until_it_is_gone`
+- `ui::update_card::tests::the_card_draws_in_every_state`
+- `updates::tests::the_percentage_counts_whole_percent_done`
+- `updates::tests::the_speed_is_smoothed_and_the_time_left_waits_for_it`
+- `updates::tests::install_errors_are_told_in_plain_words`
+- `updates::tests::cancel_stops_the_download_and_removes_the_partial_file`
+- `updates::tests::an_install_goes_through_its_steps`
+- `ui::update_progress::tests::the_detail_line_grows_as_the_numbers_become_meaningful`
+- `ui::update_progress::tests::every_install_state_has_its_phase`
+- `ui::dialogs::tests::the_update_dialog_shows_the_progress_and_the_buttons_of_each_step`
+- `ui::chrome::tests::a_message_box_is_laid_out_in_its_own_size_from_its_first_frame`
+  (message boxes share one window, which egui sizes and places from the
+  frame before; a box that follows one of another size is laid out
+  again in the same frame)

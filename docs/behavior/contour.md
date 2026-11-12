@@ -9,7 +9,7 @@ Contour panel share the controls in `ui/contour_bar.rs`.
 | Control | Default | Range |
 |---|---|---|
 | To centre, Inside, Outside | Outside | |
-| Steps | 3 | 1 to 999 (to centre: as many as fit) |
+| Steps | 3 | 1 to 999 (to centre: as many as fit); a slider on a logarithmic scale with its number box |
 | Offset | 2 mm | 0.001 to 1000 mm, between steps |
 | Corners | Mitred | Mitred, Round, Bevelled |
 | Colour direction | Direct | Direct, Clockwise, Counterclockwise (through the hues) |
@@ -43,6 +43,10 @@ step count, side and end colours, and the steps the file stores go
   object's scale, stretch and rotation applied and the steps are taken
   back into the object's own coordinates, so an 80 mm inside step of a
   scaled polygon lies 80 mm from its edges (#754).
+- The object's area is read with its fill rule: text, and objects set
+  to the nonzero rule, with the nonzero rule, so the overlapping strokes
+  of a letter (as many variable fonts draw them) make no holes, which
+  the even-odd rule gave contours of their own (#2156).
 - `accelerate(t, a) = t ^ (4 ^ a)`: 0 spaces the steps evenly, positive
   values pack them toward the object, negative ones toward the last
   step.
@@ -52,7 +56,12 @@ step count, side and end colours, and the steps the file stores go
   leaves the straight side before it along that side and arrives at the
   next side along it, so it runs on from the sides it joins and stays at
   the contour's distance (#1542,
-  `shaping::tests::a_round_offset_corner_runs_on_from_its_sides`).
+  `shaping::tests::a_round_offset_corner_runs_on_from_its_sides`). The
+  curves of an offset are fitted within 0.05 mm of it and within a
+  tenth of the offset, whichever is less, so the round corners of a
+  contour a few hundredths of a millimetre wide are still arcs and not
+  straight cuts (#2176,
+  `shaping::tests::the_round_corners_of_a_narrow_offset_stay_round`).
 - Colours: step `i` of the `n` drawn takes `accelerate(i / n, colours)`
   of the way from the object's fill (and outline) colour to the last
   step's colours, mixed directly or through the hues clockwise or
@@ -69,6 +78,30 @@ step count, side and end colours, and the steps the file stores go
   contour is drawn live while dragging; one undo step.
 - A click selects the object under the pointer (or nothing). Groups and
   bitmaps get no contour.
+
+## Handles
+
+With the tool and one object selected that has a contour, the canvas
+shows its handles (#1265, `ContourHandles`, `canvas::draw_contour_handles`,
+plain segments and two small rectangles):
+
+- A line from the middle of the object's right edge (page bounds, `a`),
+  to the right for Outside, to the left for Inside and To centre.
+- The offset handle (a square) at its end: `a + d * steps * offset`
+  (To centre: `a + d * offset`), `d` being 1 or -1. Dragging it sets the
+  distance `t` along the line from `a` (the pointer's height is
+  ignored): `offset = t / steps` (To centre `offset = t`), at least
+  0.01 mm, the steps kept.
+- The steps handle (a bar across the line) at `a + d * offset`, the
+  first step's distance without acceleration (none To centre). Dragging
+  it to `t` gives `steps = round(steps * offset / t)` (1 to 999) and the
+  offset that keeps the last step where it was.
+- A press within 9 screen pixels takes a handle, the steps handle first
+  where they meet; the pointer shows a sideways arrow over them. A drag
+  from anywhere else draws a new contour as before.
+- The contour is drawn live at every move; the first move of a drag
+  starts an undo step "Contour" and the others change it, so a drag is
+  one step.
 
 ## Property bar and panel
 
@@ -90,8 +123,20 @@ step count, side and end colours, and the steps the file stores go
 - `live::tests::contour_outside_three_steps`
 - `live::tests::contour_offset_is_measured_on_the_page`
 - `shaping::tests::offset_corners_are_mitred_round_or_bevelled`
+- `shaping::tests::offset_reads_overlapping_strokes_with_the_fill_rule_given`
+- `live::tests::effects_read_text_with_the_nonzero_rule`
+- `effect_outline_tests::inside_contour_of_letters_keeps_its_distance` and
+  `outside_contour_of_letters_keeps_its_distance` (text crate): on the
+  letters of a static and of a variable face, every point of a round
+  contour lies at the offset from the letters' outline, of a mitred one
+  no nearer.
 - `contour_tool::tests::a_drag_draws_a_live_contour`
 - `contour_tool::tests::the_bar_edits_the_selected_contour`
+- `contour_tool::tests::handles_drag_the_offset_and_the_steps`: a 20 mm
+  square with 3 outside steps of 2 mm has its line from (20, 10) to
+  (26, 10) and the steps handle at (22, 10); the offset handle dragged to
+  x = 32 gives 3 steps of 4 mm in one undo step; the steps handle then
+  dragged to x = 22 gives 6 steps of 2 mm.
 - `ui::contour_bar::tests::the_bar_and_the_panel_draw`
 - Given a 20 mm square, outside, 3 steps of 2 mm, mitred, then the
   outermost step is a 32 mm square and its fill is the end colour.

@@ -29,7 +29,7 @@ sinistra.
   [[options.wheel_scroll]].
 - [[options.open_view]]: [[options.open_view_page]] (in partenza),
   [[options.open_view_objects]], [[options.open_view_width]],
-  [[options.open_view_height]], [[options.open_view_actual]] o
+  [[options.open_view_height]], [[options.open_view_actual]], [[options.open_view_percent]] o
   [[options.open_view_saved]] (la pagina, il punto e lo zoom tenuti a ogni
   salvataggio di un file TraceDraw).
 - [[options.ruler_calibration]]: tieni un righello contro lo schermo e cambia
@@ -111,6 +111,7 @@ La pagina ha cinque schede.
 - [[options.paragraph_text]]: [[menu.text.show_text_frames]],
   [[menu.text.use_hyphenation]] e gli [[options.hyphenation_patterns]]
   (integrati, o un dizionario di sillabazione per la tua lingua).
+  - [[options.default_tab_spacing]]: dove salta <kbd>Tab</kbd> in un paragrafo senza arresti di tabulazione propri (12,7 mm, mezzo pollice).
 - [[docker.fonts]]: [[options.show_recent_fonts]] in cima agli elenchi dei
   font, il [[options.recent_font_count]] (5, fino a 20) e la
   [[options.font_sample_size]].

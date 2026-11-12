@@ -106,6 +106,8 @@ fn body_rows<R>(ui: &mut Ui, width_id: egui::Id, add: impl FnOnce(&mut Ui) -> R)
         let _keys = access::Scope::new();
         add(ui)
     };
+    // The row the keys moved to stays in view (#1839).
+    crate::ui::keynav::scroll_into_view(ui);
     let rows = ui.min_rect();
     ui.ctx().data_mut(|d| d.insert_temp(width_id, rows.width()));
     let gutter = egui::Rect::from_min_max(
@@ -184,12 +186,19 @@ fn menu_row_at(
                 .insert(egui::response::Flags::FAKE_PRIMARY_CLICKED);
         }
     }
+    // The keyboard's row (#1839) is lit like the row under the pointer;
+    // while the keys move the highlight, the pointer's row is not lit.
+    if enabled {
+        crate::ui::keynav::note_menu_row(ui.ctx(), resp.id, mark == Mark::Submenu);
+    }
+    let lit = enabled
+        && (resp.has_focus() || resp.hovered() && !crate::ui::keynav::keyboard_mode(ui.ctx()));
     let painter = ui.painter();
     let slot = painter.add(egui::Shape::Noop);
-    if enabled && resp.hovered() {
+    if lit {
         painter.set(slot, highlight(rect));
     }
-    let color = if enabled && resp.hovered() {
+    let color = if lit {
         crate::theme::on_highlight()
     } else if enabled {
         crate::theme::Tokens::text()
@@ -322,26 +331,49 @@ pub(crate) fn item_label(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool
     item_text(ui, label, shortcut, enabled, None, label)
 }
 
+/// Object > Clip to Frame's Fit Contents rows, the clip bar's choices
+/// (#1299).
+pub(crate) const CLIP_FIT_ROWS: [(&str, crate::ui::clip_bar::FitContents); 4] = [
+    (
+        "menu.object.clip_frame_fit_center",
+        crate::ui::clip_bar::FitContents::Center,
+    ),
+    (
+        "menu.object.clip_frame_fit_proportional",
+        crate::ui::clip_bar::FitContents::FitProportionally,
+    ),
+    (
+        "menu.object.clip_frame_fill_proportional",
+        crate::ui::clip_bar::FitContents::FillProportionally,
+    ),
+    (
+        "menu.object.clip_frame_stretch",
+        crate::ui::clip_bar::FitContents::Stretch,
+    ),
+];
+
+/// Help > What's New: the Welcome Screen's history of the last releases.
+pub(crate) fn open_whats_new(app: &mut App) {
+    app.show_welcome = true;
+    app.welcome_tab = crate::app::WelcomeTab::News;
+}
+
 /// A menu item with a ready label and an optional icon; `id` names it for
 /// the test replay.
 /// Help > Mark New Features: the menu rows new in this version and the
 /// submenus that lead to them, by their keys. Each version replaces the
 /// list with its own.
 pub const NEW_IN_THIS_VERSION: &[&str] = &[
-    // Window > New Window.
-    "menu.window",
-    "menu.window.new_window",
-    // Window > Dockers > Effects (the effect stack).
-    "menu.window.dockers",
-    "docker.effects",
-    // Object > Clip to Frame > Opacity Mask, Invert Mask.
-    "menu.object",
-    "menu.object.clip_frame",
-    "menu.object.clip_frame_opacity_mask",
-    "menu.object.clip_frame_invert_mask",
-    // Help > Updates checks for a newer release.
-    "menu.help",
-    "menu.help.updates",
+    // View > Navigator, with the key N, a command like any other.
+    "menu.view",
+    "menu.view.navigator",
+    // Keys for commands that had none (#2201): Ctrl+Shift+I, Ctrl+;
+    // and Ctrl+'.
+    "menu.edit",
+    "menu.edit.invert_selection",
+    "menu.view.guidelines",
+    "menu.view.grid",
+    "menu.view.document_grid",
 ];
 
 thread_local! {
@@ -593,6 +625,14 @@ fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
         "menu.object.to_back_of_page" => Pic::ToBack,
         "menu.object.to_back_of_layer" => Pic::ToBack,
         "menu.object.convert_to_curves" => Pic::ToCurves,
+        "menu.object.node_add" => Pic::AddNode,
+        "menu.object.node_join" => Pic::JoinNodes,
+        "menu.object.node_break" => Pic::BreakCurve,
+        "menu.object.node_to_line" => Pic::ToLine,
+        "menu.object.node_to_curve" => Pic::ToCurve,
+        "menu.object.node_cusp" => Pic::NodeCusp,
+        "menu.object.node_smooth" => Pic::NodeSmooth,
+        "menu.object.node_symmetrical" => Pic::NodeSymmetrical,
         "menu.object.lock_object" | "menu.object.lock" => Pic::Lock(true),
         "menu.object.group" => Pic::Group,
         "menu.object.shaping" => Pic::Weld,
@@ -623,6 +663,7 @@ fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
         "menu.bitmaps.straighten_image" => Pic::StraightenImage,
         "menu.bitmaps.edit_bitmap" => Pic::EditBitmap,
         "menu.bitmaps.crop_bitmap" => Pic::CropBitmap,
+        "menu.bitmaps.crop_to_frame" => Pic::CropBitmap,
         "menu.bitmaps.resample" => Pic::Resample,
         "menu.bitmaps.break_link" => Pic::BreakLink,
         "menu.bitmaps.update_from_link" => Pic::UpdateLink,
@@ -790,19 +831,24 @@ pub(crate) fn sub_if<R>(ui: &mut Ui, key: &str, enabled: bool, add: impl FnOnce(
 
 /// A submenu row: the submenu opens beside it while it is hovered.
 pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
+    let _ = sub_row(ui, key, add);
+}
+
+/// [`sub`], returning the row when it was drawn.
+fn sub_row<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::Response> {
     if invoke::active() {
         // Walked without the menus on screen: the submenu's items count
         // as if it were open.
         invoke::enter(key);
         let _ = add(ui);
         invoke::leave();
-        return;
+        return None;
     }
     #[cfg(test)]
     if replay::active() {
         // Replaying: submenus are laid out inline so their items count.
         let _ = add(ui);
-        return;
+        return None;
     }
     let (resp, slot) = menu_row(ui, &tr(key), "", true, Mark::Submenu);
     row_picture(ui, resp.rect, key, true);
@@ -824,12 +870,13 @@ pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
         .pointer_hover_pos()
         .is_none_or(|p| view.contains(p));
     if !view.intersects(resp.rect) || !(open || pointer_in_view) {
-        return;
+        return Some(resp);
     }
     egui::containers::menu::SubMenu::new().show(ui, &resp, |ui| {
         ui.set_min_width(MENU_WIDTH);
         body(ui, add)
     });
+    Some(resp)
 }
 
 /// Access keys: one letter of each menu row, underlined, that picks the
@@ -875,6 +922,16 @@ pub(crate) mod access {
             .find(|&i| word_start(i) && free(chars[i]))
             .or_else(|| (0..chars.len()).find(|&i| free(chars[i])))
             .map(|i| (i, lower(chars[i])))
+    }
+
+    /// Keep `letters` out of the rows of the menu body being drawn (the
+    /// menu bar's titles, for the menus under More).
+    pub fn reserve(letters: &[char]) {
+        TAKEN.with(|t| {
+            if let Some(taken) = t.borrow_mut().last_mut() {
+                taken.extend(letters.iter().filter(|c| **c != ' '));
+            }
+        });
     }
 
     /// The access key of a row of the menu body being drawn (none outside
@@ -1047,9 +1104,11 @@ pub(crate) mod invoke {
         MODE.with(|m| match m.borrow_mut().as_mut() {
             Some(Mode::Collect { path, out }) => {
                 if key.starts_with("menu.") && !out.iter().any(|e| e.key == key) {
+                    // The macOS desktop app's own key where macOS keeps
+                    // the built-in one (#1409).
                     out.push(Entry {
                         key: key.to_string(),
-                        shortcut: shortcut.to_string(),
+                        shortcut: crate::shortcuts::mac_shown(shortcut.to_string()),
                         path: path.clone(),
                     });
                 }
@@ -1493,6 +1552,42 @@ mod tests {
         }
     }
 
+    /// Page > Facing Pages and its Start On submenu (#1972): run by key,
+    /// each one undo step; choosing a side turns facing pages on.
+    #[test]
+    fn the_page_menu_turns_facing_pages_on_and_picks_the_side() {
+        use tracedraw_core::spreads::PageSide;
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let mut entries = Vec::new();
+        run_frame(&ctx, |ui| entries = commands(&mut app, ui.ctx()));
+        let pos = |key: &str| entries.iter().position(|e| e.key == key);
+        let left = pos("menu.layout.facing_start_left").expect("Left Side");
+        assert_eq!(
+            entries[left].path,
+            ["menu.layout", "menu.layout.facing_start"]
+        );
+        let mut ran = false;
+        run_frame(&ctx, |ui| {
+            ran = run_command(&mut app, ui.ctx(), "menu.layout.facing_pages")
+        });
+        assert!(ran);
+        assert!(app.doc().metadata.facing_pages);
+        assert_eq!(app.doc().metadata.facing_start, PageSide::Right);
+        run_frame(&ctx, |ui| {
+            run_command(&mut app, ui.ctx(), "menu.layout.facing_pages");
+        });
+        assert!(!app.doc().metadata.facing_pages);
+        run_frame(&ctx, |ui| {
+            run_command(&mut app, ui.ctx(), "menu.layout.facing_start_left");
+        });
+        assert!(app.doc().metadata.facing_pages);
+        assert_eq!(app.doc().metadata.facing_start, PageSide::Left);
+        app.undo();
+        assert!(!app.doc().metadata.facing_pages);
+        assert_eq!(app.doc().metadata.facing_start, PageSide::Right);
+    }
+
     #[test]
     fn menu_commands_are_listed_and_run_by_key() {
         let ctx = crate::theme::ui_context();
@@ -1522,9 +1617,9 @@ mod tests {
                 "{key} is not in the menus"
             );
         }
-        assert!(!marked_new("menu.help.updates"));
+        assert!(!marked_new("menu.view.navigator"));
         set_highlight_new(true);
-        assert!(marked_new("menu.help.updates"));
+        assert!(marked_new("menu.view.navigator"));
         assert!(!marked_new("menu.file.export"));
         set_highlight_new(false);
         assert!(
@@ -1595,7 +1690,11 @@ mod tests {
             .collect();
         assert_eq!(
             create,
-            ["menu.object.create_arrowhead", "menu.object.create_pattern"]
+            [
+                "menu.object.create_arrowhead",
+                "menu.object.create_pattern",
+                "menu.object.add_common_shape"
+            ]
         );
         assert!(find("menu.table.create_new_table").is_some());
         // Table's commands sit in a submenu of Text.
@@ -2075,6 +2174,35 @@ mod tests {
 /// first one 11 px from the edge).
 const BAR_FONT: f32 = 13.0;
 
+/// Where the menu bar's titles were drawn, and how many menus are under
+/// its More title (`(Vec<Rect>, usize)` in the context's data).
+pub(crate) const MENU_BAR_LAYOUT: &str = "menu_bar_layout";
+
+/// The menu under More whose submenu opens once More is shown (Alt and
+/// its letter).
+const MORE_PENDING: &str = "menu_bar_more_pending";
+
+/// The access keys of the menus under More, in their order (for tests).
+pub(crate) const MENU_MORE_KEYS: &str = "menu_bar_more_keys";
+
+/// Room kept at the end of a menu bar too short for every title, for the
+/// "More" title (»).
+const MORE_W: f32 = 28.0;
+
+/// A menu title's width on the bar before it was drawn once.
+fn title_width(ui: &Ui, label: &str) -> f32 {
+    let text = ui.fonts_mut(|f| {
+        f.layout_no_wrap(
+            label.to_string(),
+            egui::FontId::proportional(BAR_FONT),
+            Tokens::text(),
+        )
+        .size()
+        .x
+    });
+    text + 2.0 * ui.spacing().button_padding.x
+}
+
 fn menu_bar_style(style: &mut egui::Style) {
     egui::containers::menu::menu_style(style);
     style.override_font_id = Some(egui::FontId::proportional(BAR_FONT));
@@ -2117,14 +2245,25 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         .style(menu_bar_style)
         .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style))
         .ui(ui, |ui| {
+            // The title the keyboard is on (Alt pressed alone, #1839).
+            let bar_focus = crate::ui::keynav::bar_focus(ui.ctx());
+            // A menu opened from the keyboard lights its title as a click
+            // does.
+            let open_title = crate::ui::keynav::open_title(ui.ctx());
             // Each title's access key, for Alt and the letter.
             let mut keys: Vec<char> = Vec::new();
             let mut menu = |ui: &mut Ui, key: &str, f: &mut dyn FnMut(&mut Ui)| -> egui::Response {
                 let label = tr(key);
                 let access = access::choose(&label, &keys);
+                let lit = bar_focus == Some(keys.len()) || open_title == Some(keys.len());
                 keys.push(access.map(|a| a.1).unwrap_or(' '));
                 let title_bottom_id = ui.id().with(key).with("title_bottom");
                 let title_bottom = ui.ctx().data(|d| d.get_temp::<f32>(title_bottom_id));
+                // Lit like a title under the pointer.
+                let inactive = ui.style().visuals.widgets.inactive;
+                if lit {
+                    ui.style_mut().visuals.widgets.inactive = ui.style().visuals.widgets.hovered;
+                }
                 let r = ui
                     .menu_button(
                         access::title(
@@ -2140,6 +2279,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                         },
                     )
                     .response;
+                ui.style_mut().visuals.widgets.inactive = inactive;
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(title_bottom_id, r.rect.bottom()));
                 if marked_new(key) {
@@ -2156,12 +2296,82 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             // Tools, Window and Help remain.
             let has_document = app.has_document();
             let mut titles = Vec::new();
-            for (key, body) in all_menus() {
-                if !has_document && !MENUS_WITHOUT_DRAWING.contains(&key) {
+            // The titles that do not fit the bar (a phone, a tablet in
+            // the Touch workspace, a narrow window) go under the "More"
+            // title at its end (#1301, #1691).
+            let menus: Vec<(&str, fn(&mut App, &mut Ui))> = all_menus()
+                .into_iter()
+                .filter(|(key, _)| has_document || MENUS_WITHOUT_DRAWING.contains(key))
+                .collect();
+            let gap = ui.spacing().item_spacing.x;
+            let width_id = |ui: &Ui, key: &str| ui.id().with(key).with("title_width");
+            let widths: Vec<f32> = menus
+                .iter()
+                .map(|(key, _)| {
+                    let id = width_id(ui, key);
+                    ui.ctx()
+                        .data(|d| d.get_temp::<f32>(id))
+                        .unwrap_or_else(|| title_width(ui, &tr(key)))
+                })
+                .collect();
+            let all = widths.iter().map(|w| w + gap).sum::<f32>();
+            let room = if all > ui.available_width() {
+                ui.available_width() - MORE_W
+            } else {
+                f32::INFINITY
+            };
+            let mut used = 0.0;
+            let mut more: Vec<(&str, fn(&mut App, &mut Ui))> = Vec::new();
+            for ((key, body), width) in menus.into_iter().zip(widths) {
+                if !more.is_empty() || used + width > room {
+                    more.push((key, body));
                     continue;
                 }
-                titles.push(menu(ui, key, &mut |ui| body(app, ui)));
+                let r = menu(ui, key, &mut |ui| body(app, ui));
+                let id = width_id(ui, key);
+                ui.ctx().data_mut(|d| d.insert_temp(id, r.rect.width()));
+                used += r.rect.width() + gap;
+                titles.push(r);
             }
+            // The menus under More keep the access keys they have on a
+            // wide bar: Alt and the letter open More and that menu in it.
+            let bar_keys = keys.clone();
+            let mut more_keys: Vec<char> = Vec::new();
+            for (key, _) in &more {
+                let mut taken = bar_keys.clone();
+                taken.extend(&more_keys);
+                more_keys.push(access::choose(&tr(key), &taken).map_or(' ', |a| a.1));
+            }
+            let mut more_title = None;
+            if !more.is_empty() {
+                let pending_id = egui::Id::new(MORE_PENDING);
+                let r = ui
+                    .menu_button(egui::RichText::new("\u{bb}").size(BAR_FONT), |ui| {
+                        ui.set_min_width(MENU_WIDTH);
+                        body(ui, |ui| {
+                            access::reserve(&bar_keys);
+                            let pending = ui.ctx().data(|d| d.get_temp::<usize>(pending_id));
+                            for (i, (key, f)) in more.iter().enumerate() {
+                                let row = sub_row(ui, key, |ui| f(app, ui));
+                                if let Some(row) = row.filter(|_| pending == Some(i)) {
+                                    open_row_submenu(ui, row.id);
+                                    ui.ctx().data_mut(|d| d.remove::<usize>(pending_id));
+                                }
+                            }
+                        })
+                    })
+                    .response;
+                keys.push(' ');
+                more_title = Some(r.clone());
+                titles.push(r);
+            }
+            // Where the titles went and how many are under More, for the
+            // layout checks.
+            let shown: Vec<egui::Rect> = titles.iter().map(|r| r.rect).collect();
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(egui::Id::new(MENU_BAR_LAYOUT), (shown, more.len()));
+                d.insert_temp(egui::Id::new(MENU_MORE_KEYS), more_keys.clone());
+            });
             switch_on_hover(ui.ctx(), &titles);
             open_with_alt(ui.ctx(), &titles, &keys, &blocked);
             // Arcano edition: the workspaces, at the right.
@@ -2171,6 +2381,21 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                     crate::personas::switch(app, ui);
                 });
             }
+            if let Some(more_title) = &more_title {
+                open_more_with_alt(ui.ctx(), &titles, more_title, &more_keys, &blocked);
+            }
+            // The titles for the keys of the next frame: Left and Right
+            // go from menu to menu (#1839).
+            crate::ui::keynav::note_titles(
+                ui.ctx(),
+                crate::ui::keynav::Titles {
+                    popups: titles
+                        .iter()
+                        .map(egui::Popup::default_response_id)
+                        .collect(),
+                    keys: keys.clone(),
+                },
+            );
         });
 }
 
@@ -2187,24 +2412,62 @@ fn open_with_alt(
     blocked: &dyn Fn(char) -> bool,
 ) {
     let popup_id = egui::Popup::default_response_id;
-    let hit = keys.iter().zip(titles).find(|(c, _)| {
-        !ALT_TAKEN.contains(c)
-            && !blocked(**c)
-            && access::key_of(**c).is_some_and(|key| {
-                ctx.input(|i| {
-                    i.events.iter().any(|e| {
-                        matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. }
-                            if *k == key && modifiers.alt && !modifiers.ctrl && !modifiers.shift)
-                    })
-                })
-            })
-    });
+    let hit = keys
+        .iter()
+        .zip(titles)
+        .find(|(c, _)| alt_pressed(ctx, **c, blocked));
     if let Some((_, r)) = hit {
         for t in titles {
             egui::Popup::close_id(ctx, popup_id(t));
         }
         egui::Popup::open_id(ctx, popup_id(r));
+        // Its first row lit, for the arrows and Enter (#1839).
+        crate::ui::keynav::opened_by_keys(ctx, popup_id(r));
     }
+}
+
+/// Alt and the access key of a menu under More (») open More with that
+/// menu's submenu open, its first row lit, as the title would on a
+/// wide bar.
+fn open_more_with_alt(
+    ctx: &egui::Context,
+    titles: &[egui::Response],
+    more_title: &egui::Response,
+    more_keys: &[char],
+    blocked: &dyn Fn(char) -> bool,
+) {
+    let Some(at) = more_keys.iter().position(|c| alt_pressed(ctx, *c, blocked)) else {
+        return;
+    };
+    let popup_id = egui::Popup::default_response_id;
+    for t in titles {
+        egui::Popup::close_id(ctx, popup_id(t));
+    }
+    egui::Popup::open_id(ctx, popup_id(more_title));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(MORE_PENDING), at));
+    ctx.request_repaint();
+}
+
+/// Alt and the access key `c` were pressed (without Ctrl or Shift) and
+/// nothing else keeps that letter.
+fn alt_pressed(ctx: &egui::Context, c: char, blocked: &dyn Fn(char) -> bool) -> bool {
+    !ALT_TAKEN.contains(&c)
+        && !blocked(c)
+        && access::key_of(c).is_some_and(|key| {
+            ctx.input(|i| {
+                i.events.iter().any(|e| {
+                    matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. }
+                        if *k == key && modifiers.alt && !modifiers.ctrl && !modifiers.shift)
+                })
+            })
+        })
+}
+
+/// Open the submenu of the row `row` of the menu being drawn (next
+/// frame), its first row lit.
+fn open_row_submenu(ui: &Ui, row: egui::Id) {
+    let menu = egui::containers::menu::find_menu_root(ui).id;
+    crate::ui::keynav::open_submenu_by_keys(ui.ctx(), menu, row);
 }
 
 /// With one menu open, pointing at another title of the bar opens that
@@ -2324,7 +2587,15 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         app.import();
     }
     if item(ui, "menu.file.export", "Ctrl+E", doc) {
-        app.export();
+        // Shift held shows the options even when they are set not to show.
+        if !invoke::active() && ui.input(|i| i.modifiers.shift) {
+            app.export_with_options();
+        } else {
+            app.export();
+        }
+    }
+    if item(ui, "menu.file.export_with_options", "Ctrl+Shift+E", doc) {
+        app.export_with_options();
     }
     sub(ui, "menu.file.export_for", |ui| {
         if item(ui, "menu.file.export_for_web", "", doc) {
@@ -2352,8 +2623,16 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.file.publish_to_pdf", "", doc) {
         app.publish_pdf();
     }
-    // Folders are a desktop thing (#852).
-    if item(ui, "menu.file.package", "", doc && !crate::files::WEB) {
+    // Folders are a desktop thing (#852); greyed with the reason in the
+    // browser (#1416).
+    let why = crate::package::why_not_package(crate::files::WEB).map(tr);
+    if item_tip(
+        ui,
+        "menu.file.package",
+        "",
+        doc && why.is_none(),
+        why.as_deref(),
+    ) {
         app.package_dialog();
     }
     sep(ui);
@@ -2393,23 +2672,28 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// The key of Edit Contents and of Finish Editing of a clip frame: into
+/// the frame and out again (`App::toggle_clip_frame_edit`).
+pub const CLIP_EDIT_KEY: &str = "Ctrl+Shift+F3";
+
 fn edit_menu(app: &mut App, ui: &mut Ui) {
     let has = !app.selection.is_empty();
-    let undo = app
-        .engine
-        .undo_label()
+    // A selection command (#2002) or the drawing's last step.
+    let undo_label = app.undo_label();
+    let redo_label = app.redo_label();
+    let can_redo = redo_label.is_some();
+    let undo = undo_label
+        .as_ref()
         .map(|l| format!("{} {l}", tr("menu.edit.undo")))
         .unwrap_or_else(|| tr("menu.edit.undo"));
-    let redo = app
-        .engine
-        .redo_label()
+    let redo = redo_label
         .map(|l| format!("{} {l}", tr("menu.edit.redo")))
         .unwrap_or_else(|| tr("menu.edit.redo"));
     if item_text(
         ui,
         &undo,
         "Ctrl+Z",
-        app.engine.undo_label().is_some(),
+        undo_label.is_some(),
         Some(crate::ui::icons::Action::Undo),
         "menu.edit.undo",
     ) {
@@ -2419,7 +2703,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         ui,
         &redo,
         "Ctrl+Shift+Z",
-        app.engine.redo_label().is_some(),
+        can_redo,
         Some(crate::ui::icons::Action::Redo),
         "menu.edit.redo",
     ) {
@@ -2478,8 +2762,10 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         ) {
             app.text_delete_forward();
         }
-    } else if item(ui, "menu.edit.delete", "Delete", has) {
-        app.delete_selection();
+    } else if item(ui, "menu.edit.delete", "Delete", has || app.nodes_chosen()) {
+        // With the Shape tool and nodes chosen: the nodes, not the
+        // object they belong to (#1982).
+        app.delete_nodes_or_selection();
     }
     sep(ui);
     // Guidelines selected (no objects) duplicate too.
@@ -2502,6 +2788,22 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         }
         if item(ui, "menu.edit.select_all_nodes", "", has) {
             app.select_all_nodes();
+        }
+    });
+    // Selection commands, each one undo step (#2002).
+    if item(
+        ui,
+        "menu.edit.invert_selection",
+        "Ctrl+Shift+I",
+        app.has_document(),
+    ) {
+        app.invert_selection();
+    }
+    sub(ui, "menu.edit.select_similar", |ui| {
+        for how in crate::select_similar::Similar::ALL {
+            if item(ui, how.key(), "", has) {
+                app.select_similar(how);
+            }
         }
     });
     sep(ui);
@@ -2553,6 +2855,10 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.view.multipage", "", app.multipage) {
         app.set_multipage(!app.multipage);
     }
+    // Which pages the Multipage View shows (#1440).
+    if item(ui, "menu.view.multipage_pages", "", app.has_document()) {
+        app.dialog = app.multipage_pages_dialog();
+    }
     if check(
         ui,
         "menu.view.draw_in_perspective",
@@ -2570,6 +2876,16 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     }
     if item(ui, "menu.view.zoom_to_fit", "F4", true) {
         app.zoom_to_fit();
+    }
+    // The key held shows the Navigator while it is down (`view_navigator`);
+    // the menu row opens it until a click.
+    if item(
+        ui,
+        crate::ui::NAVIGATOR_KEY,
+        crate::ui::NAVIGATOR_DEFAULT_KEYS,
+        app.has_document(),
+    ) {
+        app.navigator_pinned = !app.navigator_pinned;
     }
     sep(ui);
     if check(ui, "menu.view.proof_colors", "", app.proof_colors) {
@@ -2598,6 +2914,9 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
         if check(ui, "menu.view.page_border", "", app.show_page_border) {
             app.show_page_border = !app.show_page_border;
         }
+        if check(ui, "menu.view.page_shadow", "", app.show_page_shadow) {
+            app.show_page_shadow = !app.show_page_shadow;
+        }
         if check(ui, "menu.view.bleed", "", app.show_bleed) {
             app.show_bleed = !app.show_bleed;
         }
@@ -2606,7 +2925,7 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sub(ui, "menu.view.grid", |ui| {
-        if check(ui, "menu.view.document_grid", "", app.show_grid) {
+        if check(ui, "menu.view.document_grid", "Ctrl+'", app.show_grid) {
             app.show_grid = !app.show_grid;
         }
         if check(ui, "menu.view.pixel_grid", "", app.show_pixel_grid) {
@@ -2619,7 +2938,11 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.view.rulers", "Alt+Shift+R", app.show_rulers) {
         app.show_rulers = !app.show_rulers;
     }
-    if check(ui, "menu.view.guidelines", "", app.show_guides) {
+    if check(ui, "menu.view.scrollbars", "", app.settings.show_scrollbars) {
+        app.settings.show_scrollbars = !app.settings.show_scrollbars;
+        app.settings.save();
+    }
+    if check(ui, "menu.view.guidelines", "Ctrl+;", app.show_guides) {
         app.show_guides = !app.show_guides;
     }
     if check(
@@ -2771,11 +3094,30 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
             };
         }
     });
-    // Arcano edition: the pages as a book's spreads.
-    let facing = app.has_document() && app.doc().metadata.facing_pages;
-    if mark_item_if(ui, "menu.layout.facing_pages", "", Mark::Check(facing), app.has_document()) {
-        app.set_facing_pages(!facing);
+    // Facing pages: the pages in spreads, the first page on the right
+    // or on the left (#1972, #1660).
+    {
+        use tracedraw_core::spreads::PageSide;
+        let (on, start) = {
+            let m = &app.doc().metadata;
+            (m.facing_pages, m.facing_start)
+        };
+        if check(ui, "menu.layout.facing_pages", "", on) {
+            app.set_facing_pages(!on, start);
+        }
+        sub(ui, "menu.layout.facing_start", |ui| {
+            for (side, key) in [
+                (PageSide::Right, "menu.layout.facing_start_right"),
+                (PageSide::Left, "menu.layout.facing_start_left"),
+            ] {
+                if radio(ui, key, "", on && start == side) {
+                    app.set_facing_pages(true, side);
+                }
+            }
+        });
     }
+    // Arcano edition: threaded text frames inside the margins of a run of
+    // pages.
     if item(ui, "menu.layout.thread_frames", "", app.has_document()) {
         crate::ui::pages_panel::open_thread_window(app, ui.ctx());
     }
@@ -2798,6 +3140,43 @@ pub(crate) fn layout_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.layout.page_background", "", true) {
         app.dialog = Dialog::Options;
         app.options_page = crate::ui::dialogs::OptionsPage::Background;
+    }
+}
+
+/// The Shape tool's node commands, with their keys (#2001): Object >
+/// Nodes, so that they are in Options > Customization > Commands and can
+/// take keys of the user's. They work on the chosen nodes with the Shape
+/// tool; the keys are also read by the canvas
+/// (`App::node_command_key`).
+pub(crate) const NODE_COMMANDS: [(&str, &str); 8] = [
+    ("menu.object.node_add", "+"),
+    ("menu.object.node_join", "Shift+J"),
+    ("menu.object.node_break", "Shift+B"),
+    ("menu.object.node_to_line", "Shift+L"),
+    ("menu.object.node_to_curve", "Shift+U"),
+    ("menu.object.node_cusp", "Shift+C"),
+    ("menu.object.node_smooth", "Shift+M"),
+    ("menu.object.node_symmetrical", "Shift+Y"),
+];
+
+/// Object > Nodes: the node commands of the Shape tool's property bar.
+fn node_items(app: &mut App, ui: &mut Ui) {
+    let has = app.tool == crate::tools::Tool::Shape && !app.node_selection.is_empty();
+    for (key, keys) in NODE_COMMANDS {
+        let enabled = if key == "menu.object.node_join" {
+            has && app.node_selection.len() == 2
+        } else {
+            has
+        };
+        if matches!(
+            key,
+            "menu.object.node_join" | "menu.object.node_to_line" | "menu.object.node_cusp"
+        ) {
+            sep(ui);
+        }
+        if item(ui, key, keys, enabled) {
+            app.run_node_command(key);
+        }
     }
 }
 
@@ -2853,6 +3232,16 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         ) {
             app.dialog = Dialog::CreatePattern { vector: true };
         }
+        // The selection's outline as a shape of the Common Shapes tool's
+        // own set (#481, #782).
+        if item(
+            ui,
+            "menu.object.add_common_shape",
+            "",
+            !app.selection.is_empty(),
+        ) {
+            app.add_selection_as_common_shape();
+        }
     });
     sub(ui, "menu.object.insert", |ui| {
         if item(ui, "menu.object.insert_barcode", "", true) {
@@ -2867,6 +3256,13 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         if item(ui, "menu.object.insert_page_number", "", true) {
             app.insert_page_number(crate::ops2::PageNumberWhere::Active);
         }
+        let has = !app.selection.is_empty();
+        if item(ui, "menu.object.add_dimensions", "", has) {
+            app.add_dimensions(false);
+        }
+        if item(ui, "menu.object.add_dimensions_each", "", has) {
+            app.add_dimensions(true);
+        }
     });
     sep(ui);
     sub(ui, "menu.object.clip_frame", |ui| {
@@ -2879,24 +3275,30 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.status = tr("status.click_frame");
         }
         if item(ui, "menu.object.clip_frame_extract", "", is_clip) {
-            let clips: Vec<_> = app
-                .selected_shapes()
-                .iter()
-                .filter(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
-                .map(|s| s.id)
-                .collect();
-            for c in clips {
-                app.run(Command::ExtractContents { clip: c });
-            }
+            app.extract_clip_contents();
         }
         // Walked for the list of commands (Options > Customization >
         // Commands) both rows count, so each can take a shortcut (#1148).
         let editing = app.clip_frame_edit.is_some();
-        if (editing || invoke::active()) && item(ui, "menu.object.clip_frame_finish", "", editing) {
+        // A symbol being edited finishes from the Symbol menu.
+        let clip_editing = app.editing_clip_contents();
+        if (clip_editing || invoke::active())
+            && item(
+                ui,
+                "menu.object.clip_frame_finish",
+                CLIP_EDIT_KEY,
+                clip_editing,
+            )
+        {
             app.finish_clip_frame_edit();
         }
         if (!editing || invoke::active())
-            && item(ui, "menu.object.clip_frame_edit", "", is_clip && !editing)
+            && item(
+                ui,
+                "menu.object.clip_frame_edit",
+                CLIP_EDIT_KEY,
+                is_clip && !editing,
+            )
         {
             app.edit_clip_frame();
         }
@@ -2908,6 +3310,16 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         if check(ui, "menu.object.clip_frame_lock", "", is_clip && locked) && is_clip {
             app.toggle_clip_frame_lock();
         }
+        // The clip bar's Fit Contents choices, here so they can take
+        // shortcuts (#1299); each selected frame fits its own contents.
+        sep(ui);
+        for (key, mode) in CLIP_FIT_ROWS {
+            if item(ui, key, "", is_clip && !editing) {
+                let clips: Vec<_> = app.selected_shapes().iter().map(|s| s.id).collect();
+                app.fit_clips_contents(&clips, mode);
+            }
+        }
+        sep(ui);
         let masks: Vec<_> = app
             .selected_shapes()
             .iter()
@@ -2964,6 +3376,27 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         if item(ui, "menu.object.symbol_insert", "", has_symbols) {
             let last = app.doc().symbols.len().saturating_sub(1);
             app.insert_symbol_instance(last);
+        }
+        // Edit Symbol and Finish Editing Symbol take turns (#1980); both
+        // rows count for the list of commands.
+        let editing_symbol = app.symbol_edit_index().is_some();
+        let one_instance = app.selected_symbol_instance();
+        if (!editing_symbol || invoke::active())
+            && item(
+                ui,
+                "menu.object.symbol_edit",
+                "",
+                one_instance.is_some() && app.clip_frame_edit.is_none(),
+            )
+        {
+            if let Some(id) = one_instance {
+                app.edit_symbol_instance(id);
+            }
+        }
+        if (editing_symbol || invoke::active())
+            && item(ui, "menu.object.symbol_finish", "", editing_symbol)
+        {
+            app.finish_clip_frame_edit();
         }
         if item(ui, "menu.object.symbol_revert", "", has_instance) {
             app.revert_symbol_instances();
@@ -3042,17 +3475,37 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         }
         sep(ui);
         let three = app.selection.len() >= 3;
-        for (key, d) in [
-            ("menu.object.distribute_left", Distribute::Left),
-            ("menu.object.distribute_centers_h", Distribute::CentersH),
-            ("menu.object.distribute_spacing_h", Distribute::SpacingH),
-            ("menu.object.distribute_right", Distribute::Right),
-            ("menu.object.distribute_top", Distribute::Top),
-            ("menu.object.distribute_centers_v", Distribute::CentersV),
-            ("menu.object.distribute_spacing_v", Distribute::SpacingV),
-            ("menu.object.distribute_bottom", Distribute::Bottom),
+        for (key, shortcut, d) in [
+            ("menu.object.distribute_left", "Shift+L", Distribute::Left),
+            (
+                "menu.object.distribute_centers_h",
+                "Shift+E",
+                Distribute::CentersH,
+            ),
+            (
+                "menu.object.distribute_spacing_h",
+                "Shift+P",
+                Distribute::SpacingH,
+            ),
+            ("menu.object.distribute_right", "Shift+R", Distribute::Right),
+            ("menu.object.distribute_top", "Shift+T", Distribute::Top),
+            (
+                "menu.object.distribute_centers_v",
+                "Shift+C",
+                Distribute::CentersV,
+            ),
+            (
+                "menu.object.distribute_spacing_v",
+                "Shift+A",
+                Distribute::SpacingV,
+            ),
+            (
+                "menu.object.distribute_bottom",
+                "Shift+B",
+                Distribute::Bottom,
+            ),
         ] {
-            if item(ui, key, "", three) {
+            if item(ui, key, shortcut, three) {
                 app.distribute(d);
             }
         }
@@ -3097,7 +3550,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sub(ui, "menu.object.group", |ui| {
-        if item(ui, "menu.object.group_group", "Ctrl+G", many) {
+        if item(ui, "menu.object.group_group", "Ctrl+G", app.can_group()) {
             app.group_selection();
         }
         if item(ui, "menu.object.group_ungroup", "Ctrl+U", has) {
@@ -3200,6 +3653,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         app.show_dockers = true;
         app.docker_tab = crate::app::DockerTab::JoinCurves;
     }
+    sub(ui, "menu.object.nodes", |ui| node_items(app, ui));
     sep(ui);
     let has_fill = app
         .selected_shapes()
@@ -3266,6 +3720,16 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
         .any(|s| matches!(s.kind, ShapeKind::Bitmap { .. }));
     if item(ui, "menu.effects.flatten", "", has) {
         app.flatten_effects();
+    }
+    // The selected picture's effects on every picture of the drawing
+    // (#1551).
+    if item(
+        ui,
+        "menu.effects.all_pages",
+        "",
+        app.doc().pages.len() > 1 && app.can_apply_effects_to_all_pages(),
+    ) {
+        app.apply_effects_to_all_pages();
     }
     sep(ui);
     // Bitmap effect groups.
@@ -3356,6 +3820,10 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     }
     if item(ui, "menu.bitmaps.crop_bitmap", "", has_bitmap) {
         app.set_tool(crate::tools::Tool::Crop);
+    }
+    let framed = !app.framed_pictures().is_empty();
+    if item(ui, "menu.bitmaps.crop_to_frame", "", framed) {
+        app.crop_pictures_to_frames();
     }
     if item(ui, "menu.bitmaps.resample", "", has_bitmap) {
         app.open_resample();
@@ -3534,6 +4002,21 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         if mark_item_if(ui, "menu.text.vertical_text", "", Mark::Check(on), offered) {
             app.set_vertical_text(!on);
         }
+        // The columns of vertical text left to right (#1986).
+        let ltr = app.vertical_columns() == Some(tracedraw_core::VerticalColumns::LeftToRight);
+        if mark_item_if(
+            ui,
+            "menu.text.vertical_columns_ltr",
+            "",
+            Mark::Check(ltr),
+            offered && on,
+        ) {
+            app.set_vertical_columns(if ltr {
+                tracedraw_core::VerticalColumns::RightToLeft
+            } else {
+                tracedraw_core::VerticalColumns::LeftToRight
+            });
+        }
     }
     if item(ui, "menu.text.edit_text", "Ctrl+Shift+T", is_text) {
         app.open_edit_text_dialog();
@@ -3594,6 +4077,24 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
+    // Linked text content (#1568): texts that hold the same characters,
+    // each in its own look; not the frame flow above.
+    if item(
+        ui,
+        "menu.text.link_content",
+        "",
+        app.can_link_text_content(),
+    ) {
+        app.link_text_content();
+    }
+    if item(
+        ui,
+        "menu.text.unlink_content",
+        "",
+        app.selection_has_content_link(),
+    ) {
+        app.unlink_text_content();
+    }
     // Tables: a submenu of Text (its keys keep the `menu.table` prefix).
     sub(ui, "menu.table", |ui| table_menu(app, ui));
     sep(ui);
@@ -3872,6 +4373,9 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.tools.font_manager", "", true) {
         app.dialog = Dialog::FontManager(Default::default());
     }
+    if crate::ui::tracecut::shown(app) && item(ui, "menu.tools.tracecut", "", true) {
+        app.open_tracecut();
+    }
     if item(ui, "menu.tools.border_and_grommet", "", true) {
         app.dialog = Dialog::BorderGrommet(Default::default());
     }
@@ -4145,6 +4649,16 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
         let topic = crate::help::context_topic(app);
         app.open_help(topic);
     }
+    // Find a menu command by its name and run it (see
+    // `ui::command_search`).
+    if item(
+        ui,
+        crate::ui::command_search::MENU_KEY,
+        "Ctrl+Shift+P",
+        true,
+    ) {
+        app.command_search.open();
+    }
     sep(ui);
     if item(ui, "menu.help.welcome_screen", "", true) {
         app.show_welcome = true;
@@ -4171,8 +4685,7 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
     }
     sep(ui);
     if item(ui, "menu.help.whats_new", "", true) {
-        app.show_welcome = true;
-        app.welcome_tab = crate::app::WelcomeTab::News;
+        open_whats_new(app);
     }
     if check(
         ui,

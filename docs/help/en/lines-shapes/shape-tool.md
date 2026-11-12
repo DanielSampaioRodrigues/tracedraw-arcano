@@ -56,9 +56,8 @@ over a control handle, a wave over a segment.
   adds a node in the middle of each segment that ends at them. Neighbouring
   nodes deleted together leave one curve fitted to the old outline, so the
   shape keeps its general form.
-- With nodes selected, <kbd>C</kbd> switches them between cusp and smooth,
-  <kbd>S</kbd> between smooth and symmetrical, and <kbd>Y</kbd> makes them
-  symmetrical.
+- With nodes selected, <kbd>C</kbd> makes them cusp, <kbd>S</kbd> smooth
+  and <kbd>Y</kbd> symmetrical.
 - With nodes selected, <kbd>Ctrl+C</kbd> copies the segments between them as
   new curves, <kbd>Ctrl+X</kbd> cuts them out, and <kbd>Ctrl+D</kbd>
   duplicates them.
@@ -83,6 +82,12 @@ are off at first, so they do not get in the way of editing nodes; turn on
   rounded corner keeps its ring: drag it again to change the radius, further
   in or back to a sharp corner. This also works on corners rounded in saved
   drawings and with the [[docker.corners]] panel.
+- With the rings on, the property bar shows the radius of the chosen
+  corners (click a ring to choose it), or of every corner when none is
+  chosen; type a radius to round them. The three buttons before it make
+  the value round the corners, scallop them (a notch curving inward) or
+  chamfer them (a straight cut), the value then being the distance along
+  each side.
 - On a stretched curve the corners come out round on the page, not oval.
   Rectangles round their corners by their own nodes, whatever this option
   says.

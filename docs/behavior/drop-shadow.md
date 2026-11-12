@@ -43,13 +43,52 @@ written (the blend goes out alone, with a warning in the log).
   (the top and bottom edges first, then left and right) makes a
   perspective shadow standing on that edge: the edge stays where it is
   and the opposite side of the object falls on the pointer.
-- One drag is one undo step.
+- One drag is one undo step. A drag that starts on one of several
+  selected objects keeps the selection: each of them takes the shadow,
+  a perspective one standing on its own edge (#2218). A drag on an
+  object that is not selected takes that object alone.
+- The drag starts on the object picked at the press, or else on the
+  topmost object whose outline as drawn goes round the press: the hole
+  of a ring whose inner outline runs the other way round (as the
+  shaping operations leave it) picks nothing, and a press there started
+  no shadow, so a ring took one only from its band. From the hole, as
+  from anywhere in the middle, the shadow is flat (#2219,
+  `App::shadow_drag_target`,
+  `pick_drag_tests::shadow_drags_start_anywhere_inside_an_object`).
 - A group or a clip frame takes a shadow of its own, drawn beneath
   everything it holds. Its silhouette is what it shows: each object of
   a group, and a clip frame's filled frame with its contents cut to the
   frame (an empty part of an unfilled frame, or contents outside the
   frame, cast none). The shadow is measured on the frame's box (the
   group's box). Break Drop Shadow Apart makes the same silhouette (#873).
+
+- An object with an envelope, a perspective or a distortion takes its
+  shadow by the outline it shows: the box the tool measures on (which
+  edge a press is next to, where the handles sit, where a perspective
+  shadow stands and how far it reaches) is the box of the outline as
+  drawn, the same the shadow is cast from, and the shadow is picked
+  where it lies (`Shape::shadow_outline`, `Shape::shadow_box`). The
+  tool went by the outline without the warp, so a press in the middle
+  of a bent object could stand a perspective shadow on a far edge and
+  the handles sat away from the object (#2217,
+  `shadow_tool::tests::the_shadow_of_an_enveloped_object_goes_by_what_is_drawn`).
+- An object whose live effects draw objects of their own (the body of
+  an extrusion, the steps of a contour or a blend, a block shadow, the
+  copies of a symmetry) casts the shadow of all of it, drawn once
+  beneath all of it. The shadow is measured on the box of the object's
+  own outline as drawn (of its plain outline when the effects draw the
+  object among their objects, as a body turned in space does), and its
+  layer reaches round everything the effects add. Before, the shadow
+  was the object's alone and was drawn after what the effects put
+  behind the object, so it lay over the body of an extrusion; a body
+  turned in space cast none (#2215). A group's shadow takes in what
+  the effects of its objects draw, and the shadow's picture (Break
+  Drop Shadow Apart, PDF, `.cdr`) is the same silhouette, an envelope
+  or another warp taken in
+  (`tracedraw_render`
+  `tests::an_extruded_object_casts_the_shadow_of_its_body_beneath_it`,
+  `tests::the_shadow_picture_of_an_enveloped_object_is_of_what_is_drawn`).
+  A picture with effects keeps the shadow of what its pixels show.
 
 ## Perspective geometry
 
@@ -86,7 +125,9 @@ a bar on the line at the opacity (start = 0 %, end = 100 %).
 - Dragging the end moves the offset, or the angle and stretch.
 - Dragging the bar sets the opacity (whole per cent).
 - Dragging the start to another edge stands the shadow on that edge;
-  to the middle makes it flat. The end stays where it was.
+  to the middle makes it flat. The end stays where it was. The start
+  handle follows the pointer while it is held, flat or standing on any
+  edge, and goes back to where the shadow starts when let go.
 - Dragging the dashed line (within the pick distance of Options > Nodes
   and Handles, away from the squares and the bar) moves the whole
   shadow: its end goes as far as the pointer, as a drag on the shadow
@@ -99,7 +140,13 @@ a bar on the line at the opacity (start = 0 %, end = 100 %).
 - Each drag of a handle or the line is one undo step of its own.
 
 The squares are 12 pixels wide and a press within 11 pixels of one
-takes it, whatever the zoom (#1323).
+takes it, whatever the zoom (#1323). Where handles lie closer than that
+(a short offset, a short perspective shadow, a low opacity), a press
+takes the nearest one, the end first where two lie on one spot: the end
+used to take every press within its reach, so the start under it could
+not be grabbed. Every handle is grabbed and dragged in every mode, flat
+and on each edge
+(`pick_drag_tests::shadow_handles_are_grabbed_and_dragged_in_every_mode`).
 
 ## Property bar applies at once
 
@@ -117,6 +164,14 @@ own outline, the same as after Convert to Curves, on every platform
 (`shadow_tool::tests::native_shapes_pick_their_shadow_by_the_outline`,
 `tracedraw_render` `tests::native_shapes_cast_the_shadow_of_their_outline`).
 
+The silhouette is filled by the object's own fill rule, so a hole of the
+object (a ring of two circles combined, the middle of a crossing star) is
+a hole of its shadow, on the page, in a group's shadow and in the
+shadow's picture; text, and a curve set to the nonzero rule, stay solid
+where their contours overlap (#2216,
+`tracedraw_render` `tests::a_drop_shadow_keeps_the_holes_of_its_object`,
+`tracedraw_cdr` `shadow_image::tests::the_shadow_of_a_ring_has_its_hole`).
+
 ## Picking a shadow
 
 A shadow is picked with its object, where it lies above what is beneath
@@ -133,6 +188,31 @@ With the Drop Shadow tool a click on a shadow selects its object and
 shows the shadow's handles; a drag that starts on the shadow (not on a
 handle or on the object) moves the whole shadow: its end goes as far as
 the pointer does.
+
+An object that casts a drop shadow of its own is never lost to another
+object's shadow lying over it: a click on it picks it (Shift adds it),
+with the Pick tool and with the Drop Shadow tool, so picking one
+shadowed object after another never jumps to the neighbour whose shadow
+falls there. A shadow still wins over an object of no shadow beneath it
+(a background), as above
+(`pick_drag_tests::a_click_on_an_object_with_a_shadow_never_picks_another_ones_shadow`).
+
+## Editing a shadow
+
+- A double click on a shadow with the Pick tool (away from its object,
+  or where it lies over an object it is picked above) chooses the Drop
+  Shadow tool with that object alone selected: its handles show and the
+  property bar shows its settings. With the Drop Shadow tool chosen, a
+  click or double click on an object with a shadow picks it.
+- The handles and the property bar follow the first selected object that
+  has a shadow, also with an object of no shadow picked before it; the
+  bar shows the settings new shadows get only when no selected object has
+  one.
+- Edit Shadow, in the right-click menu of a selection with a shadowed
+  object and as a button in the Drop Shadow section of the Properties
+  docker (shown for such an object, with a line telling Flat or the edge
+  and the opacity), does the same as the double click
+  (`pick_drag_tests::a_double_click_on_a_shadow_edits_it_with_the_shadow_tool`).
 
 ## Drawing speed
 
@@ -160,9 +240,11 @@ PDF) draw each shadow beneath its object as a picture of the blurred
 silhouette at 300 dpi (fewer when the shadow is so large it would pass
 40 million pixels), in the shadow's colour, with its feathering, fade
 and opacity in a soft mask; PDF has no blur of its own. The merge mode
-goes in as the PDF blend mode nearest to it (Multiply, Difference,
-Screen for Divide, Lighten, Darken, Hue, Saturation, Color, Exclusion
-for Invert; the others draw normally). The object stays vector on top.
+goes in as the PDF blend mode nearest to it (the table of
+`transparency.md`, Merge modes: Multiply, Difference, Screen for Divide,
+Lighten, Darken, Hue, Saturation, Color, Luminosity for Lightness,
+Exclusion for Invert, Overlay, SoftLight, HardLight, ColorDodge,
+ColorBurn; the others draw normally). The object stays vector on top.
 The colour image downsampling asked for applies to the shadow's picture
 too. PDF/X-1a and X-3 keep no transparency: an object with a shadow is
 flattened with what lies beneath it, over the shadow's area (#1029).

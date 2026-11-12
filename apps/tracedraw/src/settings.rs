@@ -152,6 +152,9 @@ pub struct Settings {
     /// The Welcome Screen tab was closed: it shows as its house alone
     /// until the Welcome Screen is shown again (#677).
     pub welcome_tab_closed: bool,
+    /// The Crop tool cuts an upright picture's pixels instead of putting
+    /// it in a clip frame (#1913).
+    pub crop_picture_pixels: bool,
     /// Options > Tools > Table: what Tab does in a cell.
     #[serde(default)]
     pub table: crate::table_tool::TablePrefs,
@@ -172,6 +175,11 @@ pub struct Settings {
     #[serde(default)]
     pub bitmap_editor: String,
     pub last_dir: Option<PathBuf>,
+    /// The folder exported to last: File > Export's dialog opens there
+    /// (#1817).
+    pub last_export_dir: Option<PathBuf>,
+    /// Folders bookmarked in the Save Drawing dialog (#1391).
+    pub folder_bookmarks: Vec<PathBuf>,
     pub color: ColorPrefs,
     /// Show the Outline flyout in the toolbox (hidden by default).
     pub show_outline_flyout: bool,
@@ -185,6 +193,10 @@ pub struct Settings {
     /// The view a drawing opens in (#1134).
     #[serde(default)]
     pub open_view: OpenView,
+    /// The zoom, in percent, of the Zoom level choice of `open_view`
+    /// (#1266).
+    #[serde(default = "default_open_zoom_percent")]
+    pub open_zoom_percent: f32,
     /// Arrowheads created with Object > Create > Arrowhead.
     #[serde(default)]
     pub custom_arrowheads: Vec<tracedraw_core::Arrowhead>,
@@ -222,6 +234,11 @@ pub struct Settings {
     /// New (off: new drawings use the last settings at once).
     #[serde(default = "default_true")]
     pub show_new_document_dialog: bool,
+    /// View > Scrollbars: the drawing window's scrollbars shown (off:
+    /// the drawing takes their room; the page tabs and the Navigator
+    /// button stay, #1344).
+    #[serde(default = "default_true")]
+    pub show_scrollbars: bool,
     /// The Create a New Document dialog's last used settings.
     #[serde(default)]
     pub new_document: crate::new_document::NewDocSettings,
@@ -279,6 +296,12 @@ pub struct Settings {
     /// not ("software" or "gl"); cleared when the choice changes.
     #[serde(default)]
     pub working_renderer: String,
+    /// Options > General, Linux: on a Wayland desktop that leaves the
+    /// title bar to the application, open the window through XWayland so
+    /// that the desktop draws its own, from the next start (#2070,
+    /// `title_bar.rs`).
+    #[serde(default)]
+    pub system_title_bar: bool,
     /// Customization > Appearance: dialogs open in the middle of the
     /// window and stay there; off, they move by their title bar and open
     /// where they were left.
@@ -343,12 +366,20 @@ pub struct Settings {
     /// collections.
     #[serde(default)]
     pub font_manager: crate::ui::font_manager::FontManagerPrefs,
+    /// TraceCut: shown or not (Options > General) and the tool picked
+    /// last.
+    #[serde(default)]
+    pub tracecut: crate::tracecut::TraceCutPrefs,
     #[serde(default)]
     pub hide_bbox_curve_tools: bool,
     /// Options > Display: the Pick tool selects and drags the nodes of a
     /// selected curve (node tracking).
     #[serde(default)]
     pub node_tracking: bool,
+    /// Options > Display: Shift, Ctrl, Alt and Delete on the drawing,
+    /// where there is a touch screen (#1996).
+    #[serde(default = "default_true")]
+    pub touch_keys: bool,
     #[serde(default = "default_true")]
     pub preview_page_border: bool,
     /// Options > Edit: Ctrl constrains rotation and line angles to
@@ -383,6 +414,10 @@ pub struct Settings {
     /// many points.
     #[serde(default = "default_text_increment")]
     pub text_increment_pt: f64,
+    /// Options > Text > Paragraph Text: the distance between the default
+    /// tab stops of a paragraph with no stops of its own, mm (#1852).
+    #[serde(default = "default_tab_spacing")]
+    pub default_tab_mm: f64,
     /// Options > Tools > Pick: unfilled objects can be picked inside (on
     /// by default).
     #[serde(default = "default_true")]
@@ -435,10 +470,23 @@ pub struct Settings {
     /// (off by default: the point stays under the pointer).
     #[serde(default)]
     pub wheel_zoom_centers: bool,
+    /// Options > Tools > Zoom/Pan > Smooth zoom: a wheel notch zooms in
+    /// a short glide, shorter for faster wheel turns (on by default);
+    /// off, each notch zooms at once (#1648, #895).
+    #[serde(default = "default_true")]
+    pub smooth_zoom: bool,
+    /// Options > Tools > Zoom/Pan: how much one wheel notch zooms, in
+    /// percent (15 by default); see [`Settings::wheel_zoom_factor`].
+    #[serde(default = "default_wheel_zoom_step")]
+    pub wheel_zoom_step: f32,
     /// Options > Tools > Zoom/Pan: a right click with the Pan tool zooms
     /// out (off, the default: it opens the context menu).
     #[serde(default)]
     pub pan_right_click_out: bool,
+    /// Options > Tools > Zoom/Pan > Pan inertia: a pan let go while
+    /// moving slides on and eases out (off by default, #831).
+    #[serde(default)]
+    pub pan_inertia: bool,
     /// Options > Customization > Color Palette.
     #[serde(default)]
     pub palette: PalettePrefs,
@@ -628,6 +676,11 @@ pub struct Settings {
     /// The colour, picture and name given to Drawing and Page.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub arcano_workspace_looks: std::collections::BTreeMap<String, crate::personas::WorkspaceLook>,
+    /// The newest release the last check found that this version is
+    /// older than: while it is not installed or skipped, every start asks
+    /// again, so the update card shows at each start until it is done.
+    #[serde(default)]
+    pub pending_update: String,
     /// Scripts panel > Install as Filter: file formats that scripts read
     /// or write (see `behavior/script-filters.md`).
     #[serde(default)]
@@ -656,6 +709,10 @@ pub struct Settings {
     /// The step of tick snapping, mm.
     #[serde(default = "default_path_tick")]
     pub path_tick_mm: f64,
+    /// Options > Display, Screen margins (Android, #1917): the interface
+    /// keeps clear of the camera cutout and the screen's rounded corners.
+    #[serde(default)]
+    pub screen_margins: crate::ui::screen_margins::ScreenMargins,
 }
 
 fn default_path_tick() -> f64 {
@@ -762,7 +819,7 @@ fn default_desktop() -> [u8; 3] {
 }
 
 /// How many one-time upgrades `Settings::upgrade` knows.
-const UPGRADES: u32 = 5;
+const UPGRADES: u32 = 7;
 
 fn default_outline_units() -> String {
     "pt".into()
@@ -774,6 +831,27 @@ fn default_true() -> bool {
 
 fn default_screen_ppi() -> f32 {
     96.0
+}
+
+/// The zoom of one wheel notch, percent: 15 % (a factor of 1.15).
+pub const DEFAULT_WHEEL_ZOOM_STEP: f32 = 15.0;
+
+fn default_wheel_zoom_step() -> f32 {
+    DEFAULT_WHEEL_ZOOM_STEP
+}
+
+impl Settings {
+    /// The factor one wheel notch zooms by: 1 plus the wheel zoom step,
+    /// kept between 1 and 100 percent (the default for a value that is
+    /// not a number).
+    pub fn wheel_zoom_factor(&self) -> f32 {
+        let step = if self.wheel_zoom_step.is_finite() {
+            self.wheel_zoom_step.clamp(1.0, 100.0)
+        } else {
+            DEFAULT_WHEEL_ZOOM_STEP
+        };
+        1.0 + step / 100.0
+    }
 }
 
 /// The calibrated screen resolution, kept within 48 to 400 per inch. It
@@ -837,7 +915,9 @@ pub fn effective_ui_size_with(s: &Settings, sys: crate::system_prefs::SystemPref
         1.0
     };
     let base = (crate::ui::interface_size(s.ui_size) * text).min(4.0);
-    if s.workspace == "touch" {
+    // Not on a phone: 1.4 times a 360 dp screen leaves too little room
+    // for any bar (#1301, #1691).
+    if s.workspace == "touch" && !crate::ui::phone::phone() {
         (base * TOUCH_SCALE).min(4.0)
     } else {
         base
@@ -860,6 +940,10 @@ fn default_text_increment() -> f64 {
     1.0
 }
 
+fn default_tab_spacing() -> f64 {
+    tracedraw_core::DEFAULT_TAB_STEP
+}
+
 /// The view a drawing opens in (Options > Display, #1134).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -875,18 +959,22 @@ pub enum OpenView {
     PageHeight,
     /// Real size, the page in the middle.
     Actual,
+    /// The zoom set in `Settings::open_zoom_percent`, the page in the
+    /// middle (#1266).
+    Percent,
     /// The page, place and zoom it was saved with (TraceDraw files), else
     /// the whole page.
     AsSaved,
 }
 
 impl OpenView {
-    pub const ALL: [OpenView; 6] = [
+    pub const ALL: [OpenView; 7] = [
         OpenView::FitPage,
         OpenView::FitObjects,
         OpenView::PageWidth,
         OpenView::PageHeight,
         OpenView::Actual,
+        OpenView::Percent,
         OpenView::AsSaved,
     ];
 
@@ -897,6 +985,7 @@ impl OpenView {
             OpenView::PageWidth => "options.open_view_width",
             OpenView::PageHeight => "options.open_view_height",
             OpenView::Actual => "options.open_view_actual",
+            OpenView::Percent => "options.open_view_percent",
             OpenView::AsSaved => "options.open_view_saved",
         }
     }
@@ -948,6 +1037,13 @@ impl NodeSize {
             NodeSize::Medium => 9.0,
             NodeSize::Large => 11.0,
         }
+    }
+
+    /// Length of a control handle's arrow head, screen pixels: as long
+    /// as a node is wide, so a larger node size gives larger heads too
+    /// (#1643), and as wide.
+    pub fn handle_head(self) -> f32 {
+        self.px()
     }
 
     pub fn key(self) -> &'static str {
@@ -1023,6 +1119,11 @@ pub struct NodePrefs {
     /// control handle to take it (Shape tool, and the curve tools'
     /// nodes).
     pub pick_distance: f32,
+    /// How far, in screen pixels, a click may land from an object's
+    /// outline and still pick it (Pick tool and the other tools that
+    /// pick objects by clicking them); 0 for none beyond the outline
+    /// itself (#1679).
+    pub object_pick_distance: f32,
     /// The Shape tool shows a corner widget inside the corners of a curve
     /// (or of the chosen nodes), dragged to round them (#635). On by
     /// default; it can be turned off in Options > Nodes and Handles so it
@@ -1049,6 +1150,7 @@ impl Default for NodePrefs {
             unselected_filled: true,
             show_direction: false,
             pick_distance: 6.0,
+            object_pick_distance: 3.0,
             corner_widgets: true,
             corner_one_at_a_time: true,
         }
@@ -1057,14 +1159,38 @@ impl Default for NodePrefs {
 
 impl NodePrefs {
     /// The pick distance in screen pixels, kept sensible and never less
-    /// than the node marker reaches.
+    /// than the node marker reaches, out to the corners of its square,
+    /// and a pixel more: larger nodes take a press on all of their marker
+    /// (#1935).
     pub fn pick_px(&self) -> f64 {
         let set = if self.pick_distance.is_finite() {
             self.pick_distance.clamp(2.0, 20.0)
         } else {
             6.0
         };
-        f64::from(set.max(self.size.px() / 2.0 + 1.0))
+        let corner = f64::from(self.size.px()) / 2.0 * std::f64::consts::SQRT_2;
+        f64::from(set).max(corner + 1.0)
+    }
+
+    /// How near a press must land on a control handle's end to take it:
+    /// the pick distance, and never less than the far corners of its
+    /// arrow head lie from its tip (the head is as long as a node is
+    /// wide and half as wide on each side, so they lie at the root of
+    /// 5/4 of its length) and a pixel more, so the whole head takes a
+    /// press and the reach grows with the node size (#1643, #1935).
+    pub fn handle_pick_px(&self) -> f64 {
+        let head = f64::from(self.size.handle_head());
+        self.pick_px().max(head * 1.25f64.sqrt() + 1.0)
+    }
+
+    /// The object click distance in screen pixels, kept sensible
+    /// (#1679).
+    pub fn object_pick_px(&self) -> f64 {
+        if self.object_pick_distance.is_finite() {
+            f64::from(self.object_pick_distance.clamp(0.0, 20.0))
+        } else {
+            3.0
+        }
     }
 }
 
@@ -1195,6 +1321,37 @@ pub struct UserPalette {
 /// [`PaletteBarPrefs::palette`] of a bar showing the document palette.
 pub const DOCUMENT_PALETTE: &str = "document";
 
+/// Where a docked palette bar lies among the other bars of its side of
+/// the window, from the edge inwards (live test of 0.41: a palette bar
+/// docked only at the window's edges). Along the left or the right: at
+/// the very edge, after the default palette's column there, after the
+/// toolbox, after the docker columns, or beside the drawing. Along the
+/// top or the bottom: under the toolbars (over the status bar), after
+/// the default palette's row there, after the toolbox, after the
+/// document palette row, or beside the drawing. Bars of one place lie
+/// side by side in their order (`palette_bars::docked`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BarSlot {
+    Outer,
+    AfterPalette,
+    AfterToolbox,
+    Inner,
+    Drawing,
+}
+
+impl BarSlot {
+    /// Where a bar docked at `dock` lies when no place was chosen (as
+    /// before places could be): outside the toolbox at the left and the
+    /// right, beside the drawing along the top and the bottom.
+    pub fn default_for(dock: crate::ui::bars::Dock) -> BarSlot {
+        if dock.horizontal() {
+            BarSlot::Drawing
+        } else {
+            BarSlot::AfterPalette
+        }
+    }
+}
+
 /// A palette bar besides the default one: which palette it shows, where
 /// it is, and its own rows and swatch size.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1211,6 +1368,15 @@ pub struct PaletteBarPrefs {
     pub rows: u8,
     /// As [`PalettePrefs::swatch_size`].
     pub swatch_size: u8,
+    /// Docked at the top among the toolbars: the row of toolbars it lies
+    /// over (an index into `BarLayout::rows_at(Dock::Top)`; past the last
+    /// one, under every toolbar). None: beside the drawing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toolbar_row: Option<u32>,
+    /// Docked at a side: its place among that side's bars (None: the
+    /// side's usual place, [`BarSlot::default_for`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<BarSlot>,
 }
 
 impl Default for PaletteBarPrefs {
@@ -1222,6 +1388,8 @@ impl Default for PaletteBarPrefs {
             float_size: FLOAT_SIZE,
             rows: 1,
             swatch_size: SWATCH_DEFAULT,
+            toolbar_row: None,
+            slot: None,
         }
     }
 }
@@ -1242,8 +1410,32 @@ impl PaletteBarPrefs {
         }
         self.rows = self.rows.min(MAX_ROWS);
         self.swatch_size = self.swatch_size.clamp(SWATCH_MIN, SWATCH_MAX);
+        // Among the toolbars only at the top; past every row is under
+        // them all.
+        if self.dock != crate::ui::bars::Dock::Top {
+            self.toolbar_row = None;
+        }
+        self.toolbar_row = self.toolbar_row.map(|r| r.min(MAX_TOOLBAR_ROW));
+        // A place among the bars of a side only while docked at one.
+        if self.dock == crate::ui::bars::Dock::Floating {
+            self.slot = None;
+        }
+    }
+
+    /// Its place among the bars of its side.
+    pub fn slot_or_default(&self) -> BarSlot {
+        self.slot.unwrap_or_else(|| BarSlot::default_for(self.dock))
+    }
+
+    /// Whether the bar lies among the toolbars along the top.
+    pub fn among_toolbars(&self) -> bool {
+        self.dock == crate::ui::bars::Dock::Top && self.toolbar_row.is_some()
     }
 }
+
+/// The furthest row index a palette bar among the toolbars keeps: more
+/// than the toolbars can make, so it means under every one of them.
+pub const MAX_TOOLBAR_ROW: u32 = 64;
 
 pub fn swatch_resized(size: u8, steps: i32) -> u8 {
     let to = i32::from(size.clamp(SWATCH_MIN, SWATCH_MAX))
@@ -1561,6 +1753,8 @@ pub struct ViewPrefs {
     pub grid: bool,
     pub guides: bool,
     pub page_border: bool,
+    /// The page's shadow, apart from its border (#1906).
+    pub page_shadow: bool,
     pub bleed: bool,
     pub printable_area: bool,
     /// View > Mask Outside Page (#615).
@@ -1583,6 +1777,7 @@ impl Default for ViewPrefs {
             grid: false,
             guides: true,
             page_border: true,
+            page_shadow: true,
             bleed: false,
             printable_area: false,
             mask_outside_page: false,
@@ -1611,7 +1806,7 @@ pub struct PanelPrefs {
     pub align_to: String,
     pub align_use_outline: bool,
     pub distribute_to: String,
-    /// The fixed distance (millimetres) for the Spacing extent.
+    /// Distribute with a set spacing: the distance, mm (#2005).
     pub distribute_gap: f64,
     /// The Shaping docker's operation (`Shaping::id`) and what Weld,
     /// Trim and Intersect leave: [source objects, target] each.
@@ -1627,7 +1822,7 @@ impl Default for PanelPrefs {
             align_to: "active".into(),
             align_use_outline: false,
             distribute_to: "selection".into(),
-            distribute_gap: 5.0,
+            distribute_gap: 1.0,
             shaping_op: "weld".into(),
             shaping_leave: [[false, false], [true, false], [true, true]],
         }
@@ -1780,6 +1975,7 @@ impl Default for Settings {
             workspace: "default".into(),
             show_welcome_on_start: true,
             welcome_tab_closed: false,
+            crop_picture_pixels: true,
             table: Default::default(),
             units: "mm".into(),
             nudge_mm: 2.54,
@@ -1793,10 +1989,13 @@ impl Default for Settings {
             shortcuts: Vec::new(),
             bitmap_editor: String::new(),
             last_dir: None,
+            last_export_dir: None,
+            folder_bookmarks: Vec::new(),
             color: ColorPrefs::default(),
             show_outline_flyout: false,
             wheel_zooms: true,
             open_view: OpenView::default(),
+            open_zoom_percent: default_open_zoom_percent(),
             toolbox: Vec::new(),
             custom_arrowheads: Vec::new(),
             custom_dashes: Vec::new(),
@@ -1808,8 +2007,10 @@ impl Default for Settings {
             undo_levels: default_undo_levels(),
             show_tooltips: true,
             font_manager: Default::default(),
+            tracecut: Default::default(),
             hide_bbox_curve_tools: false,
             node_tracking: false,
+            touch_keys: true,
             preview_page_border: true,
             constrain_angle: default_constrain_angle(),
             symmetry_show_lines: true,
@@ -1820,6 +2021,7 @@ impl Default for Settings {
             clip_frame: ClipFramePrefs::default(),
             backup: BackupPrefs::default(),
             text_increment_pt: default_text_increment(),
+            default_tab_mm: default_tab_spacing(),
             treat_all_filled: true,
             focus_visibility: default_focus_visibility(),
             focus_double_click: true,
@@ -1833,7 +2035,10 @@ impl Default for Settings {
             zoom_right_click_out: true,
             zoom_relative_1to1: true,
             wheel_zoom_centers: false,
+            smooth_zoom: true,
+            wheel_zoom_step: default_wheel_zoom_step(),
             pan_right_click_out: false,
+            pan_inertia: false,
             palette: PalettePrefs::default(),
             palette_bars: Vec::new(),
             main_palette: String::new(),
@@ -1846,6 +2051,7 @@ impl Default for Settings {
             spelling: SpellingPrefs::default(),
             thesaurus_file: None,
             show_new_document_dialog: true,
+            show_scrollbars: true,
             new_document: crate::new_document::NewDocSettings::default(),
             desktop_rgb: default_desktop(),
             desktop_custom: false,
@@ -1861,6 +2067,7 @@ impl Default for Settings {
             hardware_acceleration: true,
             gpu_adapter: String::new(),
             working_renderer: String::new(),
+            system_title_bar: false,
             center_dialogs: true,
             ui_shadows: true,
             colored_icons: false,
@@ -1920,6 +2127,7 @@ impl Default for Settings {
             arcano_persona_layouts: Default::default(),
             arcano_workspaces: Vec::new(),
             arcano_workspace_looks: Default::default(),
+            pending_update: String::new(),
             script_filters: Vec::new(),
             github: Default::default(),
             tracing: Default::default(),
@@ -1928,6 +2136,7 @@ impl Default for Settings {
             show_text_frames: true,
             path_tick_snap: false,
             path_tick_mm: default_path_tick(),
+            screen_margins: crate::ui::screen_margins::ScreenMargins::default(),
         }
     }
 }
@@ -1976,12 +2185,14 @@ const WEB_KEY: &str = "tracedraw.settings";
 
 impl Settings {
     /// The preferences as TraceDraw comes, keeping what is history rather
-    /// than choice: the recent drawings, the last folder and the window's
-    /// size.
+    /// than choice: the recent drawings, the last folder, the bookmarked
+    /// folders and the window's size.
     pub fn reset_keeping_history(&self) -> Settings {
         Settings {
             recent_files: self.recent_files.clone(),
             last_dir: self.last_dir.clone(),
+            last_export_dir: self.last_export_dir.clone(),
+            folder_bookmarks: self.folder_bookmarks.clone(),
             window_maximized: self.window_maximized,
             window_size: self.window_size,
             ..Settings::default()
@@ -1997,7 +2208,9 @@ impl Settings {
     ///    selects it), which older versions saved switched off;
     /// 2. new rectangles keep their corners; 3. the alignment and dynamic
     ///    guides start off; 4. the last export's settings are remembered;
-    /// 5. Duplicate's old default offset (6.35 mm) becomes none.
+    /// 5. Duplicate's old default offset (6.35 mm) becomes none; 6. the
+    ///    Crop tool cuts a picture's pixels; 7. File > Export shows its
+    ///    options again.
     pub fn upgrade(mut self) -> Settings {
         self.autocorrect.upgrade();
         if self.upgrades < 1 {
@@ -2030,6 +2243,23 @@ impl Settings {
         // Duplicate repeats that (#1494). An offset of one's own stays.
         if self.upgrades < 5 && self.duplicate_offset_mm == [6.35, 6.35] {
             self.duplicate_offset_mm = [0.0, 0.0];
+        }
+        // The Crop tool put a picture in a clip frame of the area by
+        // default, keeping every pixel, which looked like a mask and not
+        // a crop (live test of 0.41): it now cuts an upright picture's
+        // pixels. On once; switched off afterwards it stays off.
+        if self.upgrades < 6 {
+            self.crop_picture_pixels = true;
+        }
+        // "Do not show filter dialog" was the preference itself, ticked
+        // in the Export dialog and kept even when the dialog was then
+        // cancelled, with nothing in Options to turn it back: File >
+        // Export went straight to the Save dialog for good, with no
+        // options (report on 0.42.1). The options show again once; the
+        // setting chosen afterwards (in the dialog on OK, or in Options >
+        // Global > File Formats) stays.
+        if self.upgrades < 7 {
+            self.formats.skip_export_dialog = false;
         }
         self.upgrades = self.upgrades.max(UPGRADES);
         self.migrate_ai();
@@ -2255,6 +2485,13 @@ pub fn migrate_ai(
 fn ai_enabled_default() -> bool {
     true
 }
+
+fn default_open_zoom_percent() -> f32 {
+    100.0
+}
+
+/// The zooms Options offers for a drawing to open at, in percent.
+pub const OPEN_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 1.0..=10000.0;
 
 fn default_focus_visibility() -> u8 {
     20
@@ -2488,6 +2725,24 @@ mod tests {
         assert_eq!(again.upgrade().duplicate_offset_mm, [6.35, 6.35]);
     }
 
+    /// The Crop tool cuts a picture's pixels by default, and preferences
+    /// saved with the old off get it on once; off again afterwards, it
+    /// stays off (live test of 0.41).
+    #[test]
+    fn older_preferences_get_picture_pixels_cropped_once() {
+        assert!(Settings::default().crop_picture_pixels);
+        let old: Settings =
+            serde_json::from_str(r#"{"upgrades": 5, "crop_picture_pixels": false}"#)
+                .expect("old preferences");
+        let mut s = old.upgrade();
+        assert!(s.crop_picture_pixels);
+        assert_eq!(s.upgrades, UPGRADES);
+        s.crop_picture_pixels = false;
+        let saved = serde_json::to_string(&s).expect("saved");
+        let again: Settings = serde_json::from_str(&saved).expect("read back");
+        assert!(!again.upgrade().crop_picture_pixels);
+    }
+
     /// Preferences saved before the last export's settings were kept
     /// between sessions stored the old off (the option existed with that
     /// default), so File > Export went on starting at SVG every session
@@ -2511,6 +2766,29 @@ mod tests {
         let again: Settings = serde_json::from_str(&saved).expect("read back");
         assert!(!again.upgrade().formats.remember_last);
         assert!(Settings::default().formats.remember_last);
+    }
+
+    /// "Do not show filter dialog" could be left on by a tick in the
+    /// Export dialog that was then cancelled, with no way back in Options:
+    /// preferences of older versions show the export options again, once;
+    /// set again afterwards, the setting stays (report on 0.42.1).
+    #[test]
+    fn older_preferences_show_the_export_options_again_once() {
+        let old: Settings = serde_json::from_str(
+            r#"{"upgrades": 6, "formats": {"skip_export_dialog": true, "export_format": 2}}"#,
+        )
+        .expect("old preferences");
+        assert!(old.formats.skip_export_dialog);
+        let s = old.upgrade();
+        assert!(!s.formats.skip_export_dialog);
+        assert_eq!(s.formats.export_format, 2, "the other choices stay");
+        assert_eq!(s.upgrades, UPGRADES);
+        let mut s = s;
+        s.formats.skip_export_dialog = true;
+        let saved = serde_json::to_string(&s).expect("saved");
+        let again: Settings = serde_json::from_str(&saved).expect("read back");
+        assert!(again.upgrade().formats.skip_export_dialog);
+        assert!(!Settings::default().formats.skip_export_dialog);
     }
 
     #[test]
@@ -2747,7 +3025,17 @@ mod tests {
             "old settings files keep the zoom default"
         );
         assert!(partial.zoom_relative_1to1 && !partial.wheel_zoom_centers);
+        // Smooth zoom on, 15 % a notch, for settings from before (#1648).
+        assert!(partial.smooth_zoom);
+        assert_eq!(partial.wheel_zoom_step, 15.0);
+        assert!((partial.wheel_zoom_factor() - 1.15).abs() < 1e-6);
+        let mut odd = Settings::default();
+        odd.wheel_zoom_step = 500.0;
+        assert_eq!(odd.wheel_zoom_factor(), 2.0);
+        odd.wheel_zoom_step = f32::NAN;
+        assert!((odd.wheel_zoom_factor() - 1.15).abs() < 1e-6);
         assert!(!partial.pan_right_click_out);
+        assert!(!partial.pan_inertia, "pan inertia is off at first (#831)");
         assert!(partial.snap.guides);
     }
 
@@ -2756,6 +3044,7 @@ mod tests {
         let mut s = Settings::default();
         s.recent_files = vec!["/a.tdraw".into()];
         s.last_dir = Some("/drawings".into());
+        s.last_export_dir = Some("/exports".into());
         s.window_maximized = false;
         s.window_size = [1200.0, 800.0];
         s.shortcuts = vec![("menu.file.export".into(), "Ctrl+Shift+X".into())];
@@ -2768,6 +3057,7 @@ mod tests {
         let r = s.reset_keeping_history();
         assert_eq!(r.recent_files, s.recent_files);
         assert_eq!(r.last_dir, s.last_dir);
+        assert_eq!(r.last_export_dir, s.last_export_dir);
         assert_eq!(
             (r.window_maximized, r.window_size),
             (false, [1200.0, 800.0])
@@ -2819,6 +3109,26 @@ mod tests {
     }
 
     /// Preferences as an older version saved them, migrated as at start.
+    /// A first start snaps to guidelines and the page but not to objects,
+    /// within 10 screen pixels (#1814); a choice saved before is kept,
+    /// either way, and the app takes it.
+    #[test]
+    fn new_installs_do_not_snap_to_objects_and_saved_choices_stay() {
+        let s = Settings::default();
+        assert!(!s.snap.objects, "snapping to objects starts off");
+        assert!(s.snap.guides && s.snap.page && !s.snap.off);
+        assert_eq!(s.snap.threshold_px, 10.0);
+        let on = migrated(r#"{"upgrades": 5, "snap": {"objects": true, "page": true}}"#);
+        assert!(on.snap.objects);
+        let old = migrated(r#"{"snap": {"objects": true, "page": false}}"#);
+        assert!(old.snap.objects && !old.snap.page);
+        let mut app = crate::app::App::headless();
+        app.apply_settings(Settings::default());
+        assert!(!app.snap.objects && app.snap.page && app.snap.guides);
+        app.apply_settings(on);
+        assert!(app.snap.objects);
+    }
+
     fn migrated(json: &str) -> Settings {
         let s: Settings = serde_json::from_str(json).expect("old preferences");
         s.upgrade()

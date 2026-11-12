@@ -1657,10 +1657,10 @@ fn mark_counts(spans: &[tracedraw_core::TextSpan]) -> serde_json::Map<String, Va
         if sp.bold {
             add("bold", n);
         }
-        if sp.underline {
+        if sp.underline.is_on() {
             add("underline", n);
         }
-        if sp.strikethrough {
+        if sp.strikethrough.is_on() {
             add("strikethrough", n);
         }
         if sp.baseline_shift_pt > 0.0 || feat("sups") || feat("sup") {

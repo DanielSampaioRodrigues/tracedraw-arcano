@@ -20,12 +20,15 @@ comando ao lado dele, e você pode acrescentar os seus; veja
 | <kbd>Ctrl+N</kbd>, <kbd>Ctrl+O</kbd> | novo desenho, abrir |
 | <kbd>Ctrl+S</kbd>, <kbd>Ctrl+Shift+S</kbd> | salvar, salvar como |
 | <kbd>Ctrl+I</kbd>, <kbd>Ctrl+E</kbd>, <kbd>Ctrl+P</kbd> | importar, exportar, imprimir |
+| <kbd>Ctrl+Shift+E</kbd> | exportar mostrando as opções |
 | <kbd>Ctrl+F4</kbd>, <kbd>Alt+F4</kbd> | fechar o desenho, sair |
 | <kbd>Ctrl+Z</kbd>, <kbd>Ctrl+Shift+Z</kbd>, <kbd>Ctrl+R</kbd> | desfazer, refazer, repetir |
+| <kbd>Alt+Backspace</kbd> | desfazer, como <kbd>Ctrl+Z</kbd> |
 | <kbd>Ctrl+X</kbd>, <kbd>Ctrl+C</kbd>, <kbd>Ctrl+V</kbd>, <kbd>Ctrl+Shift+V</kbd> | recortar, copiar, colar, colar na vista |
 | <kbd>Ctrl+D</kbd>, <kbd>Ctrl+Shift+D</kbd> | duplicar, painel Passo e repetição |
 | <kbd>+</kbd> | duplicar a seleção no lugar |
 | <kbd>Ctrl+A</kbd>, <kbd>Delete</kbd> | selecionar tudo, excluir |
+| <kbd>Ctrl+Shift+I</kbd> | inverter a seleção |
 | <kbd>Ctrl+0</kbd> a <kbd>Ctrl+9</kbd>, <kbd>0</kbd> a <kbd>9</kbd>, <kbd>Alt+0</kbd> a <kbd>Alt+9</kbd> | guardar, selecionar (duas vezes: dar zoom) e acrescentar a grupos de seleção |
 | <kbd>Ctrl+F</kbd>, <kbd>Ctrl+J</kbd>, <kbd>Ctrl+W</kbd> | painel Localizar e substituir, opções, atualizar a janela |
 
@@ -36,7 +39,9 @@ comando ao lado dele, e você pode acrescentar os seus; veja
 | <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | ferramenta Zoom para um zoom (depois a ferramenta anterior volta; <kbd>Z</kbd> a mantém), zoom na seleção, afastar |
 | <kbd>F4</kbd>, <kbd>Shift+F4</kbd> | zoom para caber, zoom na página |
 | <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> | aproximar e afastar um passo |
+| <kbd>N</kbd> (mantida) | o Navegador: mova o ponteiro sobre a miniatura da página para ir até lá ([[menu.view > menu.view.navigator]]) |
 | <kbd>Alt+Shift+R</kbd> | ligar e desligar as réguas |
+| <kbd>Ctrl+;</kbd>, <kbd>Ctrl+'</kbd> | mostrar e ocultar as linhas-guia e a grade do documento |
 | <kbd>Alt+Q</kbd>, <kbd>Alt+Z</kbd>, <kbd>Ctrl+Y</kbd> | desligar o encaixe, encaixar em objetos, encaixar na grade |
 | <kbd>Alt+Shift+A</kbd>, <kbd>Alt+Shift+D</kbd> | guias de alinhamento, guias dinâmicas |
 | <kbd>PgUp</kbd>, <kbd>PgDn</kbd> | página anterior e próxima |
@@ -51,10 +56,12 @@ comando ao lado dele, e você pode acrescentar os seus; veja
 | <kbd>Ctrl+Home</kbd>, <kbd>Ctrl+End</kbd> | para a frente e para trás da página |
 | <kbd>Shift+PgUp</kbd>, <kbd>Shift+PgDn</kbd> | para a frente e para trás da camada |
 | <kbd>Ctrl+PgUp</kbd>, <kbd>Ctrl+PgDn</kbd> | um para a frente, um para trás |
+| <kbd>Ctrl+]</kbd>, <kbd>Ctrl+[</kbd>, <kbd>Ctrl+Shift+]</kbd>, <kbd>Ctrl+Shift+[</kbd> | também um para a frente, um para trás, para a frente e para trás da camada |
 | <kbd>L</kbd>, <kbd>R</kbd>, <kbd>T</kbd>, <kbd>B</kbd>, <kbd>E</kbd>, <kbd>C</kbd>, <kbd>P</kbd> | com uma seleção: alinhar à esquerda, à direita, no topo, na base, centros na horizontal, centros na vertical, centrar na página |
 | Teclas de seta, com <kbd>Shift</kbd> ou <kbd>Ctrl</kbd> | deslocar, super deslocamento, micro deslocamento |
 | <kbd>Alt+S</kbd>, <kbd>Alt+E</kbd>, <kbd>Alt+Shift+E</kbd>, <kbd>Alt+Shift+S</kbd>, <kbd>Alt+X</kbd> | criar, editar, concluir, remover a simetria, quebrar o vínculo dela |
 | <kbd>Ctrl+M</kbd> | mesclar células da tabela |
+| <kbd>Ctrl+Shift+F3</kbd> | editar o conteúdo da moldura selecionada, concluir a edição |
 
 ## Painéis {#panels}
 
@@ -103,6 +110,31 @@ A página [Caixa de ferramentas](toolbox.md) lista todas as ferramentas. Cada
 ferramenta tem as próprias teclas enquanto você a usa, explicadas na página
 dela; para a ferramenta [[tool.shape]], veja
 [Modelar curvas](../lines-shapes/shape-tool.md#editing).
+
+## Menus e listas {#menus}
+
+Pressione e solte <kbd>Alt</kbd> para ir à barra de menus: <kbd>Esquerda</kbd>
+e <kbd>Direita</kbd> passam de um menu a outro, <kbd>Baixo</kbd> ou
+<kbd>Enter</kbd> abre um deles e <kbd>Esc</kbd> sai da barra. <kbd>Alt</kbd>
+com a letra sublinhada de um menu abre esse menu de uma vez.
+
+Em um menu aberto, <kbd>Baixo</kbd> e <kbd>Cima</kbd> passam de linha em linha,
+<kbd>Home</kbd> e <kbd>End</kbd> vão à primeira e à última linha, e
+<kbd>Enter</kbd> ou <kbd>Espaço</kbd> executa a linha. <kbd>Direita</kbd> abre
+um submenu e <kbd>Esquerda</kbd> o fecha; nas outras linhas elas vão ao menu
+seguinte ou ao anterior. <kbd>Esc</kbd> fecha um nível. Os menus do botão
+direito funcionam do mesmo jeito.
+
+Em uma lista suspensa aberta, <kbd>Baixo</kbd>, <kbd>Cima</kbd>,
+<kbd>Home</kbd>, <kbd>End</kbd>, <kbd>Page Down</kbd> e <kbd>Page Up</kbd>
+movem o destaque, digitar as primeiras letras de um nome salta até ele,
+<kbd>Enter</kbd> escolhe e <kbd>Esc</kbd> fecha a lista sem mudar nada. O botão
+de uma lista alcançado com <kbd>Tab</kbd> abre com <kbd>Baixo</kbd>,
+<kbd>Alt</kbd>+<kbd>Baixo</kbd> ou <kbd>Enter</kbd>. Na lista de fontes, digitar
+filtra as fontes.
+
+Enquanto um menu ou uma lista está aberto, as setas não movem os objetos
+selecionados.
 
 ## Caixas de diálogo {#dialogs}
 

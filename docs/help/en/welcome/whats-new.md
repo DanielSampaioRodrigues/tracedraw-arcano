@@ -6,7 +6,11 @@ find out what changed and lists the highlights of the latest versions.
 ## Seeing what is new in the program {#in-the-program}
 
 - Choose [[menu.help > menu.help.whats_new]] to open the What's New page of
-  the Welcome Screen, with the news of this version.
+  the Welcome Screen. It lists the last ten versions, newest first, each
+  with its date and a short title. Click a version to read a short summary
+  of what changed; the newest one is open already. **Want to know more?**
+  under a summary opens that version's page on GitHub with the full list of
+  changes.
 - Turn on [[menu.help > menu.help.highlight_whats_new]] to mark what is new
   in this version in the menus: a small dot appears at the end of each new
   command, beside the arrow of a submenu that leads to one, and over the
@@ -17,6 +21,28 @@ find out what changed and lists the highlights of the latest versions.
 
 ## Highlights of recent versions {#highlights}
 
+- **Extrusion, shadows and a round of fixes.** [[menu.effects > menu.effects.extrude]] keeps a body turned in space in place, and bevels on text no longer fold over; drop shadows keep the holes of rings and fall from an extruded object together with its body; [[menu.edit > menu.edit.select_similar]] looks inside groups; [[menu.bitmaps > menu.bitmaps.convert_to_bitmap]] keeps the picture's place in the stack; [[menu.view > menu.view.navigator]] is a menu command with the key N; .cdr files open with their tables, and Thai file names show their letters.
+- **CNC toolpaths, Export and selection.** [[menu.tools > menu.tools.tracecut]] makes G-code for a CNC router and draws eyelets, finger-jointed boxes and folded trays; [[menu.file > menu.file.export]] asks for the file first, then shows the format's options, and [[menu.file > menu.file.export_with_options]] always shows them; [[menu.edit > menu.edit.select_similar]] and [[menu.edit > menu.edit.invert_selection]] change the selection; [[menu.object > menu.object.insert > menu.object.add_dimensions]] measures the selection; procedural fills, OpenType buttons and a Lao interface are new.
+- **Facing pages and linked text.** [[menu.layout > menu.layout.facing_pages]] shows the pages side by side in spreads; [[menu.text > menu.text.link_content]] links texts so that typing in one changes the others; a PDF of several pages asks which pages to import; [[menu.edit > menu.edit.step_and_repeat]] can fill a page with copies.
+- **Touch and phones.** Shift, Ctrl and Alt buttons on the Standard toolbar
+  stay held for a finger; on Android the interface keeps clear of the camera
+  cutout and the rounded corners; the Apple Pencil works in Safari on iPad.
+- **Files.** .cdr files keep the fill rule of overlapping curves and open with
+  their tab stops, multi-column text, guidelines shared by every page and
+  master page objects.
+- **Pictures, printing and the workspace.** The Crop tool's Crop picture
+  pixels and [[menu.bitmaps > menu.bitmaps.crop_to_frame]] cut a picture's
+  pixels; printing in grayscale and in reverse order;
+  [[menu.view > menu.view.scrollbars]] hides the scrollbars.
+- **TraceCut.** [[menu.tools > menu.tools.tracecut]] opens the tools for
+  cutting plotters: plotter output, cut lines, nesting and measuring. See
+  [TraceCut](../objects/tracecut.md).
+- **Keyboard, phones and pens.** Menus and lists work from the keyboard. On
+  Android phones the interface fits the screen and a hand resting on it no
+  longer draws while a pen is used; a tablet pen works on Linux with Wayland.
+- **Files.** .cdr files open with their tab stops, master pages, gradients and
+  distortions; PDF pictures come in at full resolution; JPEG and TIFF export
+  in CMYK.
 - **Object thumbnails.** The [[docker.objects]] panel shows each object
   drawn small beside its name; Ctrl+wheel over the list or the slider at its
   bottom sets the size. See [Organizing objects and layers](../objects/objects-and-layers.md#objects-docker).

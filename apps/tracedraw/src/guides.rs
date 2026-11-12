@@ -90,12 +90,41 @@ impl GuidePreset {
 }
 
 impl App {
-    /// The guidelines of the active page.
+    /// The guidelines being edited: the active page's own, or the master
+    /// page's (every page shows them, #1928) while those are chosen.
     pub fn page_guides(&self) -> Vec<Guide> {
+        if self.edit_master_guides {
+            return self.doc().master_guides.clone();
+        }
         self.doc()
             .page(self.page)
             .map(|p| p.guides.clone())
             .unwrap_or_default()
+    }
+
+    /// The guidelines not being edited that the active page shows: the
+    /// master page's while the page's own are edited, and the other way
+    /// round. They are drawn and snapped to, not picked.
+    pub fn other_guides_on_page(&self) -> Vec<Guide> {
+        if self.edit_master_guides {
+            self.doc()
+                .page(self.page)
+                .map(|p| p.guides.clone())
+                .unwrap_or_default()
+        } else {
+            self.doc().master_guides.clone()
+        }
+    }
+
+    /// Choose which guidelines are edited: the master page's (every page
+    /// shows them) or the active page's own (#1928). The selection of
+    /// guidelines is dropped.
+    pub fn choose_master_guides(&mut self, master: bool) {
+        if self.edit_master_guides != master {
+            self.selected_guides.clear();
+            self.guide_rotate = None;
+        }
+        self.edit_master_guides = master;
     }
 
     /// The topmost guideline under `p` (page coordinates), when guidelines
@@ -105,8 +134,30 @@ impl App {
             return None;
         }
         let tol = PICK_PX / self.view.zoom.max(1e-6) as f64;
-        let page = self.doc().page(self.page).ok()?;
-        page.guides.iter().rposition(|g| g.distance(p).abs() <= tol)
+        self.page_guides()
+            .iter()
+            .rposition(|g| g.distance(p).abs() <= tol)
+    }
+
+    /// The guideline under `p` to pick: one of the guidelines being edited,
+    /// else one of the other set (the master page's while the page's own
+    /// are edited, and the other way round), which then becomes the set
+    /// being edited, so a guideline a file brought on the master page
+    /// answers a click at once (#2029).
+    pub fn pick_guide_at(&mut self, p: Point) -> Option<usize> {
+        if let Some(i) = self.guide_at(p) {
+            return Some(i);
+        }
+        if !self.show_guides {
+            return None;
+        }
+        let tol = PICK_PX / self.view.zoom.max(1e-6) as f64;
+        let i = self
+            .other_guides_on_page()
+            .iter()
+            .rposition(|g| g.distance(p).abs() <= tol)?;
+        self.choose_master_guides(!self.edit_master_guides);
+        Some(i)
     }
 
     /// The colour a guideline is drawn with: its own, or the document's
@@ -116,18 +167,29 @@ impl App {
     }
 
     pub fn add_guide(&mut self, guide: Guide) {
+        if self.edit_master_guides {
+            let mut guides = self.doc().master_guides.clone();
+            guides.push(guide);
+            let _ = self
+                .engine
+                .run_with_label(&Command::SetMasterGuides { guides }, "Add Guideline");
+            return;
+        }
         let page = self.page;
         self.run(Command::AddGuide { page, guide });
     }
 
-    /// Replace the page's guidelines in one undoable step.
+    /// Replace the page's guidelines (or the master page's, while those
+    /// are edited) in one undoable step.
     pub fn set_guides(&mut self, guides: Vec<Guide>, label: &'static str) {
         let page = self.page;
         let n = guides.len();
-        if let Err(e) = self
-            .engine
-            .run_with_label(&Command::SetGuides { page, guides }, label)
-        {
+        let cmd = if self.edit_master_guides {
+            Command::SetMasterGuides { guides }
+        } else {
+            Command::SetGuides { page, guides }
+        };
+        if let Err(e) = self.engine.run_with_label(&cmd, label) {
             self.status = format!("{label}: {e}");
         }
         self.selected_guides.retain(|i| *i < n);
@@ -138,6 +200,16 @@ impl App {
 
     /// Change one guideline (position, angle, colour, style or lock).
     pub fn replace_guide(&mut self, index: usize, guide: Guide, label: &'static str) {
+        if self.edit_master_guides {
+            let mut guides = self.doc().master_guides.clone();
+            if let Some(g) = guides.get_mut(index) {
+                *g = guide;
+                let _ = self
+                    .engine
+                    .run_with_label(&Command::SetMasterGuides { guides }, label);
+            }
+            return;
+        }
         let page = self.page;
         if let Err(e) = self
             .engine
@@ -209,8 +281,18 @@ impl App {
     }
 
     pub fn delete_guide(&mut self, index: usize) {
-        let page = self.page;
-        self.run(Command::DeleteGuide { page, index });
+        if self.edit_master_guides {
+            let mut guides = self.doc().master_guides.clone();
+            if index < guides.len() {
+                guides.remove(index);
+                let _ = self
+                    .engine
+                    .run_with_label(&Command::SetMasterGuides { guides }, "Delete Guideline");
+            }
+        } else {
+            let page = self.page;
+            self.run(Command::DeleteGuide { page, index });
+        }
         self.selected_guides.clear();
         self.guide_rotate = None;
     }
@@ -383,17 +465,24 @@ impl App {
     /// rotation handle of the guideline in rotate mode starts rotating.
     /// Returns true when the press was taken.
     pub fn press_guide(&mut self, p: Point, extend: bool) -> bool {
+        if self.guide_pivot_at(p) {
+            self.drag = Drag::GuidePivot;
+            return true;
+        }
         if let Some((index, pivot)) = self.rotate_handle_at(p) {
             if let Some(g) = self.page_guides().get(index).copied() {
+                let v = p - pivot;
                 self.drag = Drag::RotateGuide {
                     index,
                     pivot,
                     guide: g,
+                    start: g,
+                    grab: v.y.atan2(v.x).to_degrees(),
                 };
                 return true;
             }
         }
-        let Some(index) = self.guide_at(p) else {
+        let Some(index) = self.pick_guide_at(p) else {
             return false;
         };
         let Some(g) = self.page_guides().get(index).copied() else {
@@ -428,7 +517,12 @@ impl App {
     /// selects it; a click on the only selected guideline toggles its
     /// rotation handles, unless it is locked (#1385).
     pub fn click_guide(&mut self, p: Point, extend: bool) -> bool {
-        let Some(index) = self.guide_at(p) else {
+        // A click on the rotation centre keeps the handles where they
+        // are, also with the centre moved off the guideline (#1850).
+        if !extend && self.guide_pivot_at(p) {
+            return true;
+        }
+        let Some(index) = self.pick_guide_at(p) else {
             return false;
         };
         if !self.selection.is_empty() {
@@ -615,17 +709,34 @@ impl App {
             Drag::RotateGuide {
                 index,
                 pivot,
-                guide,
+                start,
+                grab,
+                ..
             } => {
                 let v: Vec2 = p - pivot;
                 if v.hypot() > 1e-9 {
+                    // The pointer's angle in whole degrees is the line's;
+                    // the line turns about the pivot by as much, so one
+                    // off the pivot keeps its distance from it (#1850).
                     let a = v.y.atan2(v.x).to_degrees().round();
+                    let turn = (a - grab).to_radians();
+                    let (o, d) = start.line.point_and_direction();
+                    let foot = o + d * (pivot - o).dot(d);
+                    let at = Affine::rotate_about(turn, pivot) * foot;
+                    let angle = start.line.angle() + (a - grab);
                     self.drag = Drag::RotateGuide {
                         index,
                         pivot,
-                        guide: guide.with_line(guide.line.rotated_to(a, pivot)),
+                        guide: start.with_line(start.line.rotated_to(angle, at)),
+                        start,
+                        grab,
                     };
                 }
+            }
+            Drag::GuidePivot => {
+                // Snaps as a drawing tool's point does: to objects and
+                // their nodes, the page, the grid and guidelines.
+                self.guide_pivot = self.snap_point(p);
             }
             _ => {}
         }
@@ -708,6 +819,8 @@ impl App {
             Drag::RotateGuide { index, guide, .. } => {
                 self.replace_guide(index, guide, "Rotate Guideline");
             }
+            // The rotation centre is where the drag left it.
+            Drag::GuidePivot => {}
             other => self.drag = other,
         }
     }
@@ -749,6 +862,14 @@ impl App {
         let reach = ROTATE_HANDLE_PX / self.view.zoom.max(1e-6) as f64;
         let pivot = self.guide_pivot;
         Some((index, pivot, [pivot + d * reach, pivot - d * reach]))
+    }
+
+    /// `p` (page) is on the rotation centre of the guideline in rotate
+    /// mode, which a press drags (#1850).
+    pub fn guide_pivot_at(&self, p: Point) -> bool {
+        let tol = HANDLE_PICK_PX / self.view.zoom.max(1e-6) as f64;
+        self.guide_rotate_handles()
+            .is_some_and(|(_, pivot, _)| (pivot - p).hypot() <= tol)
     }
 
     /// `p` (page) is on a rotation handle of the guideline in rotate mode.
@@ -868,6 +989,58 @@ mod tests {
         app.view.zoom = 1.0;
         app.canvas_rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
         app
+    }
+
+    /// #1928: with the master page's guidelines chosen (the Objects
+    /// docker's "Guides (all pages)" row), a new guideline goes there
+    /// once and every page shows it and snaps to it; it is picked,
+    /// moved and deleted there, the page's own guidelines are left
+    /// alone, and each step undoes.
+    #[test]
+    fn master_guidelines_are_set_once_for_every_page() {
+        let mut app = app();
+        app.add_page();
+        let pages: Vec<_> = app.doc().pages.iter().map(|p| p.id).collect();
+        assert_eq!(pages.len(), 2);
+        app.goto_page(0);
+        app.add_guide(Guide::horizontal(50.0));
+        app.choose_master_guides(true);
+        app.add_guide(Guide::vertical(30.0));
+        assert_eq!(app.doc().master_guides.len(), 1);
+        assert_eq!(app.doc().page(pages[0]).unwrap().guides.len(), 1);
+        assert!(app.doc().page(pages[1]).unwrap().guides.is_empty());
+        // The second page shows it and snaps to it.
+        app.goto_page(1);
+        let shown = app.doc().guides_on_page(pages[1]).unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(app.guide_at(Point::new(30.0, 10.0)), Some(0));
+        app.snap.guides = true;
+        app.snap.grid = false;
+        app.snap.objects = false;
+        let p = app.snap_point(Point::new(30.4, 10.0));
+        assert!((p.x - 30.0).abs() < 1e-9, "{p:?}");
+        // Moved there, every page has it moved.
+        app.replace_guide(0, Guide::vertical(40.0), "Move Guideline");
+        assert_eq!(
+            app.doc().master_guides[0].line,
+            GuideLine::Vertical { x: 40.0 }
+        );
+        // The page's own guidelines are not picked while the master's
+        // are edited, and the other way round.
+        app.goto_page(0);
+        assert_eq!(app.guide_at(Point::new(10.0, 50.0)), None);
+        app.choose_master_guides(false);
+        assert_eq!(app.guide_at(Point::new(10.0, 50.0)), Some(0));
+        assert_eq!(app.guide_at(Point::new(40.0, 10.0)), None);
+        app.choose_master_guides(true);
+        app.delete_guide(0);
+        assert!(app.doc().master_guides.is_empty());
+        app.undo();
+        assert_eq!(app.doc().master_guides.len(), 1);
+        app.undo();
+        app.undo();
+        assert!(app.doc().master_guides.is_empty());
+        assert_eq!(app.doc().page(pages[0]).unwrap().guides.len(), 1);
     }
 
     /// A value typed for the one selected guideline moves it at once (the
@@ -994,6 +1167,52 @@ mod tests {
                 y: 50.0,
                 angle: 45.0
             }
+        );
+    }
+
+    /// The rotation centre of a guideline in rotate mode can be dragged,
+    /// snapping to an object's node; the guideline then turns about it,
+    /// keeping its distance from it (#1850).
+    #[test]
+    fn a_guides_rotation_centre_drags_and_snaps_to_a_node() {
+        let mut app = app();
+        app.snap.objects = true;
+        app.settings.snap.threshold_px = 3.0;
+        app.view.zoom = 1.0;
+        app.new_shape(tracedraw_core::ShapeKind::Rect {
+            rect: tracedraw_core::geometry::Rect::new(100.0, 100.0, 140.0, 120.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("a rectangle");
+        app.select(Vec::new());
+        app.add_guide(Guide::horizontal(50.0));
+        let p = Point::new(30.0, 50.0);
+        assert!(app.click_guide(p, false));
+        assert!(app.click_guide(p, false));
+        assert_eq!(app.guide_rotate, Some(0));
+        // The centre dragged near the rectangle's corner lands on it.
+        assert!(app.press_guide(p, false));
+        app.drag_guide_to(Point::new(101.5, 98.5));
+        app.finish_guide_move(egui::pos2(100.0, 100.0));
+        assert_eq!(app.guide_pivot, Point::new(100.0, 100.0));
+        // The guideline stays where it was, in rotate mode, no undo step.
+        assert_eq!(app.page_guides()[0].line, GuideLine::Horizontal { y: 50.0 });
+        assert_eq!(app.guide_rotate, Some(0));
+        let (_, pivot, handles) = app.guide_rotate_handles().expect("handles");
+        assert_eq!(pivot, Point::new(100.0, 100.0));
+        // A click on the centre, off the guideline now, keeps the handles.
+        assert!(app.click_guide(pivot, false));
+        assert_eq!(app.guide_rotate, Some(0));
+        assert_eq!(app.selected_guides, vec![0]);
+        // Turned a quarter: the line keeps its 50 mm from the centre.
+        assert!(app.press_guide(handles[0], false));
+        app.drag_guide_to(pivot + Vec2::new(0.0, 30.0));
+        app.finish_guide_move(egui::pos2(100.0, 100.0));
+        let line = app.page_guides()[0].line;
+        assert!(
+            matches!(line, GuideLine::Vertical { x } if (x - 150.0).abs() < 1e-9),
+            "{line:?}"
         );
     }
 

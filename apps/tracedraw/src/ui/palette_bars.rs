@@ -10,13 +10,24 @@
 //! edge it docks there, elsewhere it floats. Every bar, its place, rows
 //! and size are kept in the preferences and in workspace files.
 //!
+//! Docked at a side, a bar lies at one of the side's places
+//! (`settings::BarSlot`): let go over another bar docked there (the
+//! toolbox, the default palette, a docker column, a palette bar) it goes
+//! just outside or just inside that bar ([`side_target`], [`place_bar`]).
+//!
+//! Along the top a bar lies beside the drawing, or among the toolbars:
+//! dropped on the line between two rows of toolbars (or over or under
+//! them all) it lies there, across the window, as a row of its own
+//! between the toolbars (`PaletteBarPrefs::toolbar_row`); its menu's
+//! Position > Top, Among the Toolbars puts it under them all.
+//!
 //! The default palette floating is drawn here too, so it flows and
 //! resizes the same way; it keeps the bars' drag (see `bars.rs`) and its
 //! own places beside the drawing.
 
 use crate::app::App;
 use crate::i18n::tr;
-use crate::settings::{DOCUMENT_PALETTE, MAX_ROWS, ROWS_FIT, SWATCH_STEPS};
+use crate::settings::{BarSlot, DOCUMENT_PALETTE, MAX_ROWS, ROWS_FIT, SWATCH_STEPS};
 use crate::theme::Tokens;
 use crate::ui::bars::{Bar, Dock, TITLE_H};
 use crate::ui::palette::Row;
@@ -104,7 +115,12 @@ pub fn set_dock(app: &mut App, which: Row, dock: Dock, at: Option<Pos2>) {
     match which {
         Row::Extra(k) => {
             if let Some(b) = app.settings.palette_bars.get_mut(k) {
+                // Another side: that side's usual place among its bars.
+                if b.dock != dock || b.among_toolbars() {
+                    b.slot = None;
+                }
                 b.dock = dock;
+                b.toolbar_row = None;
                 if let (Dock::Floating, Some(p)) = (dock, at) {
                     b.pos = [p.x, p.y];
                 }
@@ -125,6 +141,98 @@ pub fn set_dock(app: &mut App, which: Row, dock: Dock, at: Option<Pos2>) {
             crate::ui::bars::move_palette(app, dock, spot, at);
         }
     }
+}
+
+/// Put the palette bar `which` among the toolbars along the top, over
+/// the row of toolbars `row` (past the last one: under them all). The
+/// default palette keeps its own places.
+pub fn set_among_toolbars(app: &mut App, which: Row, row: u32) {
+    match which {
+        Row::Extra(k) => {
+            if let Some(b) = app.settings.palette_bars.get_mut(k) {
+                b.dock = Dock::Top;
+                b.toolbar_row = Some(row.min(crate::settings::MAX_TOOLBAR_ROW));
+            }
+        }
+        Row::Document => {
+            if let Some(k) = detach_document_row(app) {
+                set_among_toolbars(app, Row::Extra(k), row);
+            }
+        }
+        Row::Main => {}
+    }
+}
+
+/// Whether the palette bar `which` lies among the toolbars.
+pub fn among_toolbars(app: &App, which: Row) -> bool {
+    match which {
+        Row::Extra(k) => app
+            .settings
+            .palette_bars
+            .get(k)
+            .is_some_and(|b| b.among_toolbars()),
+        _ => false,
+    }
+}
+
+/// The palette bars among the toolbars, as (the row of toolbars each
+/// lies over, the bar), top to bottom.
+pub fn toolbar_bands(app: &App) -> Vec<(u32, usize)> {
+    let mut bands: Vec<(u32, usize)> = app
+        .settings
+        .palette_bars
+        .iter()
+        .enumerate()
+        .filter(|(k, b)| b.among_toolbars() && *k < app.extra_palettes.len())
+        .filter_map(|(k, b)| Some((b.toolbar_row?, k)))
+        .collect();
+    bands.sort();
+    bands
+}
+
+/// The palette bar `k` among the toolbars, over their row `row`: a band
+/// across the window. Where it was drawn goes to `app.palette_bands` for
+/// the drops of a dragged palette bar.
+pub fn toolbar_band(app: &mut App, ui: &mut Ui, k: usize, row: u32) {
+    let which = Row::Extra(k);
+    let resp = egui::Panel::top(egui::Id::new(("palette_extra", which)))
+        .exact_size(crate::ui::palette::thickness(app, which))
+        .resizable(false)
+        .show_separator_line(true)
+        .frame(egui::Frame::new().fill(Tokens::panel()))
+        .show(ui, |ui| crate::ui::palette::strip(app, ui, which, false));
+    app.palette_bands.push((row, resp.response.rect));
+}
+
+/// Where a palette bar dropped at `p` goes among the toolbars along the
+/// top, and the line that marks it: near the line between two rows of
+/// toolbars, or the top or bottom line of them all (within
+/// [`ROW_EDGE`]), that place; over a palette bar among them, its place.
+/// `None` elsewhere: over the middle of a row the bar docks as before.
+///
+/// [`ROW_EDGE`]: crate::ui::bars::ROW_EDGE
+pub fn toolbar_target(
+    rows: &[crate::ui::bars::RowSpot],
+    bands: &[(u32, Rect)],
+    p: Pos2,
+) -> Option<(u32, Rect)> {
+    let line =
+        |r: Rect, y: f32| Rect::from_min_max(pos2(r.left(), y - 3.0), pos2(r.right(), y + 3.0));
+    if let Some((row, r)) = bands.iter().find(|(_, r)| r.contains(p)) {
+        return Some((*row, line(*r, r.top())));
+    }
+    let edge = crate::ui::bars::ROW_EDGE;
+    let spot = rows
+        .iter()
+        .find(|s| s.dock == Dock::Top && s.rect.contains(p))?;
+    let row = u32::try_from(spot.row).unwrap_or(crate::settings::MAX_TOOLBAR_ROW);
+    if p.y < spot.rect.top() + edge {
+        return Some((row, line(spot.rect, spot.rect.top())));
+    }
+    if p.y > spot.rect.bottom() - edge {
+        return Some((row.saturating_add(1), line(spot.rect, spot.rect.bottom())));
+    }
+    None
 }
 
 /// The name a bar shows: its palette's (as the user named it).
@@ -202,10 +310,19 @@ pub fn strip_items(app: &mut App, ui: &mut Ui, which: Row) {
     });
     sub(ui, "palette.position", |ui| {
         let locked = app.settings.bars.locked;
+        let among = among_toolbars(app, which);
         for (dock, key) in PLACES {
-            if crate::ui::menus::radio_if(ui, key, "", prefs.dock == dock, !locked) {
+            let on = prefs.dock == dock && !(dock == Dock::Top && among);
+            if crate::ui::menus::radio_if(ui, key, "", on, !locked) {
                 set_dock(app, which, dock, None);
             }
+        }
+        // A palette bar also lies among the toolbars along the top (the
+        // default palette has its own places at the top).
+        if which != Row::Main
+            && crate::ui::menus::radio_if(ui, "palette.among_toolbars", "", among, !locked)
+        {
+            set_among_toolbars(app, which, crate::settings::MAX_TOOLBAR_ROW);
         }
     });
 }
@@ -458,18 +575,192 @@ pub fn document_grip_zone(app: &mut App, ui: &mut Ui, r: Rect) {
     crate::ui::bars::bar_menu(app, &resp, Bar::Palette);
 }
 
-/// The palette bars docked at `dock`, a panel each (a row along the top
-/// or the bottom, a column at the left or the right), in order.
-pub fn docked(app: &mut App, ui: &mut Ui, dock: Dock) {
+/// A bar docked at a side, or a place between them, as the frame drew
+/// them: in order from each edge inwards (see [`side_target`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SideMark {
+    /// The palette bars at `slot` of `dock` come here.
+    Place(Dock, BarSlot),
+    /// A bar drawn at `dock` over `rect`: palette bar `bar`, or another
+    /// bar (the toolbox, the default palette, a docker column).
+    Bar {
+        dock: Dock,
+        rect: Rect,
+        bar: Option<usize>,
+    },
+}
+
+/// Note a bar drawn at `dock` over `rect` (not a palette bar of its own).
+pub fn mark_bar(app: &mut App, dock: Dock, rect: Rect) {
+    if dock != Dock::Floating {
+        app.side_marks.push(SideMark::Bar {
+            dock,
+            rect,
+            bar: None,
+        });
+    }
+}
+
+/// Where a dragged palette bar dropped beside another bar goes, in the
+/// order the bars are drawn from the edge inwards.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SideDrop {
+    /// Just outside or inside palette bar `k` (`outer`), in its place.
+    Beside { k: usize, outer: bool },
+    /// The first (`first`) or last palette bar of `slot` at `dock`.
+    At {
+        dock: Dock,
+        slot: BarSlot,
+        first: bool,
+    },
+    /// Over the dragged bar itself: it stays.
+    Stay,
+}
+
+/// Where a palette bar (`dragged`) let go at `p` goes when `p` lies over
+/// a bar docked at a side, and the line that shows it: on the half of a
+/// bar towards the window's edge it goes just outside that bar, on the
+/// other half just inside it. Beside a palette bar it takes that bar's
+/// place in the order; beside another bar the place before or after it
+/// (`marks` says which places lie where). `None` over no docked bar.
+pub fn side_target(marks: &[SideMark], p: Pos2, dragged: usize) -> Option<(SideDrop, Rect)> {
+    let (i, dock, rect, bar) = marks.iter().enumerate().find_map(|(i, m)| match *m {
+        SideMark::Bar { dock, rect, bar } if rect.contains(p) => Some((i, dock, rect, bar)),
+        _ => None,
+    })?;
+    if bar == Some(dragged) {
+        return Some((SideDrop::Stay, rect));
+    }
+    let outer = match dock {
+        Dock::Left => p.x < rect.center().x,
+        Dock::Right => p.x > rect.center().x,
+        Dock::Top => p.y < rect.center().y,
+        _ => p.y > rect.center().y,
+    };
+    // The edge of the bar the dropped one will touch: the left or top
+    // one is the outer edge at the left and the top.
+    const LINE: f32 = 4.0;
+    let low = outer == matches!(dock, Dock::Left | Dock::Top);
+    let line = if dock.horizontal() {
+        let y = if low { rect.top() } else { rect.bottom() };
+        Rect::from_min_max(
+            pos2(rect.left(), y - LINE / 2.0),
+            pos2(rect.right(), y + LINE / 2.0),
+        )
+    } else {
+        let x = if low { rect.left() } else { rect.right() };
+        Rect::from_min_max(
+            pos2(x - LINE / 2.0, rect.top()),
+            pos2(x + LINE / 2.0, rect.bottom()),
+        )
+    };
+    if let Some(k) = bar {
+        return Some((SideDrop::Beside { k, outer }, line));
+    }
+    let place = |m: &SideMark| match *m {
+        SideMark::Place(d, s) if d == dock => Some(s),
+        _ => None,
+    };
+    let drop = if outer {
+        let slot = marks[..i]
+            .iter()
+            .rev()
+            .find_map(place)
+            .unwrap_or(BarSlot::Outer);
+        SideDrop::At {
+            dock,
+            slot,
+            first: false,
+        }
+    } else {
+        let slot = marks[i + 1..]
+            .iter()
+            .find_map(place)
+            .unwrap_or(BarSlot::Drawing);
+        SideDrop::At {
+            dock,
+            slot,
+            first: true,
+        }
+    };
+    Some((drop, line))
+}
+
+/// Put palette bar `k` where `drop` says, among the bars of a side: the
+/// bars of one place are drawn in their order in the preferences (along
+/// the bottom from the bottom up, see [`docked`]), so the bar moves in
+/// that list. Kept in the preferences and in workspace files.
+pub fn place_bar(app: &mut App, k: usize, drop: SideDrop) {
+    if k >= app.settings.palette_bars.len() {
+        return;
+    }
+    let (dock, slot) = match drop {
+        SideDrop::Stay => return,
+        SideDrop::At { dock, slot, .. } => (dock, slot),
+        SideDrop::Beside { k: j, .. } => match app.settings.palette_bars.get(j) {
+            Some(b) if j != k => (b.dock, b.slot_or_default()),
+            _ => return,
+        },
+    };
+    let mut bars = std::mem::take(&mut app.settings.palette_bars);
+    let mut moved = bars.remove(k);
+    moved.dock = dock;
+    moved.toolbar_row = None;
+    moved.slot = Some(slot);
+    // Along the bottom the list is drawn from its end.
+    let reversed = dock == Dock::Bottom;
+    let same: Vec<usize> = bars
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| b.dock == dock && !b.among_toolbars() && b.slot_or_default() == slot)
+        .map(|(i, _)| i)
+        .collect();
+    let end = bars.len();
+    let before_first = same.first().copied().unwrap_or(end);
+    let after_last = same.last().map_or(end, |i| i + 1);
+    let at = match drop {
+        SideDrop::Beside { k: j, outer } => {
+            let j = if j > k { j - 1 } else { j };
+            if outer != reversed {
+                j
+            } else {
+                j + 1
+            }
+        }
+        SideDrop::At { first, .. } => {
+            if first != reversed {
+                before_first
+            } else {
+                after_last
+            }
+        }
+        SideDrop::Stay => return,
+    };
+    bars.insert(at.min(end), moved);
+    app.settings.palette_bars = bars;
+    if app
+        .palette_expanded
+        .is_some_and(|w| matches!(w, Row::Extra(_)))
+    {
+        app.palette_expanded = None;
+    }
+    app.rebuild_palette();
+}
+
+/// The palette bars docked at `slot` of `dock`, a panel each (a row along
+/// the top or the bottom, a column at the left or the right), in order;
+/// the place itself is noted for the drops of a dragged bar.
+pub fn docked(app: &mut App, ui: &mut Ui, dock: Dock, slot: BarSlot) {
     if dock == Dock::Floating {
         return;
     }
+    app.side_marks.push(SideMark::Place(dock, slot));
+    // Those among the toolbars come with the toolbars (`toolbar_band`).
     let mut bars: Vec<usize> = (0..app.extra_palettes.len())
         .filter(|k| {
-            app.settings
-                .palette_bars
-                .get(*k)
-                .is_some_and(|b| b.dock == dock)
+            app.settings.palette_bars.get(*k).is_some_and(|b| {
+                b.dock == dock && !b.among_toolbars() && b.slot_or_default() == slot
+            })
         })
         .collect();
     // Along the bottom a panel added later lies above the earlier ones:
@@ -487,14 +778,21 @@ pub fn docked(app: &mut App, ui: &mut Ui, dock: Dock) {
             Dock::Left => egui::Panel::left(id),
             _ => egui::Panel::right(id),
         };
-        panel
+        let rect = panel
             .exact_size(crate::ui::palette::thickness(app, which))
             .resizable(false)
             .show_separator_line(false)
             .frame(egui::Frame::new().fill(Tokens::panel()))
             .show(ui, |ui| {
                 crate::ui::palette::strip(app, ui, which, !dock.horizontal())
-            });
+            })
+            .response
+            .rect;
+        app.side_marks.push(SideMark::Bar {
+            dock,
+            rect,
+            bar: Some(k),
+        });
     }
 }
 
@@ -745,12 +1043,42 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
     drag.last = Some(p);
     app.palette_bar_drag = Some(drag);
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
-    let dock = crate::ui::bars::target_dock(Bar::Palette, screen, menu_h, p);
-    let zone = drop_zone(app, drag, dock, screen, menu_h, p);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,
         egui::Id::new("palette_bar_drag_overlay"),
     ));
+    // On the line between two rows of toolbars along the top: a row of
+    // its own there, among them.
+    if let Some((row, mark)) = toolbar_target(&app.bar_rows, &app.palette_bands, p) {
+        painter.rect_filled(mark, 1.0, Color32::from_rgb(0x1E, 0x78, 0xD7));
+        if !down {
+            app.palette_bar_drag = None;
+            set_among_toolbars(app, Row::Extra(drag.bar), row);
+        }
+        return;
+    }
+    // Over a bar docked at a side (the toolbox, the default palette, a
+    // docker column, another palette bar): beside it, the line showing on
+    // which side (live test of 0.41).
+    if let Some((drop, mark)) = side_target(&app.side_marks, p, drag.bar) {
+        if drop == SideDrop::Stay {
+            painter.rect_stroke(
+                mark,
+                2.0,
+                Stroke::new(1.5, Color32::from_rgb(0x1E, 0x78, 0xD7)),
+                egui::StrokeKind::Inside,
+            );
+        } else {
+            painter.rect_filled(mark, 1.0, Color32::from_rgb(0x1E, 0x78, 0xD7));
+        }
+        if !down {
+            app.palette_bar_drag = None;
+            place_bar(app, drag.bar, drop);
+        }
+        return;
+    }
+    let dock = crate::ui::bars::target_dock(Bar::Palette, screen, menu_h, p);
+    let zone = drop_zone(app, drag, dock, screen, menu_h, p);
     painter.rect(
         zone,
         2.0,
@@ -894,6 +1222,86 @@ mod tests {
         assert!(bar_keys.iter().any(|k| k == "palette.close"));
         assert!(bar_keys.iter().any(|k| k == "palette.rows_8"));
         assert!(bar_keys.iter().any(|k| k == "palette.size_xl"));
+    }
+
+    /// A palette bar's menu puts it among the toolbars along the top,
+    /// under them all; Dock at Top puts it back beside the drawing. The
+    /// default palette's menu has no such place. A hand-edited file
+    /// keeps the place only at the top.
+    #[test]
+    fn the_menu_puts_a_bar_among_the_toolbars() {
+        let mut app = App::headless();
+        let id = crate::settings::palette_id(&app.palettes[3]);
+        app.open_palette_bar(&id);
+        click_item(&mut app, Row::Extra(0), "palette.among_toolbars");
+        let bar = &app.settings.palette_bars[0];
+        assert_eq!(bar.dock, Dock::Top);
+        assert_eq!(bar.toolbar_row, Some(crate::settings::MAX_TOOLBAR_ROW));
+        assert!(among_toolbars(&app, Row::Extra(0)));
+        assert_eq!(
+            toolbar_bands(&app),
+            vec![(crate::settings::MAX_TOOLBAR_ROW, 0)]
+        );
+        click_item(&mut app, Row::Extra(0), "bars.top");
+        let bar = &app.settings.palette_bars[0];
+        assert_eq!((bar.dock, bar.toolbar_row), (Dock::Top, None));
+        assert!(toolbar_bands(&app).is_empty());
+        assert!(!menu_keys(Row::Main, |_| {}).contains(&"palette.among_toolbars".to_string()));
+        let mut odd = crate::settings::PaletteBarPrefs {
+            dock: Dock::Left,
+            toolbar_row: Some(2),
+            ..Default::default()
+        };
+        odd.sanitize();
+        assert_eq!(odd.toolbar_row, None);
+        let mut far = crate::settings::PaletteBarPrefs {
+            dock: Dock::Top,
+            toolbar_row: Some(u32::MAX),
+            ..Default::default()
+        };
+        far.sanitize();
+        assert_eq!(far.toolbar_row, Some(crate::settings::MAX_TOOLBAR_ROW));
+    }
+
+    /// A palette bar dragged near the line between two rows of toolbars
+    /// goes between them; near the top or the bottom of them all, over or
+    /// under them; over a palette bar among them, to its place; over the
+    /// middle of a row or anywhere else, nowhere among them.
+    #[test]
+    fn a_drop_near_the_line_between_toolbar_rows_goes_there() {
+        use crate::ui::bars::{Bar, RowSpot, ROW_EDGE};
+        let spot = |row: usize, top: f32, h: f32| RowSpot {
+            dock: Dock::Top,
+            row,
+            rect: Rect::from_min_size(pos2(0.0, top), vec2(1600.0, h)),
+            slots: vec![(Bar::Standard, Rect::NOTHING)],
+        };
+        let rows = [spot(0, 50.0, 36.0), spot(1, 86.0, 53.0)];
+        let at = |y: f32| toolbar_target(&rows, &[], pos2(400.0, y)).map(|(r, _)| r);
+        assert_eq!(at(51.0), Some(0));
+        assert_eq!(at(84.0), Some(1));
+        assert_eq!(at(87.0), Some(1));
+        assert_eq!(at(138.0), Some(2));
+        assert_eq!(at(70.0), None, "the middle of a row");
+        assert_eq!(at(110.0), None);
+        assert_eq!(at(300.0), None, "off the rows");
+        assert_eq!(at(86.0 + ROW_EDGE + 1.0), None);
+        // The mark is a line across the rows at the place.
+        let (_, mark) = toolbar_target(&rows, &[], pos2(400.0, 84.0)).expect("a place");
+        assert!(mark.contains(pos2(10.0, 86.0)) && mark.width() == 1600.0);
+        // Over a palette bar among the toolbars: its place.
+        let band = Rect::from_min_size(pos2(0.0, 139.0), vec2(1600.0, 30.0));
+        let bands = [(2, band)];
+        assert_eq!(
+            toolbar_target(&rows, &bands, pos2(400.0, 150.0)).map(|(r, _)| r),
+            Some(2)
+        );
+        // Rows at the bottom take no palette bar among them.
+        let bottom = RowSpot {
+            dock: Dock::Bottom,
+            ..spot(0, 900.0, 36.0)
+        };
+        assert_eq!(toolbar_target(&[bottom], &[], pos2(400.0, 901.0)), None);
     }
 
     #[test]
@@ -1172,5 +1580,227 @@ mod rename_tests {
         run(&mut app, Vec::new());
         assert!(app.palette_rename.is_none());
         assert_eq!(app.palette_name(0), "Studio");
+    }
+
+    /// Live test of 0.41: palette bars docked only at the window's edges.
+    /// Let go over a bar docked at a side, a palette bar goes beside it:
+    /// on its half towards the edge just outside it, on the other half
+    /// just inside, with a line on that edge; over a palette bar it takes
+    /// that bar's place in the order, over itself it stays.
+    #[test]
+    fn a_bar_let_go_over_a_docked_bar_goes_beside_it() {
+        let col = |x0: f32, x1: f32| Rect::from_min_max(pos2(x0, 50.0), pos2(x1, 900.0));
+        let marks = [
+            SideMark::Place(Dock::Left, BarSlot::Outer),
+            SideMark::Place(Dock::Left, BarSlot::AfterPalette),
+            // The toolbox, then palette bar 1 after it.
+            SideMark::Bar {
+                dock: Dock::Left,
+                rect: col(0.0, 40.0),
+                bar: None,
+            },
+            SideMark::Place(Dock::Left, BarSlot::AfterToolbox),
+            SideMark::Bar {
+                dock: Dock::Left,
+                rect: col(40.0, 60.0),
+                bar: Some(1),
+            },
+            SideMark::Place(Dock::Left, BarSlot::Inner),
+            // A docker column at the right, then the drawing.
+            SideMark::Place(Dock::Right, BarSlot::AfterToolbox),
+            SideMark::Bar {
+                dock: Dock::Right,
+                rect: col(1200.0, 1600.0),
+                bar: None,
+            },
+            SideMark::Place(Dock::Right, BarSlot::Inner),
+            SideMark::Place(Dock::Right, BarSlot::Drawing),
+        ];
+        let at = |x: f32| side_target(&marks, pos2(x, 400.0), 0);
+        // The toolbox's inner half: first of the places after it.
+        let (drop, line) = at(30.0).expect("beside the toolbox");
+        assert_eq!(
+            drop,
+            SideDrop::At {
+                dock: Dock::Left,
+                slot: BarSlot::AfterToolbox,
+                first: true
+            }
+        );
+        assert!((line.center().x - 40.0).abs() < 0.1, "{line:?}");
+        // Its outer half: last of the places before it.
+        let (drop, line) = at(10.0).expect("outside the toolbox");
+        assert_eq!(
+            drop,
+            SideDrop::At {
+                dock: Dock::Left,
+                slot: BarSlot::AfterPalette,
+                first: false
+            }
+        );
+        assert!(line.center().x.abs() < 0.1, "{line:?}");
+        // Palette bar 1: beside it, outside or inside.
+        assert_eq!(
+            at(45.0).map(|t| t.0),
+            Some(SideDrop::Beside { k: 1, outer: true })
+        );
+        assert_eq!(
+            at(55.0).map(|t| t.0),
+            Some(SideDrop::Beside { k: 1, outer: false })
+        );
+        // At the right the outer half is the right one.
+        assert_eq!(
+            at(1500.0).map(|t| t.0),
+            Some(SideDrop::At {
+                dock: Dock::Right,
+                slot: BarSlot::AfterToolbox,
+                first: false
+            })
+        );
+        assert_eq!(
+            at(1300.0).map(|t| t.0),
+            Some(SideDrop::At {
+                dock: Dock::Right,
+                slot: BarSlot::Inner,
+                first: true
+            })
+        );
+        // Over itself it stays; over the drawing nothing here.
+        assert_eq!(
+            side_target(&marks, pos2(50.0, 400.0), 1).map(|t| t.0),
+            Some(SideDrop::Stay)
+        );
+        assert_eq!(at(700.0), None);
+    }
+
+    /// The bars of one place lie in their order; a bar dropped beside
+    /// another takes its place in that order (along the bottom, drawn
+    /// from the bottom up, too), keeps its palette and rows, and the
+    /// place is kept in the preferences and in workspace files.
+    #[test]
+    fn a_bar_dropped_beside_another_takes_its_place_in_the_order() {
+        let mut app = App::headless();
+        let ids: Vec<String> = (1..4)
+            .map(|i| crate::settings::palette_id(&app.palettes[i]))
+            .collect();
+        for id in &ids {
+            app.open_palette_bar(id);
+        }
+        for b in &mut app.settings.palette_bars {
+            b.dock = Dock::Left;
+        }
+        let order = |app: &App| -> Vec<String> {
+            app.settings
+                .palette_bars
+                .iter()
+                .map(|b| b.palette.clone())
+                .collect()
+        };
+        // The third outside the first: first in the order.
+        place_bar(&mut app, 2, SideDrop::Beside { k: 0, outer: true });
+        assert_eq!(
+            order(&app),
+            [ids[2].clone(), ids[0].clone(), ids[1].clone()]
+        );
+        assert_eq!(app.extra_palettes.len(), 3, "the bars follow");
+        assert_eq!(
+            app.settings.palette_bars[0].slot,
+            Some(BarSlot::AfterPalette)
+        );
+        // Inside the toolbox: a place of its own.
+        place_bar(
+            &mut app,
+            0,
+            SideDrop::At {
+                dock: Dock::Left,
+                slot: BarSlot::AfterToolbox,
+                first: true,
+            },
+        );
+        let moved = app
+            .settings
+            .palette_bars
+            .iter()
+            .find(|b| b.palette == ids[2])
+            .expect("bar");
+        assert_eq!(
+            (moved.dock, moved.slot),
+            (Dock::Left, Some(BarSlot::AfterToolbox))
+        );
+        // A second bar beside it, inside: after it in the order.
+        let k = app
+            .settings
+            .palette_bars
+            .iter()
+            .position(|b| b.palette == ids[1])
+            .expect("bar");
+        let j = app
+            .settings
+            .palette_bars
+            .iter()
+            .position(|b| b.palette == ids[2])
+            .expect("bar");
+        place_bar(&mut app, k, SideDrop::Beside { k: j, outer: false });
+        let slots: Vec<(String, Option<BarSlot>)> = app
+            .settings
+            .palette_bars
+            .iter()
+            .map(|b| (b.palette.clone(), b.slot))
+            .collect();
+        assert_eq!(
+            slots,
+            [
+                (ids[0].clone(), None),
+                (ids[2].clone(), Some(BarSlot::AfterToolbox)),
+                (ids[1].clone(), Some(BarSlot::AfterToolbox)),
+            ]
+        );
+        // Along the bottom, drawn from the bottom up: outside (under) a
+        // bar comes after it in the list.
+        for b in &mut app.settings.palette_bars {
+            b.dock = Dock::Bottom;
+            b.slot = None;
+        }
+        place_bar(&mut app, 0, SideDrop::Beside { k: 2, outer: true });
+        assert_eq!(
+            order(&app),
+            [ids[2].clone(), ids[1].clone(), ids[0].clone()]
+        );
+        place_bar(&mut app, 2, SideDrop::Beside { k: 0, outer: false });
+        assert_eq!(
+            order(&app),
+            [ids[0].clone(), ids[2].clone(), ids[1].clone()]
+        );
+        // Another side from the menu: that side's usual place.
+        set_dock(&mut app, Row::Extra(0), Dock::Bottom, None);
+        assert_eq!(
+            app.settings.palette_bars[0].slot,
+            Some(BarSlot::Drawing),
+            "the same side keeps it"
+        );
+        set_dock(&mut app, Row::Extra(0), Dock::Right, None);
+        assert_eq!(app.settings.palette_bars[0].slot, None);
+        place_bar(
+            &mut app,
+            1,
+            SideDrop::At {
+                dock: Dock::Top,
+                slot: BarSlot::Outer,
+                first: false,
+            },
+        );
+        // Kept in a workspace file.
+        let file = app.export_workspace(crate::workspace_file::WorkspaceParts::ALL);
+        let bytes = file.to_bytes();
+        let back = crate::workspace_file::WorkspaceFile::from_bytes(&bytes).expect("reads");
+        let mut other = App::headless();
+        other.import_workspace(&back, crate::workspace_file::WorkspaceParts::ALL);
+        assert_eq!(other.settings.palette_bars, app.settings.palette_bars);
+        // A floating bar has no place.
+        let mut b = app.settings.palette_bars[0].clone();
+        b.dock = Dock::Floating;
+        b.slot = Some(BarSlot::Inner);
+        b.sanitize();
+        assert_eq!(b.slot, None);
     }
 }

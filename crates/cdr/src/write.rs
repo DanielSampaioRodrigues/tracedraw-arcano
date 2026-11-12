@@ -95,6 +95,15 @@ pub struct Previews {
     /// at [`SHADOW_DPI`] ([`crate::shadow_image`]), so a drawing written
     /// without previews keeps its shadows too.
     pub shadows: Vec<ShadowPicture>,
+    /// Write paragraph text as paragraph text, its frame and the text
+    /// flowing in it (#1226), where the files can hold it as TraceDraw
+    /// draws it. Off by default: the other program's 27.2 release hangs
+    /// or closes on opening every file TraceDraw wrote so (versions 20
+    /// and 27, #1698), while the same drawings with the text as artistic
+    /// text open; so paragraph text goes out as one artistic text per
+    /// line, as before 0.33, until a layout of the frame records is
+    /// confirmed in that program.
+    pub paragraph_frames: bool,
 }
 
 /// A PNG file and its size in pixels.
@@ -124,6 +133,17 @@ pub struct ShadowPicture {
 /// (version 16 and later).
 pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
+    let meshes = mesh_fills_kept_as_one_colour(doc);
+    if meshes > 0 {
+        log::warn!(
+            "{meshes} mesh fill(s) written to .cdr as one colour each (mesh fill records are not written)"
+        );
+    }
+    // The guidelines every page shows (#1928) count as each page's; those
+    // all pages share go to the master page's guides layer
+    // ([`master_guides`]), as files hold them.
+    let guided = master_guides_on_pages(doc);
+    let doc = guided.as_ref().unwrap_or(doc);
     let on_pages = master_objects_on_pages(doc);
     let doc = on_pages.as_ref().unwrap_or(doc);
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
@@ -131,6 +151,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     w.faces = &previews.fonts;
     w.tech = fonts::face_tech(&previews.fonts);
     w.embed_fonts = previews.embed_fonts;
+    w.paragraph_frames = previews.paragraph_frames;
     let mut tree = w.document(doc);
     let font_ids = w.fonts.clone();
     if !v.zip() {
@@ -192,14 +213,27 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     out
 }
 
-/// The drawing with the objects of its master layers on the pages, or
-/// `None` when no master layer holds any. No `.cdr` file seen has objects
-/// on a layer of the master page (717 files of versions 7 to 27), so the
-/// record a reader would take for one is not known; each page a master
-/// layer shows on gets a layer of that name with copies of its objects
-/// instead, behind the page's own layers or in front of them as it is
-/// drawn there (#1132), so every page looks as it did. The first page
-/// keeps the objects' ids, later pages' copies get new ones.
+/// Whether master layer `l` goes onto the master page's desktop layer:
+/// it shows behind every page and holds no page number field (whose
+/// copies show each page's own number). The files of #1775 (one drawing
+/// saved in each version from 7 to 21) hold objects that show behind
+/// every page on that layer.
+fn on_master_desktop(l: &tracedraw_core::document::Layer) -> bool {
+    l.scope == tracedraw_core::MasterScope::All
+        && !l.in_front
+        && !l.shapes.iter().any(Shape::holds_page_number)
+}
+
+/// The drawing with the objects of its other master layers on the pages,
+/// or `None` when no such layer holds any. No `.cdr` file seen has
+/// objects on a master layer in front of the pages or on some pages
+/// only, so the record a reader would take for one is not known; each
+/// page such a master layer shows on gets a layer of that name with
+/// copies of its objects instead, in front of the page's own layers or
+/// behind them as it is drawn there (#1132), so every page looks as it
+/// did. The first page keeps the objects' ids, later pages' copies get
+/// new ones. The master layers behind every page stay (see
+/// [`on_master_desktop`]).
 fn master_objects_on_pages(doc: &Document) -> Option<Document> {
     use tracedraw_core::id::IdSource;
     fn reid(s: &Shape, ids: &mut IdSource) -> Shape {
@@ -217,7 +251,11 @@ fn master_objects_on_pages(doc: &Document) -> Option<Document> {
         }
         c
     }
-    if doc.master.iter().all(|l| l.shapes.is_empty()) {
+    if doc
+        .master
+        .iter()
+        .all(|l| l.shapes.is_empty() || on_master_desktop(l))
+    {
         return None;
     }
     let mut out = doc.clone();
@@ -229,12 +267,12 @@ fn master_objects_on_pages(doc: &Document) -> Option<Document> {
         };
         let mut layers = Vec::with_capacity(drawn.len());
         for l in drawn {
-            let master = doc.master.iter().any(|m| m.id == l.id);
-            if !master {
+            let master = doc.master.iter().find(|m| m.id == l.id);
+            let Some(master) = master else {
                 layers.push(l.into_owned());
                 continue;
-            }
-            if l.shapes.is_empty() {
+            };
+            if l.shapes.is_empty() || on_master_desktop(master) {
                 continue;
             }
             let first = !seen.contains(&l.id);
@@ -254,7 +292,7 @@ fn master_objects_on_pages(doc: &Document) -> Option<Document> {
             p.layers = layers;
         }
     }
-    out.master.clear();
+    out.master.retain(on_master_desktop);
     out.set_ids(ids);
     Some(out)
 }
@@ -593,6 +631,17 @@ fn cp1252(s: &str) -> Option<Vec<u8>> {
             }
         })
         .collect()
+}
+
+/// The one byte a letter of a version 12+ text record takes, or `None`
+/// when it must go out as a marked UTF-16 unit: the byte is the letter's
+/// own code point, so only U+0000 to U+00FF have one. The program that
+/// reads the files takes such a byte as that code point, not as a
+/// Windows-1252 byte: curly quotes written as Windows-1252 0x92 and 0x94
+/// showed as missing glyphs in its version 18 reader and vanished in
+/// its version 21 one (#2124).
+fn text_byte(c: char) -> Option<u8> {
+    u8::try_from(u32::from(c)).ok()
 }
 
 /// A layer or object name: UTF-16 from version 12, 8-bit before.
@@ -1561,12 +1610,48 @@ fn fill_colour(fill: &Fill) -> Option<Color> {
     }
 }
 
+/// How many objects of `doc` (inside groups and clip frames and in
+/// symbols too) have a mesh fill, which these files get as one colour,
+/// the mesh's mean colour: the records of mesh fill objects are only
+/// known as far as reading them needs (`docs/cdr-format.md`, object type
+/// 0x20), not well enough to write one (discussion #2073). The app tells
+/// the user after saving.
+pub fn mesh_fills_kept_as_one_colour(doc: &Document) -> usize {
+    fn count(shapes: &[Shape]) -> usize {
+        shapes
+            .iter()
+            .map(|s| {
+                let own = usize::from(matches!(s.fill, Fill::Mesh(_)));
+                own + match &s.kind {
+                    ShapeKind::Group { children } => count(children),
+                    ShapeKind::ClipFrame { frame, contents } => {
+                        count(std::slice::from_ref(&**frame)) + count(contents)
+                    }
+                    _ => 0,
+                }
+            })
+            .sum()
+    }
+    doc.pages
+        .iter()
+        .flat_map(|p| &p.layers)
+        .map(|l| count(&l.shapes))
+        .sum::<usize>()
+        + doc
+            .symbols
+            .iter()
+            .map(|s| count(std::slice::from_ref(&s.shape)))
+            .sum::<usize>()
+}
+
 /// The one colour written for a fill these files cannot hold yet: the
 /// mean colour of a bitmap pattern's tile, the middle of a texture's or a
-/// two-colour pattern's colours, else its preview colour.
+/// two-colour pattern's colours, the mean of a mesh's node colours
+/// (weighed by their opacity), else its preview colour.
 fn stand_in_colour(fill: &Fill) -> Option<Color> {
     use tracedraw_core::style::{lerp_color, Pattern};
     match fill {
+        Fill::Mesh(m) => m.mean_color().or_else(|| fill.preview_color()),
         Fill::Pattern(Pattern::Bitmap { png, .. }) => {
             let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
             let (mut sum, mut weight) = ([0.0f64; 3], 0.0f64);
@@ -2513,6 +2598,10 @@ struct StyleUses {
     graphic_fill: u32,
     outline: u32,
     font: u16,
+    /// The style flags of the face of `font` the styles name: the flags
+    /// of its first `font` record (0x40 where the regular face is used
+    /// or before version 16), so the styles name a face the file has.
+    font_flags: u32,
     /// Text formats of versions 7 to 15, one style each after the
     /// graphic style (ids from `GRAPHIC_STYLE_ID + 1`).
     formats: Vec<TextFormat>,
@@ -2631,7 +2720,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         font,
         uses.font,
         (12.0 * 254000.0 / 72.0) as i32,
-        0x40,
+        uses.font_flags,
     );
     for (f, (_, entry)) in uses.formats.iter().zip(&format_entries) {
         font_entry(&mut t, *entry, f.font, f.size, f.flags);
@@ -2716,7 +2805,8 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
 /// 8): "RI", its length, 0, a 78-byte header (model 99, 1, size, 1 plane,
 /// 8 bits, stride, bytes, 64 at 62) and one byte per pixel, 255 opaque,
 /// rows bottom-up padded to 4 bytes.
-fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
+/// Returns the record and the image's width and height in pixels.
+pub(crate) fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<(Vec<u8>, u32, u32)> {
     let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
     let (w, h) = (pm.width(), pm.height());
     if w == 0 || h == 0 {
@@ -2811,7 +2901,7 @@ fn bmp_record(id: u32, png: &[u8], size_mm: (f64, f64)) -> Option<Vec<u8>> {
             .zeros(12);
         b.bytes(&mask);
     }
-    Some(b.done())
+    Some((b.done(), w, h))
 }
 
 /// `loda`: header (length, argument count, offsets table, types table,
@@ -3113,12 +3203,19 @@ fn object_style_json(
     stroke: Option<&Stroke>,
     opacity: f64,
     graded: Option<(&tracedraw_core::Fountain, u8)>,
+    nonzero: bool,
 ) -> String {
+    // A nonzero fill rule is `winding` "1" in the fill (#1919); even-odd,
+    // the default, is left out as most files do.
+    let winding = if nonzero { r#","winding":"1""# } else { "" };
     let fill_part = match fill_colour(fill) {
         Some(c) if !matches!(fill, Fill::None) => {
-            format!(r#"{{"type":"1","primaryColor":"{}"}}"#, colour_spec(c))
+            format!(
+                r#"{{"type":"1","primaryColor":"{}"{winding}}}"#,
+                colour_spec(c)
+            )
         }
-        _ => r#"{"type":"0"}"#.to_string(),
+        _ => format!(r#"{{"type":"0"{winding}}}"#),
     };
     let outline_part = match stroke {
         // The mitre limit in degrees, where the reader takes it (#384).
@@ -3161,10 +3258,10 @@ fn object_style_json(
 /// next bit up its italic.
 fn style_flags(sp: &TextSpan) -> u32 {
     let mut f = weight_code(sp);
-    if sp.underline {
+    if sp.underline.is_on() {
         f |= 1 << 18;
     }
-    if sp.strikethrough {
+    if sp.strikethrough.is_on() {
         f |= 1 << 24;
     }
     f
@@ -3200,7 +3297,7 @@ fn weight_member(sp: &TextSpan) -> u32 {
 /// scripts, with the members the paragraph's default style holds besides
 /// them (angle, outline, shifts), as every such run of the files of the
 /// program that reads them is complete (#1379).
-fn run_style_json(sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) -> String {
+fn run_style_json(v: Ver, sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) -> String {
     // A fill other than a colour is left to the paragraph's.
     let fill = match fill.and_then(fill_colour) {
         Some(c) => format!("{},", fill_json(&colour_spec(c))),
@@ -3209,10 +3306,10 @@ fn run_style_json(sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) ->
     format!(
         r#"{{"character":{{{}"angle":"0","outline":{},"RTL":{},"latin":{},"h_shift":"0","v_shift":"0","farEast":{}}}}}"#,
         fill,
-        character_outline_json(),
-        font_json(Some(sp), 178, tech),
-        font_json(Some(sp), 0, tech),
-        font_json(Some(sp), 128, tech)
+        character_outline_json(v),
+        font_json(v, Some(sp), 178, tech),
+        font_json(v, Some(sp), 0, tech),
+        font_json(v, Some(sp), 128, tech)
     )
 }
 
@@ -3220,11 +3317,19 @@ fn run_style_json(sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) ->
 const BLACK_SPEC: &str = "CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000";
 
 /// The `outline` member of a character style: none (width 0), with the
-/// members files give it.
-fn character_outline_json() -> String {
+/// members files give it; from version 19 `variableAttributes` too, as
+/// every text of the files of versions 19 and 22 to 27 the program's
+/// recent releases save holds it (#1698; its 2019 release leaves it out
+/// up to 21).
+fn character_outline_json(v: Ver) -> String {
     let screen = "0,0,45000000,60,0";
+    let variable = if v.0 >= 19 {
+        r#""variableAttributes":"0|0","#
+    } else {
+        ""
+    };
     format!(
-        r#"{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{BLACK_SPEC}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}}"#
+        r#"{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{BLACK_SPEC}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0",{variable}"width":"0"}}"#
     )
 }
 
@@ -3237,16 +3342,16 @@ fn character_outline_json() -> String {
 /// the font and drew the whole text in one colour; the runs of a file
 /// that program saved name their fonts as the paragraph style does
 /// (#1297).
-fn character_json(sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) -> String {
+fn character_json(v: Ver, sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) -> String {
     let fill = match fill.and_then(fill_colour) {
         Some(c) => format!("{},", fill_json(&colour_spec(c))),
         None => String::new(),
     };
     format!(
         r#""character":{{{fill}"latin":{},"RTL":{},"farEast":{}}}"#,
-        font_json(Some(sp), 0, tech),
-        font_json(Some(sp), 178, tech),
-        font_json(Some(sp), 128, tech)
+        font_json(v, Some(sp), 0, tech),
+        font_json(v, Some(sp), 178, tech),
+        font_json(v, Some(sp), 128, tech)
     )
 }
 
@@ -3264,8 +3369,11 @@ fn fill_json(colour: &str) -> String {
 /// files hold when nothing sets them; 24 pt Arial without a span. The
 /// `technology` and `version` are those of the font drawing the run
 /// (`tech`), as files give them for every face they find (#1484); 4 and
-/// an empty version for a face without its font file.
-fn font_json(sp: Option<&TextSpan>, charset: u32, tech: &fonts::FaceTech) -> String {
+/// an empty version for a face without its font file. From version 22
+/// an empty `font_axes` too, as every font of the files of versions 22
+/// to 27 holds it when no variable font axis is set (#1698; the files
+/// of versions 19 to 21 have none).
+fn font_json(v: Ver, sp: Option<&TextSpan>, charset: u32, tech: &fonts::FaceTech) -> String {
     let (technology, version) = sp
         .and_then(|sp| tech.get(&(sp.font_family.clone(), sp.bold, sp.italic)))
         .map_or((4, String::new()), |(k, v)| {
@@ -3277,13 +3385,14 @@ fn font_json(sp: Option<&TextSpan>, charset: u32, tech: &fonts::FaceTech) -> Str
             (sp.size_pt * 254000.0 / 72.0).round() as i64,
             weight_member(sp),
             u8::from(sp.italic),
-            u8::from(sp.underline),
-            u8::from(sp.strikethrough),
+            u8::from(sp.underline.is_on()),
+            u8::from(sp.strikethrough.is_on()),
         ),
         None => ("Arial".to_string(), 254000 * 24 / 72, 64, 0, 0, 0),
     };
+    let axes = if v.0 >= 22 { r#","font_axes":"""# } else { "" };
     format!(
-        r#"{{"overline":"0","effect":"0","version":"{version}","italic":"{italic}","weight":"{weight}","underline":"{underline}","charset":"{charset}","technology":"{technology}","size":"{size}","font":"{family}","script":"0","strikeout":"{strike}"}}"#
+        r#"{{"overline":"0","effect":"0","version":"{version}","italic":"{italic}","weight":"{weight}","underline":"{underline}","charset":"{charset}","technology":"{technology}","size":"{size}","font":"{family}","script":"0","strikeout":"{strike}"{axes}}}"#
     )
 }
 
@@ -3304,17 +3413,88 @@ fn line_spacing_factor(f: &tracedraw_core::ParagraphFormat, size_pt: f64) -> f64
     }
 }
 
+/// The members of a paragraph text's paragraph style (versions 16+)
+/// beyond those artistic text has: hyphenation, bullets, drop caps,
+/// indents and tabs. Every paragraph of every paragraph text of the
+/// files of versions 19, 22 and 27 holds them (18 paragraphs, 2026-11-04,
+/// #1698); TraceDraw gave its paragraph text the members of artistic
+/// text only, and the program that reads the files hung on opening any
+/// of them. The values are those of the version 27 file when nothing is
+/// set (no hyphenation, bullet or drop cap, no indent), each a JSON value.
+pub(crate) const FRAME_TEXT_PARAGRAPH: &[(&str, &str)] = &[
+    ("autoHyphenate", r#""0""#),
+    ("breakAllCapWords", r#""0""#),
+    ("breakCapitalizedWords", r#""0""#),
+    ("bulletAngle", r#""0""#),
+    ("bulletChar", r#""22200000""#),
+    ("bulletFill", r#"{"type":"0"}"#),
+    ("bulletFirstCharIndent", r#""37500""#),
+    (
+        "bulletFont",
+        r#"{"charset":"0","effect":"0","font":"Arial","overline":"0","script":"0","size":"42333","strikeout":"0","technology":"0","underline":"0","version":"","weight":"12480"}"#,
+    ),
+    ("bulletHShift", r#""0""#),
+    ("bulletHanging", r#""1""#),
+    ("bulletOn", r#""0""#),
+    ("bulletOutline", r#"{"width":"0"}"#),
+    ("bulletVShift", r#""0""#),
+    ("dropCapOn", r#""0""#),
+    ("firstLineIndent", r#""0""#),
+    ("hangingIndent", r#""0""#),
+    ("hyphenateHotZone", r#""127000""#),
+    ("hyphenateMinCharsAfter", r#""2""#),
+    ("hyphenateMinCharsBefore", r#""3""#),
+    ("hyphenateMinWordLength", r#""6""#),
+    ("leftMargin", r#""0""#),
+    ("linesToDrop", r#""3""#),
+    ("restOfLinesIndent", r#""0""#),
+    ("spacingFromText", r#""0""#),
+    ("tabLeaderChar", r#""2e000000""#),
+    ("tabLeaderSpacing", r#""1""#),
+    (
+        "tabs",
+        r#""0,0,75000|0,0,150000|0,0,225000|0,0,300000|0,0,375000|0,0,450000|0,0,525000|0,0,600000|0,0,675000|0,0,750000|0,0,825000|0,0,900000""#,
+    ),
+];
+
 /// A text paragraph's whole default style, as files of versions 16 and
 /// later write it: the first run's font, size, weight and colour, the
 /// alignment, and every other member with the values files hold when it
-/// is not set.
+/// is not set; paragraph text (`frame_text`) with the members of
+/// [`FRAME_TEXT_PARAGRAPH`] too, its `tabs` member holding `tabs` when
+/// the paragraph has stops of its own.
+#[allow(clippy::too_many_arguments)]
 fn full_text_style(
+    v: Ver,
     sp: Option<&TextSpan>,
     fill: Option<&Fill>,
     align: TextAlign,
     leading: f64,
+    tabs: &[tracedraw_core::TabStop],
     tech: &fonts::FaceTech,
+    frame_text: bool,
 ) -> String {
+    // Paragraph text holds one `tabs` member, among the members of
+    // [`FRAME_TEXT_PARAGRAPH`]: the paragraph's own stops when it has
+    // them, else the files' default; artistic text holds its stops only
+    // when it has some.
+    let own_tabs = tab_list(tabs);
+    let frame_members: String = if frame_text {
+        FRAME_TEXT_PARAGRAPH
+            .iter()
+            .map(|(k, v)| match (*k, &own_tabs) {
+                ("tabs", Some(list)) => format!(r#""tabs":"{list}","#),
+                _ => format!(r#""{k}":{v},"#),
+            })
+            .collect()
+    } else {
+        String::new()
+    };
+    let tabs = if frame_text {
+        String::new()
+    } else {
+        tabs_members(tabs)
+    };
     let colour = fill
         .and_then(fill_colour)
         .map(colour_spec)
@@ -3324,16 +3504,48 @@ fn full_text_style(
             r#"{{"character":{{{fill},"#,
             r#""angle":"0","outline":{outline},"#,
             r#""RTL":{rtl},"latin":{latin},"h_shift":"0","v_shift":"0","farEast":{far}}},"frame":{{}},"#,
-            r#""paragraph":{{"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"{leading}","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455","justify":"{justify}"}}}}"#
+            r#""paragraph":{{{frame_members}"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"{leading}","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455",{tabs}"justify":"{justify}"}}}}"#
         ),
+        tabs = tabs,
         fill = fill_json(&colour),
-        outline = character_outline_json(),
-        rtl = font_json(sp, 178, tech),
-        latin = font_json(sp, 0, tech),
-        far = font_json(sp, 128, tech),
+        outline = character_outline_json(v),
+        rtl = font_json(v, sp, 178, tech),
+        latin = font_json(v, sp, 0, tech),
+        far = font_json(v, sp, 128, tech),
         justify = justify_code(align),
         leading = (leading * 1_000_000.0).round() as i64,
+        frame_members = frame_members,
     )
+}
+
+/// A paragraph's tab stops as members of a version 16+ style string's
+/// paragraph, as the samples of #1852 hold them: `tabs` (each stop 0,
+/// its kind code and its position in coordinate units, `|` between), the
+/// leader spacing 1 and the leader character "." (`2e000000`, its code
+/// as four little-endian bytes); nothing for a paragraph without stops
+/// of its own.
+fn tabs_members(tabs: &[tracedraw_core::TabStop]) -> String {
+    match tab_list(tabs) {
+        Some(list) => {
+            format!(r#""tabs":"{list}","tabLeaderSpacing":"1","tabLeaderChar":"2e000000","#)
+        }
+        None => String::new(),
+    }
+}
+
+/// The value of a `tabs` member for a paragraph's own stops (each stop
+/// 0, its kind code and its position in coordinate units, `|` between),
+/// or `None` for a paragraph without stops of its own.
+fn tab_list(tabs: &[tracedraw_core::TabStop]) -> Option<String> {
+    if tabs.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = tracedraw_core::normalized_tabs(tabs)
+        .iter()
+        .take(crate::text::TAB_ENTRY_STOPS)
+        .map(|t| format!("0,{},{}", crate::text::tab_code(t.kind), units(t.pos)))
+        .collect();
+    Some(list.join("|"))
 }
 
 /// The alignment of each paragraph of a text (its own, or `align`).
@@ -3419,6 +3631,26 @@ fn frame_json(f: Size, para: &tracedraw_core::ParagraphStyle) -> String {
 /// size (a master guideline lies as far from each page's centre): they go
 /// on the master page's guides layer once, as the files of versions 11,
 /// 15 and 25 to 27 keep their guidelines (#1161).
+/// The drawing with the master page's guidelines (#1928) added to every
+/// page's own, or `None` when it has none.
+fn master_guides_on_pages(doc: &Document) -> Option<Document> {
+    if doc.master_guides.is_empty() {
+        return None;
+    }
+    let mut out = doc.clone();
+    for p in &mut out.pages {
+        let own = std::mem::take(&mut p.guides);
+        p.guides = doc.master_guides.clone();
+        for g in own {
+            if !p.guides.iter().any(|h| h.line == g.line) {
+                p.guides.push(g);
+            }
+        }
+    }
+    out.master_guides.clear();
+    Some(out)
+}
+
 fn master_guides(doc: &Document) -> Vec<tracedraw_core::document::GuideLine> {
     let Some(first) = doc.pages.first() else {
         return Vec::new();
@@ -3507,6 +3739,9 @@ struct Writer<'a> {
     /// Embed the faces whose licence allows it (see
     /// [`Previews::embed_fonts`]).
     embed_fonts: bool,
+    /// Write paragraph text as paragraph text (see
+    /// [`Previews::paragraph_frames`]).
+    paragraph_frames: bool,
     split_families: HashMap<(String, bool), Option<(String, u16)>>,
     /// What [`fonts::drawn_style`] said for each face the runs name.
     drawn_styles: HashMap<(String, bool, bool), Option<(u16, bool)>>,
@@ -3652,6 +3887,7 @@ impl<'a> Writer<'a> {
             has_text: false,
             faces: &[],
             embed_fonts: false,
+            paragraph_frames: false,
             split_families: HashMap::new(),
             drawn_styles: HashMap::new(),
             drawing_effects: 0,
@@ -3755,6 +3991,7 @@ impl<'a> Writer<'a> {
             width_px,
             height_px,
             size_mm,
+            ..
         }) = fill
         {
             let key = (*width_px, *height_px, size_mm.to_bits());
@@ -3804,12 +4041,14 @@ impl<'a> Writer<'a> {
         id
     }
 
-    fn bitmap_id(&mut self, png: &[u8], size_mm: (f64, f64)) -> Option<u32> {
+    /// A new `bmp ` record for `png`: its id and the image's size in
+    /// pixels.
+    fn bitmap_id(&mut self, png: &[u8], size_mm: (f64, f64)) -> Option<(u32, u32, u32)> {
         let id = self.next_bitmap;
-        let rec = bmp_record(id, png, size_mm)?;
+        let (rec, w, h) = bmp_record(id, png, size_mm)?;
         self.next_bitmap += 1;
         self.bitmaps.push(rec);
-        Some(id)
+        Some((id, w, h))
     }
 
     /// The whole file: version chunks, bitmaps, the document tables, the
@@ -3831,12 +4070,25 @@ impl<'a> Writer<'a> {
             .iter()
             .map(|g| self.guide(g, centre))
             .collect();
+        // The objects of the master layers behind every page, on the
+        // master page's desktop layer (front to back, as files list
+        // them), written now as they fill the tables too (#1775).
+        let mut desktop = Vec::new();
+        let mut unused = None;
+        for layer in doc.master.iter().rev().filter(|l| on_master_desktop(l)) {
+            desktop.extend(self.layer_objects(layer, centre, &mut unused));
+        }
+        let desktop_name = doc
+            .master
+            .iter()
+            .find(|l| on_master_desktop(l) && !l.shapes.is_empty())
+            .map(|l| l.name.clone());
         // Pages first: they fill the tables.
         self.layer_slots = layer_slots(doc);
         let mut pages = Vec::new();
         let mut content: Option<Rect> = None;
-        for page in &doc.pages {
-            let (node, b) = self.page(page);
+        for (index, page) in doc.pages.iter().enumerate() {
+            let (node, b) = self.page(page, index);
             if content.is_none() {
                 content = b;
             }
@@ -3880,6 +4132,11 @@ impl<'a> Writer<'a> {
         if self.fonts.is_empty() {
             self.font_id("Arial");
         }
+        // The face the style table names: the first record of the first
+        // font, as the file of #1733 names its one face there (Khand at
+        // 0x1000, the bold face, with no regular record).
+        let first_font = self.fonts.first().map(|(id, _)| *id);
+        let mut style_face = 0x40;
         if !self.fonts.is_empty() {
             // What the package's font table says about each embedded
             // face, for the records of version 16 and later (faces not
@@ -3896,10 +4153,6 @@ impl<'a> Writer<'a> {
             };
             let mut fonts = Vec::new();
             for (id, f) in &self.fonts {
-                fonts.push(chunk(
-                    b"font",
-                    font_record(v, *id, f, 0x40, record_of(*id, 0x40)),
-                ));
                 // The faces the text asks for, and the faces the font
                 // table lists for them (a bold face drawing bold italic
                 // text), each of which has its record in files (#1455).
@@ -3913,10 +4166,22 @@ impl<'a> Writer<'a> {
                             .filter(|r| r.number == *id)
                             .flat_map(|r| r.flags.iter().copied()),
                     )
-                    .filter(|flags| *flags != 0x40)
                     .collect();
+                // Files of version 16 and later hold a record for each
+                // face used and none for a regular face nothing uses: the
+                // file of #1733 that program saved has one "Khand" record,
+                // the bold one. A plain record beside it named a regular
+                // face the file neither embeds nor needs, which was asked
+                // for where the font is not installed. Before 16 the
+                // regular record is the font the text styles name.
+                if faces.is_empty() || !v.redirects() {
+                    faces.push(0x40);
+                }
                 faces.sort_unstable();
                 faces.dedup();
+                if Some(*id) == first_font {
+                    style_face = faces[0];
+                }
                 for flags in faces {
                     fonts.push(chunk(
                         b"font",
@@ -3933,6 +4198,7 @@ impl<'a> Writer<'a> {
             graphic_fill: self.fill_id(&Fill::None),
             outline: self.outline_id(None),
             font: self.fonts.first().map(|(id, _)| *id).unwrap_or(1),
+            font_flags: style_face,
             formats: std::mem::take(&mut self.text_formats),
         };
 
@@ -3968,7 +4234,7 @@ impl<'a> Writer<'a> {
             Some(Fill::Solid(c)) => Some(*c),
             _ => None,
         };
-        out.push(self.master_page(background, master_guides));
+        out.push(self.master_page(background, master_guides, desktop, desktop_name));
         out.extend(pages);
         out
     }
@@ -4156,7 +4422,13 @@ impl<'a> Writer<'a> {
     /// each layer and a page's entry of the same rank carrying its
     /// objects. From 14 pages list their own layers by GUID and the master
     /// keeps only its three.
-    fn master_page(&mut self, background: Option<Color>, guides: Vec<Node>) -> Node {
+    fn master_page(
+        &mut self,
+        background: Option<Color>,
+        guides: Vec<Node>,
+        desktop: Vec<Node>,
+        desktop_name: Option<String>,
+    ) -> Node {
         let v = self.v;
         let mut children = vec![chunk(
             b"flgs",
@@ -4170,9 +4442,19 @@ impl<'a> Writer<'a> {
         } else {
             children.push(chunk(b"bbox", vec![0; 16]));
         }
+        // The desktop layer holds the objects of the master layers behind
+        // every page, named after the first of them (#1775).
+        let desktop = match desktop_name {
+            Some(name) if !desktop.is_empty() => {
+                let which = MasterLayer::Desktop;
+                let guid = self.master_guids[which as usize];
+                self.layer_entry(which.flags(), which.kind(), Some(&name), guid, desktop)
+            }
+            _ => self.master_layer_with(MasterLayer::Desktop, false, desktop),
+        };
         let mut layers = vec![
             self.master_layer_with(MasterLayer::Guides, false, guides),
-            self.master_layer(MasterLayer::Desktop, false),
+            desktop,
         ];
         if !v.zip() {
             let slots = std::mem::take(&mut self.layer_slots);
@@ -4203,7 +4485,12 @@ impl<'a> Writer<'a> {
     /// version 14), its layers and its entry for the master's grid layer.
     /// Before 14 the layers come in the master page's order, one entry per
     /// slot of [`layer_slots`], empty where the page has no such layer.
-    fn page(&mut self, page: &tracedraw_core::document::Page) -> (Node, Option<Rect>) {
+    /// `index` is the page's place, from 0.
+    fn page(
+        &mut self,
+        page: &tracedraw_core::document::Page,
+        index: usize,
+    ) -> (Node, Option<Rect>) {
         let v = self.v;
         // A page of another size than the document's keeps its own in its
         // `lgob` (argument 19130), as version 16+ files hold it; files of
@@ -4272,14 +4559,26 @@ impl<'a> Writer<'a> {
         children.push(chunk(b"bbox", box_bytes(page_box)));
         children.push(chunk(b"obbx", obbx_bytes(page_box, 0.0)));
         children.push(list(b"gobj", layers));
-        if own_size {
-            let mut size = Buf::default();
-            size.i32(units(page.size.width))
-                .i32(units(page.size.height));
-            children.push(list(
-                b"lgob",
-                vec![chunk(b"loda", loda(0, vec![(ARG_PAGE_SIZE, size.done())]))],
-            ));
+        // A name of the user's own (not the "Page N" a reader gives the
+        // page at its place) goes into the page's `lgob` as argument 1000
+        // after a zero 12000, ending in a line feed, as files of versions
+        // 15 and 27 hold it. From version 14 only: no file of an earlier
+        // version seen names a page.
+        let name = page.name.trim_end_matches(['\n', '\r', '\0']);
+        let named = v.zip() && !name.trim().is_empty() && name != format!("Page {}", index + 1);
+        if own_size || named {
+            let mut args = Vec::new();
+            if own_size {
+                let mut size = Buf::default();
+                size.i32(units(page.size.width))
+                    .i32(units(page.size.height));
+                args.push((ARG_PAGE_SIZE, size.done()));
+            }
+            if named {
+                args.push((ARG_PROPS, vec![0; 4]));
+                args.push((ARG_NAME, name_bytes(v, &format!("{name}\n"))));
+            }
+            children.push(list(b"lgob", vec![chunk(b"loda", loda(0, args))]));
         }
         (list(b"page", children), content)
     }
@@ -4716,25 +5015,20 @@ impl<'a> Writer<'a> {
                 bounds: None,
             };
         };
-        let (sx, sy) = {
-            let c = s.transform.as_coeffs();
-            (c[0].hypot(c[1]), c[2].hypot(c[3]))
-        };
-        let Some(image) = self.bitmap_id(png, (rect.width() * sx, rect.height() * sy)) else {
+        // The image's resolution gives it the size of the object's box,
+        // which the object's transform places and scales, as every bitmap
+        // of the files seen holds it; the picture's pixel size is the
+        // image's own (#1222). The resolution was taken from the size on
+        // the page, so a scaled picture's box and image disagreed, and the
+        // pixel size from the shape, which need not match its picture.
+        let Some((image, width_px, height_px)) = self.bitmap_id(png, (rect.width(), rect.height()))
+        else {
             return Placed {
                 nodes: Vec::new(),
                 bounds: None,
             };
         };
         let v = self.v;
-        let (width_px, height_px) = match &s.kind {
-            ShapeKind::Bitmap {
-                width_px,
-                height_px,
-                ..
-            } => (*width_px, *height_px),
-            _ => (0, 0),
-        };
         // The page box is the shape's as it stands; the record then
         // speaks in the image's own space, from the origin.
         let page_box = match crop {
@@ -4861,7 +5155,8 @@ impl<'a> Writer<'a> {
         }
         if v.style_strings() {
             let graded = self.graded.get(&s.id).map(|(f, t)| (f, *t));
-            let mut json = object_style_json(fill, s.stroke.as_ref(), s.opacity, graded);
+            let nonzero = s.fill_rule == tracedraw_core::shaping::FillRule::NonZero;
+            let mut json = object_style_json(fill, s.stroke.as_ref(), s.opacity, graded, nonzero);
             if let Some((_, character, _)) = &text {
                 // Text objects keep their character settings there too.
                 json.pop();
@@ -5364,9 +5659,32 @@ impl<'a> Writer<'a> {
                 // A paragraph frame hangs from the object's (0, 0), its
                 // top left (`writes_frame` let only such frames through).
                 let frame = frame.filter(|_| self.writes_frame(s));
+                // Vertical text with its columns from the right goes out
+                // as files hold it (#1544): a horizontal line turned a
+                // quarter clockwise, set in the vertical form of its face,
+                // the family's name with a leading `@`.
+                let at_spans: Option<Vec<TextSpan>> =
+                    (para.vertical && para.columns_from_right() && frame.is_none()).then(|| {
+                        spans
+                            .iter()
+                            .map(|sp| {
+                                let mut sp = sp.clone();
+                                if !sp.font_family.starts_with('@') {
+                                    sp.font_family = format!("@{}", sp.font_family);
+                                }
+                                sp
+                            })
+                            .collect()
+                    });
+                let turn = if at_spans.is_some() {
+                    tracedraw_core::document::vertical_line_frame()
+                } else {
+                    Affine::IDENTITY
+                };
+                let spans = at_spans.as_deref().unwrap_or(spans);
                 let t = match frame {
                     Some(f) => s.transform * Affine::translate((origin.x, origin.y + f.height)),
-                    None => s.transform * Affine::translate(origin.to_vec2()),
+                    None => s.transform * Affine::translate(origin.to_vec2()) * turn,
                 };
                 self.has_text = true;
                 let record = if v.0 >= 16 {
@@ -5401,6 +5719,7 @@ impl<'a> Writer<'a> {
                         spans
                             .first()
                             .map(|sp| character_json(
+                                v,
                                 sp,
                                 Some(sp.fill.as_ref().unwrap_or(&s.fill)),
                                 &self.tech
@@ -5424,13 +5743,20 @@ impl<'a> Writer<'a> {
                 // The character settings of the first run, the width of
                 // the lines as the frame's one column (files give artistic
                 // text its line width there) and the alignment.
-                let width = s.local_path().bounding_box().width();
+                let lines_box = s.local_path().bounding_box();
+                // (A turned line runs down the box of the columns.)
+                let width = if at_spans.is_some() {
+                    lines_box.height()
+                } else {
+                    lines_box.width()
+                };
                 let character = format!(
                     r#"{},"frame":{{"equalWidthColumns":"1","rtlColumns":"0","columns":"{},0"}},"paragraph":{{"justify":"{}"}}"#,
                     spans
                         .first()
                         .map(|sp| {
                             character_json(
+                                v,
                                 sp,
                                 Some(sp.fill.as_ref().unwrap_or(&s.fill)),
                                 &self.tech,
@@ -5457,6 +5783,17 @@ impl<'a> Writer<'a> {
             }
             _ => {
                 let coords = match &s.kind {
+                    // Before version 16 no file seen holds a fill rule: a
+                    // curve that fills nonzero (#1919) goes out as the
+                    // outline of the area it covers, which fills the same
+                    // under the even-odd rule those versions draw with.
+                    ShapeKind::Path { path, .. }
+                        if v.0 < 16
+                            && s.fill_rule == tracedraw_core::shaping::FillRule::NonZero
+                            && !matches!(s.fill, Fill::None) =>
+                    {
+                        curve_coords(&tracedraw_core::shaping::nonzero_as_even_odd(path))
+                    }
                     ShapeKind::Path { path, .. } => curve_coords_typed(path, &s.node_types),
                     _ => curve_coords(&s.local_path()),
                 };
@@ -5500,7 +5837,8 @@ impl<'a> Writer<'a> {
     /// would hold all the text) and, before 16, of one column. Version 8
     /// is left out: its two layouts give frames of 32 and 34 bytes and no
     /// file of the layout TraceDraw writes (800) holding one was seen.
-    /// The others go out as one artistic text per line.
+    /// The others go out as one artistic text per line, and so does every
+    /// frame unless [`Previews::paragraph_frames`] asks for them (#1698).
     fn writes_frame(&self, s: &Shape) -> bool {
         let ShapeKind::Text {
             frame: Some(f),
@@ -5521,7 +5859,8 @@ impl<'a> Writer<'a> {
             .data
             .iter()
             .any(|(k, _)| k == "text.next" || k == "text.prev");
-        n != 8
+        self.paragraph_frames
+            && n != 8
             && rigid
             && !linked
             && f.width > 1e-3
@@ -5562,12 +5901,13 @@ impl<'a> Writer<'a> {
     /// record of its own (up to [`MAX_RUN_STYLES`]), in the order the
     /// looks first appear. `fill` is the object's, for runs without one.
     fn run_looks(
+        v: Ver,
         runs: &[TextSpan],
         first: Option<&TextSpan>,
         fill: &Fill,
         tech: &fonts::FaceTech,
     ) -> RunLooks {
-        let json = |sp: &TextSpan| run_style_json(sp, sp.fill.as_ref().or(Some(fill)), tech);
+        let json = |sp: &TextSpan| run_style_json(v, sp, sp.fill.as_ref().or(Some(fill)), tech);
         let base = first.map(json);
         // Record 0 counts the paragraph's end.
         let mut records: Vec<(usize, Option<String>)> = vec![(1, None)];
@@ -5602,7 +5942,8 @@ impl<'a> Writer<'a> {
     /// `txsm` of versions 7 to 15: one frame, a paragraph per line, one
     /// style per run (font, encoding, style flags, size and, when it
     /// differs from the object's, the fill), the text in UTF-16 from
-    /// version 12 and in Windows-1252 before.
+    /// version 12 (one byte for U+0000 to U+00FF) and in Windows-1252
+    /// before.
     /// The style id of a text format (versions 7 to 15), adding it to
     /// the style table when new.
     fn text_style(&mut self, f: TextFormat) -> u32 {
@@ -5777,19 +6118,21 @@ impl<'a> Writer<'a> {
             }
             let chars = text.chars().count();
             if v.unicode() {
-                // From version 12 a letter is one byte in Windows-1252
-                // unless bit 0 of the first byte of its 8-byte record marks
-                // it as a UTF-16 unit in two bytes. Text all in UTF-16 with
-                // no letter marked made the program that wrote the samples
-                // crash.
+                // From version 12 a letter of U+0000 to U+00FF is one byte
+                // (its code point) unless bit 0 of the first byte of its
+                // 8-byte record marks it as a UTF-16 unit in two bytes.
+                // Text all in UTF-16 with no letter marked made the
+                // program that wrote the samples crash. Letters Windows-1252
+                // holds above 0x7f but Latin-1 does not (curly quotes,
+                // dashes, the euro) go out marked too (#2124).
                 let mut descriptions = Buf::default();
                 let mut bytes = Vec::new();
                 for (i, c) in text.chars().enumerate() {
                     let number = record_of_letter.get(i).copied().unwrap_or(0);
-                    match cp1252(&c.to_string()) {
+                    match text_byte(c) {
                         Some(b) => {
                             descriptions.u8(0).u8(0).u8(number << 1).zeros(5);
-                            bytes.extend_from_slice(&b);
+                            bytes.push(b);
                         }
                         None => {
                             let unit = if (c as u32) <= 0xffff {
@@ -5824,13 +6167,14 @@ impl<'a> Writer<'a> {
         t.done()
     }
 
-    /// `txsm` of version 16 and later, as files of versions 17 to 21 store
-    /// artistic text: the frame flag set, layout 1700 (also in version
-    /// 16), one frame with the text's matrix, then a paragraph per line
-    /// with the default style string (the first run's style and the
-    /// alignment) and one record per run whose style string the letters
-    /// select; text in UTF-16 (16) or one byte per letter (17 on:
-    /// Windows-1252, or UTF-8 for letters it lacks).
+    /// `txsm` of version 16 and later, as files store text: the frame
+    /// flag set (artistic text) or 0 (paragraph text), layout 1700 in
+    /// versions 16 to 18 and 1800 from 19 (#1698), one frame with the
+    /// text's matrix, then a paragraph per line with the default style
+    /// string (the first run's style and the alignment) and one record
+    /// per run whose style string the letters select; text one byte per
+    /// letter of U+0000 to U+00FF (its code point), other letters as
+    /// marked UTF-16 units.
     fn txsm16(
         &mut self,
         spans: &[TextSpan],
@@ -5842,22 +6186,38 @@ impl<'a> Writer<'a> {
     ) -> Vec<u8> {
         let v = self.v;
         let mut t = Buf::default();
+        // Text from version 19 has the header of every text of the files
+        // of versions 19, 22 to 27 that the program's recent releases save
+        // (artistic and paragraph text alike): 1 where the files of its
+        // 2019 release (versions 16 to 21) and TraceDraw until 0.39 have
+        // -1, 14 from version 22, layout 1800, then 4 zero bytes after the
+        // paragraphs from 22. Paragraph text starts with 0, artistic text
+        // with 1 (-1 before 19). TraceDraw wrote paragraph text with
+        // artistic text's 1700 header, which no paragraph text of any
+        // file has, and the program that reads the files hung on opening
+        // it; its user reports one-line text hanging too (#1698).
+        let recent = v.0 >= 19;
+        let none = if recent { 1 } else { u32::MAX };
         // Paragraph text starts with 0: its frames hold their size and
         // its paragraphs no flag byte.
-        t.u32(if frame.is_some() { 0 } else { u32::MAX })
-            .u32(u32::MAX)
+        t.u32(if frame.is_some() { 0 } else { none })
+            .u32(none)
             .u32(0)
-            .u32(u32::MAX)
+            .u32(none)
             .u32(8)
-            // 12 in version 16, 13 from 17; the layout is 1700 in both,
-            // as files saved for those versions have them (a version 16
-            // file with 13 and 1600 was refused as holding an invalid
-            // object).
-            .u32(if v.0 >= 17 { 13 } else { 12 })
+            // 12 in version 16, 13 from 17, 14 from 22; the layout is 1700
+            // in 16 to 18, as files saved for those versions have them (a
+            // version 16 file with 13 and 1600 was refused as holding an
+            // invalid object).
+            .u32(match v.0 {
+                22.. => 14,
+                17.. => 13,
+                _ => 12,
+            })
             .u32(0)
             .u32(3)
             .u32(0)
-            .u16(1700)
+            .u16(if recent { 1800 } else { 1700 })
             .zeros(3);
         // One frame, numbered as the text object (its `spnd`), the text's
         // matrix, not on a path, 8 unknown. A frame number other than the
@@ -5910,7 +6270,17 @@ impl<'a> Writer<'a> {
             // The colour is the first run's own when it has one: a
             // paragraph of one run keeps its colour only here (#1057).
             let first_fill = first.and_then(|sp| sp.fill.as_ref()).unwrap_or(fill);
-            let default = full_text_style(first, Some(first_fill), align, leading, &self.tech);
+            let tabs = format.map_or(&[][..], |f| f.tabs.as_slice());
+            let default = full_text_style(
+                v,
+                first,
+                Some(first_fill),
+                align,
+                leading,
+                tabs,
+                &self.tech,
+                frame.is_some(),
+            );
             t.u32(style_for(align)).zeros(1);
             if frame.is_none() {
                 t.u8(0);
@@ -5926,7 +6296,7 @@ impl<'a> Writer<'a> {
             // its letter count, which of the style's members apply,
             // flags, a locale, then its style. Records of no letters make
             // the program that opens the file hang.
-            let looks = Self::run_looks(runs, first, fill, &self.tech);
+            let looks = Self::run_looks(v, runs, first, fill, &self.tech);
             t.u32(looks.records.len() as u32);
             for (n, json) in &looks.records {
                 let (members, flags) = if json.is_some() {
@@ -5953,24 +6323,22 @@ impl<'a> Writer<'a> {
             // The letters are one byte each from version 16 (files saved
             // for 16 hold them so, while their style strings are UTF-16;
             // UTF-16 letters in a version 16 file are read as half the
-            // text by the program that opens it), Windows-1252, except a
-            // letter Windows-1252 lacks (Cyrillic, Greek, most of Central
-            // European): bit 0 of its record's flags marks it as a UTF-16
-            // unit of two bytes, as from version 12 (#368). A letter beyond
-            // the 16-bit range goes out as "?".
+            // text by the program that opens it), the letter's code point
+            // for U+0000 to U+00FF, except a letter beyond them (Cyrillic,
+            // Greek, most of Central European, and the curly quotes,
+            // dashes and euro Windows-1252 puts in 0x80 to 0x9f, #2124):
+            // bit 0 of its record's flags marks it as a UTF-16 unit of two
+            // bytes, as from version 12 (#368). A letter beyond the 16-bit
+            // range goes out as "?".
             let mut bytes = Vec::new();
             for (c, k) in text.chars().zip(&index) {
-                let one = if v.0 >= 16 {
-                    cp1252(&c.to_string())
-                } else {
-                    None
-                };
+                let one = if v.0 >= 16 { text_byte(c) } else { None };
                 let wide = one.is_none();
                 t.u16(u16::from(wide && v.0 >= 16))
                     .u8(k.saturating_mul(2))
                     .zeros(5);
                 match one {
-                    Some(b) => bytes.extend_from_slice(&b),
+                    Some(b) => bytes.push(b),
                     None => {
                         let unit = if (c as u32) <= 0xffff {
                             c as u16
@@ -5982,6 +6350,9 @@ impl<'a> Writer<'a> {
                 }
             }
             t.u32(bytes.len() as u32).bytes(&bytes).u8(0);
+        }
+        if v.0 >= 22 {
+            t.u32(0);
         }
         t.done()
     }

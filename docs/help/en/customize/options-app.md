@@ -28,7 +28,9 @@ sets how the program works. Choose a page from the list on the left.
   [[options.wheel_scroll]].
 - [[options.open_view]]: [[options.open_view_page]] (at first),
   [[options.open_view_objects]], [[options.open_view_width]],
-  [[options.open_view_height]], [[options.open_view_actual]] or
+  [[options.open_view_height]], [[options.open_view_actual]],
+  [[options.open_view_percent]] (a zoom of your own, typed beside the list,
+  with the page in the middle of the window) or
   [[options.open_view_saved]] (the page, place and zoom kept each time a
   TraceDraw file is saved).
 - [[options.ruler_calibration]]: hold a ruler against the screen and change
@@ -108,6 +110,7 @@ The page has five tabs.
 - [[options.paragraph_text]]: [[menu.text.show_text_frames]],
   [[menu.text.use_hyphenation]] and the [[options.hyphenation_patterns]]
   (built-in, or a hyphenation dictionary for your language).
+  - [[options.default_tab_spacing]]: where <kbd>Tab</kbd> goes in a paragraph without tab stops of its own (12.7 mm, half an inch).
 - [[docker.fonts]]: [[options.show_recent_fonts]] at the top of the font lists,
   the [[options.recent_font_count]] (5, up to 20) and the
   [[options.font_sample_size]].

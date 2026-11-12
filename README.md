@@ -15,7 +15,7 @@
   <img alt="Windows, macOS, Linux and the browser" src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20Web-native-1f6fc5?style=flat-square">
   <img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-444444?style=flat-square">
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-d97706?style=flat-square">
-  <img alt="18 interface languages" src="https://img.shields.io/badge/interface-18%20languages-7b5cff?style=flat-square">
+  <img alt="19 interface languages" src="https://img.shields.io/badge/interface-19%20languages-7b5cff?style=flat-square">
 </p>
 
 <p align="center">
@@ -24,6 +24,10 @@
   <a href="https://tracedraw.github.io/tracedraw/">Open it in the browser</a> &middot;
   <a href="docs/features.md">Feature status</a> &middot;
   <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
+<p align="center">
+  <a href="https://apps.microsoft.com/detail/9P50L12VHF33"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"></a>
 </p>
 
 <p align="center">
@@ -158,7 +162,7 @@ or the moon button at the right of the status bar).
       <br>
       <sub>The same page with the interface in Japanese.</sub>
       <h3>In your language</h3>
-      English, Chinese (Simplified), Hindi, Spanish, French, Arabic with a right-to-left layout, Bengali, Russian, Portuguese (Brazil), Indonesian, German, Japanese, Chinese (Traditional), Italian, Dutch, Polish, Turkish and Czech, with system fonts found for every script. Options &rsaquo; Global switches the language at once.
+      English, Chinese (Simplified), Hindi, Spanish, French, Arabic with a right-to-left layout, Bengali, Russian, Portuguese (Brazil), Indonesian, German, Japanese, Chinese (Traditional), Italian, Dutch, Polish, Turkish, Czech and Lao, with system fonts found for every script. Options &rsaquo; Global switches the language at once.
     </td>
   </tr>
   <tr>
@@ -359,8 +363,8 @@ editor needs X11 or Wayland, libxkbcommon and Mesa.
 
 ### What it runs on
 
-- **Windows 10 and 11** (x64), **macOS 11 or later** (Apple silicon and
-  Intel), **Linux** (x86_64 and arm64, glibc 2.35 or later: Ubuntu 22.04,
+- **Windows 10 and 11** (x64; 32-bit Windows 10 with the `x86` files),
+  **macOS 11 or later** (Apple silicon and Intel), **Linux** (x86_64 and arm64, glibc 2.35 or later: Ubuntu 22.04,
   Debian 12, Fedora 36 or newer) and any current browser. Older Linux
   distributions can use the browser version.
 - **Older computers too:** a graphics card with OpenGL 2.1 is enough. An
@@ -440,13 +444,10 @@ so the Store version is usually one or more releases behind the
 [latest release](https://github.com/tracedraw/tracedraw/releases/latest) here.
 For the newest fixes, take the installer below.
 
-<p>
-  <a href="https://apps.microsoft.com/detail/9P50L12VHF33"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"></a>
-</p>
-
 | Platform | Files |
 |---|---|
 | Windows (x64) | [Microsoft Store](https://apps.microsoft.com/detail/9P50L12VHF33) (signed, may lag behind the latest release), `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` (keeps its settings in the `tracedraw-settings` folder beside the program; not signed yet: if SmartScreen warns, More info > Run anyway) |
+| Windows 10 (32-bit) | `tracedraw-<version>-windows-x86-setup.exe` (for 32-bit Windows; on 64-bit Windows it asks first and the x64 files are better), `tracedraw-<version>-windows-x86-portable.zip`. Not in the Microsoft Store. A 32-bit program can use at most 2 GB of memory, so very large drawings are better opened on 64-bit Windows |
 | macOS (Apple silicon, Intel) | `tracedraw-<version>-macos-arm64.dmg`, `tracedraw-<version>-macos-x86_64.dmg` (unsigned for now: right-click, Open) |
 | Linux (x86_64, arm64) | `.deb` (`_amd64` or `_arm64`), `tracedraw-<version>-linux-amd64.AppImage` or `-linux-arm64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` or `-linux-arm64.tar.gz` |
 | Web | no download: [open it in the browser](https://tracedraw.github.io/tracedraw/), nothing to install |
@@ -522,6 +523,16 @@ Bundled fonts, icons and other assets keep their own open licenses; each
 is listed with its author, source and license in
 [ATTRIBUTION.md](ATTRIBUTION.md). Every drawing in the screenshots was made
 for TraceDraw.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=tracedraw%2Ftracedraw&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=tracedraw/tracedraw&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=tracedraw/tracedraw&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=tracedraw/tracedraw&type=date&legend=top-left" />
+ </picture>
+</a>
 
 <sub>TraceDraw is an independent open-source project, not affiliated
 with, endorsed by or sponsored by Corel Corporation, Alludo or any other

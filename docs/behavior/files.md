@@ -17,13 +17,32 @@ One window, 760 px wide, the same on every system:
   has). Down the left,
   shortcuts to the folders that exist: Home, Desktop, Documents,
   Downloads and Pictures (on Linux the names in
-  `~/.config/user-dirs.dirs`), then the drives (Windows) or `/`. On the
+  `~/.config/user-dirs.dirs`), then the drives (Windows: every drive
+  letter from C:) or `/`. Under them, each section only when it has
+  folders and the column scrolling when they are many (#1391):
+  **Drives**, the mounted drives, memory cards and network shares
+  (Linux: the folders mounted in or found under `/media/$USER`,
+  `/run/media/$USER`, `/media` and `/mnt`, then the desktop's shares and
+  phones in `$XDG_RUNTIME_DIR/gvfs`, a share shown as "photos (nas)";
+  macOS: `/Volumes` without the start-up disk; hidden folders left
+  out); **Bookmarks**, the folders bookmarked in the desktop's file
+  manager (`~/.config/gtk-3.0/bookmarks`, else `~/.gtk-bookmarks`, with
+  their names; addresses that are no folders here, like `sftp://`, are
+  left out), then those bookmarked here: a right click on a folder of
+  the list offers Add to bookmarks, a right click on such a bookmark
+  Remove bookmark, and they are kept in the preferences; **Recent**, up
+  to six folders used lately, the last folder a dialog used first, then
+  the folders of the recent drawings. They are read when the dialog
+  opens (`files::drives_in`, `files::parse_bookmarks`,
+  `files::recent_dirs`; `files::tests::mounted_drives_memory_cards_and_shares_are_listed`,
+  `ui::save_as::tests::drives_bookmarks_and_recent_folders_are_listed`). On the
   right, 250 px high and scrolling, the folder's contents: folders, then
   the files of the chosen type, by name ignoring case (hidden ones left
   out), with Name, Date modified (local time), Type ("File folder",
   "CDR file") and Size (KB, MB from 1 MB). A click picks an entry
   (a file's name becomes the name); a double click on a folder opens it;
-  a right click offers Open (folders) and Rename. With the list picked,
+  a right click offers Open (folders), Rename and Add to bookmarks
+  (folders). With the list picked,
   letters jump to the first entry starting with them (letters a second
   apart start again; one letter typed again goes on to the next entry
   with it), F2 renames the entry picked, Enter opens the folder picked
@@ -136,7 +155,43 @@ pictures and the end objects of its blends included), so the member grows
 with them; a member that inflates past 64 MB is not read, and its
 objects open as drawn.
 
+## Open drawings keep their files (Windows, #2130)
+
+On Windows the file of every open drawing (the front tab's and the
+others') is kept open for reading for as long as the drawing is open
+under that name, shared with programs that read or write it but not with
+a delete, a rename or a move (`file_hold.rs`). The Explorer then refuses
+to delete, rename or move the file, or to replace it with another, and
+says it is open in TraceDraw. Save writes the file in place, so it goes
+on as before, and other programs still read the file (the thumbnail in
+the Explorer, a backup, a second TraceDraw window). The hold ends when
+the drawing is closed or saved under another name, and when TraceDraw
+ends. A drawing opened from a file it does not save to (a `.cdr`, an
+SVG, a PDF) holds that file until it is saved under a name of its own.
+A drawing never saved and one opened from a template hold nothing. A
+file that cannot be opened for the hold (it is gone, or its folder went
+away) is not held; it is tried again when the drawing is saved.
+
+On Linux and macOS nothing is kept open: these systems have no such
+hold, a file deleted there only loses its name while a program has it
+open, and Save writes it again.
+
+The open drawings are compared with the holds once a frame (paths only);
+a file is opened only when a drawing was opened, closed or saved under
+another name.
+
 ## Checks
+
+- Each open drawing's file is held from the frame after it is opened or
+  saved until it is closed or saved under another name, in the front tab
+  or another, the file a drawing was opened from until it is saved under
+  its own name; an untitled drawing holds nothing
+  (`documents::tests::open_drawings_hold_their_files_until_closed_or_renamed`,
+  `file_hold::tests::holds_follow_the_open_drawings`). On Windows a held
+  file cannot be deleted, renamed or replaced and is still read and
+  written in place
+  (`file_hold::tests::a_held_file_cannot_be_deleted_or_renamed_but_is_saved`,
+  run on the Windows build by `scripts/windows/spell-check`).
 
 - Given a folder with a subfolder, a `.cdr` and a `.txt` file, the
   TraceDraw type lists the subfolder only and CDR the subfolder and the

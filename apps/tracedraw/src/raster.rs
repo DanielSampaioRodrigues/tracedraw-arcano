@@ -6,10 +6,21 @@
 //! A page that takes long to draw is drawn on a thread of its own: the
 //! window keeps answering, showing the last picture moved into place,
 //! until the new one is ready (#345).
+//!
+//! A zoom on the main canvas does not wait for the view to rest: the
+//! last picture, scaled, looks blurry, so the page is rendered for the
+//! new zoom on a thread at once. A zoom step that comes while that render
+//! runs does not restart it: its picture is taken when ready (closer to
+//! the zoom shown than the one before) and the next render starts at once
+//! for the latest zoom, so a burst of wheel notches shows a sharper
+//! picture every render and the last one about a render after the last
+//! step.
 
 use crate::view::View;
 use egui::{ColorImage, Context, Rect, TextureHandle, TextureId, TextureOptions};
 use tracedraw_core::{geometry::Affine, Document, PageId, ShapeId};
+#[cfg(not(target_arch = "wasm32"))]
+use tracedraw_render::render_page_on_one_thread;
 use tracedraw_render::{render_page, Preview, RenderOptions, ViewTransform};
 
 /// How long the view must rest, seconds, before a moved view is
@@ -19,6 +30,52 @@ pub const SETTLE_SECONDS: f64 = 0.12;
 /// A render that took longer than this, seconds, makes the next ones
 /// run on a thread of their own.
 const SLOW_RENDER: f64 = 0.03;
+
+/// How long the page's picture must have been the one asked for, seconds,
+/// before the whole page is drawn small for the backdrop: while the
+/// drawing or the view keeps changing no backdrop is drawn.
+#[cfg(not(target_arch = "wasm32"))]
+pub const BACKDROP_REST: f64 = 0.4;
+
+/// How long until the backdrop is tried again when the pointer was
+/// moving in the frame it came due, seconds.
+#[cfg(not(target_arch = "wasm32"))]
+const BACKDROP_IDLE: f64 = 0.1;
+
+/// Largest side of the backdrop, pixels.
+#[cfg(not(target_arch = "wasm32"))]
+const BACKDROP_MAX: f64 = 2048.0;
+
+/// What a backdrop shows: the drawing at a revision, drawn one way.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(PartialEq, Clone, Debug)]
+struct BackKey {
+    revision: u64,
+    page: PageId,
+    /// The part of the page it covers, thousandths of a millimetre.
+    area: [i64; 4],
+    size: (u32, u32),
+    wireframe: bool,
+    simulate_overprints: bool,
+    complex_effects: bool,
+    proof: bool,
+}
+
+/// The whole page drawn small (see [`Raster::backdrop`]).
+#[cfg(not(target_arch = "wasm32"))]
+struct Backdrop {
+    texture: TextureHandle,
+    key: BackKey,
+    page_rect: tracedraw_core::geometry::Rect,
+}
+
+/// A backdrop being drawn on its thread.
+#[cfg(not(target_arch = "wasm32"))]
+struct BackJob {
+    key: BackKey,
+    page_rect: tracedraw_core::geometry::Rect,
+    rx: std::sync::mpsc::Receiver<Option<ColorImage>>,
+}
 
 /// A render running on its own thread: what it is for, and where its
 /// picture will come from.
@@ -183,52 +240,44 @@ pub struct Raster {
     /// take instead of a copy of its own (no threads in the browser).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub snapshot: Option<std::sync::Arc<Document>>,
+    /// What the page's objects cover (page mm), with the revision it was
+    /// measured at: a page beside the current one shows its objects off
+    /// the page too, and measuring them every frame would cost time
+    /// (#2055).
+    pub content: Option<(u64, Option<tracedraw_core::geometry::Rect>)>,
+    /// The copy of the drawing the last render on a thread took, with
+    /// its revision: the next renders of the same drawing (every step of
+    /// a zoom) share it instead of copying the drawing again on the
+    /// window's thread (a copy of a large drawing takes a frame's time).
+    #[cfg(not(target_arch = "wasm32"))]
+    kept: Option<(u64, std::sync::Arc<Document>)>,
     /// Renders started so far, on this thread or another.
     renders: u64,
+    /// Since when (egui time) the picture has been the one asked for,
+    /// frame after frame: nothing moved and nothing changed.
+    #[cfg(not(target_arch = "wasm32"))]
+    rested: Option<f64>,
+    /// The whole page drawn small, shown where the picture does not
+    /// reach while the view moves (#2048).
+    #[cfg(not(target_arch = "wasm32"))]
+    backdrop: Option<Backdrop>,
+    /// The backdrop being drawn on its thread, if any.
+    #[cfg(not(target_arch = "wasm32"))]
+    backdrop_job: Option<BackJob>,
+    /// Backdrops started so far.
+    #[cfg(not(target_arch = "wasm32"))]
+    backdrops: u64,
     /// Turns other than the program's, for tests.
     #[cfg(not(target_arch = "wasm32"))]
     turns: Option<&'static Turns>,
     /// Every render counts as slow, for tests.
     #[cfg(test)]
     always_slow: bool,
-    /// The last picture shown was not the one asked for (moved or scaled
-    /// into place while the view moves, or while the new one is drawn).
-    stale: bool,
-    /// The whole page drawn small (Arcano edition): shown under a picture
-    /// moved or scaled into place, so no part of the page is missing
-    /// while the view moves (a zoom out, a pan) before the new picture.
-    overview: Option<Overview>,
-    /// The overview wanted while the view rests, and since when (egui
-    /// time): made once the drawing has stayed the same a moment.
-    overview_wanted: Option<(OverviewKey, f64)>,
+    /// A lock a render on its thread takes before drawing, for tests that
+    /// hold a render while the view moves on.
+    #[cfg(test)]
+    hold: Option<std::sync::Arc<std::sync::Mutex<()>>>,
 }
-
-/// How long the drawing must stay the same, seconds, before the overview
-/// is made while the view rests (at once while it moves).
-const OVERVIEW_REST: f64 = 0.6;
-
-/// The whole page drawn small, for the drawing it was made from.
-struct Overview {
-    key: OverviewKey,
-    texture: Option<TextureHandle>,
-    /// The part of the page it shows, page mm.
-    page_rect: tracedraw_core::geometry::Rect,
-    #[cfg(not(target_arch = "wasm32"))]
-    rx: Option<std::sync::mpsc::Receiver<Option<ColorImage>>>,
-}
-
-#[derive(PartialEq, Clone, Debug)]
-struct OverviewKey {
-    revision: u64,
-    page: PageId,
-    wireframe: bool,
-    simulate_overprints: bool,
-    complex_effects: bool,
-    proof: bool,
-}
-
-/// The longest side of the page overview, pixels.
-const OVERVIEW_SIDE: f64 = 1400.0;
 
 /// Screen colours as they would print, on a `N` x `N` x `N` grid of the
 /// screen's red, green and blue; colours between are interpolated.
@@ -406,6 +455,13 @@ impl Raster {
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.job = None;
+            self.rested = None;
+            self.backdrop = None;
+            self.backdrop_job = None;
+            // Freed on a thread of its own, as a render frees its copy.
+            if let Some((_, d)) = self.kept.take() {
+                std::thread::spawn(move || drop(d));
+            }
         }
     }
 
@@ -415,6 +471,12 @@ impl Raster {
     }
 
     /// How many renders this picture has started.
+    /// The part of the page the picture shows, page mm.
+    #[cfg(test)]
+    pub fn shown_part(&self) -> Option<tracedraw_core::geometry::Rect> {
+        self.page_rect
+    }
+
     pub fn render_count(&self) -> u64 {
         self.renders
     }
@@ -428,6 +490,13 @@ impl Raster {
             return true;
         }
         self.settle.is_some()
+    }
+
+    /// The zoom the picture shown was rendered at, for tests.
+    #[cfg(test)]
+    pub fn picture_zoom(&self) -> Option<f32> {
+        self.texture.as_ref()?;
+        self.key.as_ref().map(|k| k.zoom)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -475,6 +544,9 @@ impl Raster {
                 .zip(pixel_dpi)
                 .map(|(win, dpi)| ((dpi * 1000.0).round() as u64, win.ix0, win.iy1)),
         };
+        // Rested only while the picture stays the one asked for.
+        #[cfg(not(target_arch = "wasm32"))]
+        let rested = self.rested.take();
         // A render on its thread: taken when ready; while it runs for the
         // view asked for (or the drawing changes faster than it draws), the
         // last picture shows, moved into place.
@@ -485,21 +557,30 @@ impl Raster {
                 return self.shown_meanwhile(view, screen);
             }
         }
-        self.stale = true;
         if self.key.as_ref() == Some(&key) {
             if let Some(t) = &self.texture {
                 self.settle = None;
-                self.stale = false;
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    self.rested = rested.or_else(|| Some(ctx.input(|i| i.time)));
+                }
                 return Some((t.id(), screen));
             }
         }
         // The view moved (pan, scroll, zoom) and nothing else changed:
-        // show the last render moved into place until the view rests.
+        // show the last render moved into place until the view rests. A
+        // pan shows the old picture as sharp as it was; a zoom scales it,
+        // blurry, so the main canvas renders the new zoom at once on a
+        // thread (one render at a time: one still running for an earlier
+        // step is waited for above, then the latest zoom goes next).
+        let mut zoom_now = false;
         if window.is_none() {
             if let (Some(old), Some(t), Some(page_rect)) =
                 (self.key.as_ref(), self.texture.as_ref(), self.page_rect)
             {
-                if old.same_but_view(&key, self.follows_zoom) {
+                let moved = old.same_but_view(&key, self.follows_zoom);
+                zoom_now = moved && self.zooms_at_once(old, &key);
+                if moved && !zoom_now {
                     let now = ctx.input(|i| i.time);
                     let due = match &self.settle {
                         Some((k, due)) if *k == key => *due,
@@ -513,6 +594,9 @@ impl Raster {
                 }
             }
         }
+        // The browser draws on its one thread: never set there.
+        #[cfg(target_arch = "wasm32")]
+        let _ = zoom_now;
         if self.defer {
             ctx.request_repaint();
             let t = self.texture.as_ref()?;
@@ -570,7 +654,7 @@ impl Raster {
         }
         #[cfg(not(target_arch = "wasm32"))]
         if window.is_none()
-            && (self.last_seconds > SLOW_RENDER || self.follows_zoom)
+            && (self.last_seconds > SLOW_RENDER || self.follows_zoom || zoom_now)
             && self.texture.is_some()
         {
             // Another page's job (or a stale one) is running: the last
@@ -584,17 +668,22 @@ impl Raster {
                 }
                 return self.shown_meanwhile(view, screen);
             };
-            let doc = self
-                .snapshot
-                .take()
-                .unwrap_or_else(|| std::sync::Arc::new(doc.clone()));
+            let (doc, stale) = match self.snapshot.take() {
+                Some(shared) => (shared, None),
+                None => self.copy_of(doc, key.revision, zoom_now),
+            };
             let (tx, rx) = std::sync::mpsc::channel();
             let wake = ctx.clone();
+            #[cfg(test)]
+            let hold = self.hold.clone();
             std::thread::spawn(move || {
+                #[cfg(test)]
+                let _held = hold.as_ref().map(|m| m.lock());
                 let t = web_time::Instant::now();
                 let image = render_page(&doc, page, &opts).map(|pm| to_image(&pm, lut.as_deref()));
                 let _ = tx.send(image.map(|i| (i, t.elapsed().as_secs_f64())));
                 drop(doc);
+                drop(stale);
                 drop(turn);
                 wake.request_repaint();
             });
@@ -604,7 +693,6 @@ impl Raster {
         }
         let t = web_time::Instant::now();
         self.renders += 1;
-        self.stale = false;
         let pixmap = render_page(doc, page, &opts)?;
         let image = to_image(&pixmap, lut.as_deref());
         self.last_seconds = t.elapsed().as_secs_f64();
@@ -623,155 +711,229 @@ impl Raster {
         self.texture.as_ref().map(|t| (t.id(), screen))
     }
 
-    /// True when the picture last given is not the one asked for: the
-    /// last render moved or scaled into place.
-    pub fn stale(&self) -> bool {
-        self.stale
-    }
-
-    /// The whole page drawn small, and the part of the page it shows,
-    /// for the drawing at `revision`: made (on a thread of its own) when
-    /// the drawing or the page changed, `None` until it is ready.
+    /// The whole page drawn small, for the parts of the canvas the page's
+    /// picture does not reach while the view moves (#2048). The picture
+    /// covers the canvas only, the part of the page on screen when it was
+    /// rendered: zoomed out, or panned, it is shown scaled or shifted into
+    /// place until the new one is ready, and the rest of the page showed
+    /// as blank paper meanwhile, a white flash on a dark design at every
+    /// zoom step. The backdrop is `area` (page mm: the page and what is drawn
+    /// beside it, see `App::backdrop_area`) fitted into
+    /// the canvas `rect`, at most [`BACKDROP_MAX`] pixels a side: one more
+    /// texture no larger than the picture's own, whatever the zoom.
+    ///
+    /// It is drawn on one thread of its own (not in bands on every core
+    /// as a picture somebody waits for is), once per change of the
+    /// drawing, after the picture has been the one asked for during
+    /// [`BACKDROP_REST`] seconds (so never while the drawing changes or
+    /// the view moves) and once the pointer is still with no button or
+    /// key held: the drawing is copied for the thread in that frame,
+    /// which on a large drawing takes a frame's time nobody then sees.
+    /// It takes no render turn: a zoom that starts meanwhile renders at
+    /// once all the same. Returns the backdrop of
+    /// the drawing as it is now and where it shows on screen, or `None`
+    /// while there is none (a backdrop of an earlier state is never
+    /// shown: it would bring back what was deleted).
+    ///
+    /// Call it after [`Raster::texture`], every frame.
+    #[cfg(not(target_arch = "wasm32"))]
     #[allow(clippy::too_many_arguments)]
-    pub fn overview(
+    pub fn backdrop(
         &mut self,
         ctx: &Context,
         doc: &Document,
         page: PageId,
+        area: tracedraw_core::geometry::Rect,
+        view: &View,
+        rect: Rect,
         revision: u64,
         wireframe: bool,
         simulate_overprints: bool,
         complex_effects: bool,
         proof: bool,
-        urgent: bool,
-    ) -> Option<(TextureId, tracedraw_core::geometry::Rect)> {
-        let key = OverviewKey {
+    ) -> Option<(TextureId, Rect)> {
+        // The one on its thread: taken when ready.
+        if let Some(job) = &self.backdrop_job {
+            match job.rx.try_recv() {
+                Ok(image) => {
+                    let job = self.backdrop_job.take()?;
+                    if let Some(image) = image {
+                        let texture = match self.backdrop.take() {
+                            Some(mut b) => {
+                                b.texture.set(image, TextureOptions::LINEAR);
+                                b.texture
+                            }
+                            None => {
+                                ctx.load_texture("page backdrop", image, TextureOptions::LINEAR)
+                            }
+                        };
+                        self.backdrop = Some(Backdrop {
+                            texture,
+                            key: job.key,
+                            page_rect: job.page_rect,
+                        });
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.backdrop_job = None,
+            }
+        }
+        let ppp = ctx.pixels_per_point();
+        let (aw, ah) = (area.width(), area.height());
+        if !(aw.is_finite() && ah.is_finite() && aw > 0.0 && ah > 0.0) {
+            return None;
+        }
+        // The page fitted into the canvas, as Zoom To Page shows it.
+        let scale = ((rect.width() * ppp) as f64 / aw)
+            .min((rect.height() * ppp) as f64 / ah)
+            .min(BACKDROP_MAX / aw.max(ah));
+        if !(scale.is_finite() && scale > 0.0) {
+            return None;
+        }
+        let w = (aw * scale).ceil().max(1.0) as u32;
+        let h = (ah * scale).ceil().max(1.0) as u32;
+        let q = |v: f64| (v * 1000.0).round() as i64;
+        let key = BackKey {
             revision,
             page,
+            area: [q(area.x0), q(area.y0), q(area.x1), q(area.y1)],
+            size: (w, h),
             wireframe,
             simulate_overprints,
             complex_effects,
             proof,
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(o) = self.overview.as_mut() {
-            if let Some(rx) = &o.rx {
-                match rx.try_recv() {
-                    Ok(Some(image)) => {
-                        match &mut o.texture {
-                            Some(t) => t.set(image, TextureOptions::LINEAR),
-                            None => o.texture = Some(ctx.load_texture("page_overview", image, TextureOptions::LINEAR)),
-                        }
-                        o.rx = None;
-                    }
-                    Ok(None) | Err(std::sync::mpsc::TryRecvError::Disconnected) => o.rx = None,
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                }
-            }
-        }
-        if let Some(o) = &self.overview {
-            if o.key == key {
-                #[cfg(not(target_arch = "wasm32"))]
-                if o.rx.is_some() {
-                    return None;
-                }
-                return o.texture.as_ref().map(|t| (t.id(), o.page_rect));
-            }
-        }
-        // While the view rests: once the drawing stays the same a moment
-        // (not at every step of an edit).
-        if !urgent {
+        let have = self.backdrop.as_ref().is_some_and(|b| b.key == key);
+        if !have && self.backdrop_job.is_none() {
             let now = ctx.input(|i| i.time);
-            match &self.overview_wanted {
-                Some((k, since)) if *k == key && now - since >= OVERVIEW_REST => {}
-                Some((k, since)) if *k == key => {
-                    let wait = (OVERVIEW_REST - (now - since)).max(0.05);
+            // Not in a frame the hand is moving in: the copy of the
+            // drawing made below may take that frame's time. (The
+            // pointer's speed reads still for the first frames of a
+            // move, so a move in this very frame counts too.)
+            let idle = ctx.input(|i| {
+                i.pointer.is_still()
+                    && i.pointer.time_since_last_movement() > 0.0
+                    && !i.pointer.any_down()
+                    && i.keys_down.is_empty()
+            });
+            match self.rested {
+                Some(since) if now - since >= BACKDROP_REST && !idle => {
+                    ctx.request_repaint_after(std::time::Duration::from_secs_f64(BACKDROP_IDLE));
+                }
+                Some(since) if now - since >= BACKDROP_REST => {
+                    let opts = RenderOptions {
+                        width: w,
+                        height: h,
+                        view: ViewTransform {
+                            zoom: scale,
+                            origin_x: -area.x0 * scale,
+                            origin_y: area.y1 * scale,
+                        },
+                        preview: None,
+                        wireframe,
+                        simulate_overprints,
+                        complex_effects,
+                        anti_alias: true,
+                        draft: true,
+                        focus: None,
+                        master_view: self.master_view,
+                    };
+                    let page_rect = tracedraw_core::geometry::Rect::new(
+                        area.x0,
+                        area.y1 - h as f64 / scale,
+                        area.x0 + w as f64 / scale,
+                        area.y1,
+                    );
+                    let lut = proof.then(|| {
+                        self.proof
+                            .get_or_insert_with(|| std::sync::Arc::new(ProofLut::new()))
+                            .clone()
+                    });
+                    // The copy a zoom's renders share: made here, at rest,
+                    // it is there for the first step of the next zoom.
+                    let (doc, stale) = self.copy_of(doc, revision, true);
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let wake = ctx.clone();
+                    std::thread::spawn(move || {
+                        let image = render_page_on_one_thread(&doc, page, &opts)
+                            .map(|pm| to_image(&pm, lut.as_deref()));
+                        let _ = tx.send(image);
+                        drop(doc);
+                        drop(stale);
+                        wake.request_repaint();
+                    });
+                    self.backdrops += 1;
+                    self.backdrop_job = Some(BackJob { key, page_rect, rx });
+                    return None;
+                }
+                Some(since) => {
+                    let wait = (BACKDROP_REST - (now - since)).max(0.0);
                     ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
-                    return None;
                 }
-                _ => {
-                    self.overview_wanted = Some((key, now));
-                    ctx.request_repaint_after(std::time::Duration::from_secs_f64(OVERVIEW_REST));
-                    return None;
-                }
+                None => {}
             }
         }
-        self.overview_wanted = None;
-        // The page with a margin as wide as a fifth of it all round.
-        let pg = doc.pages.iter().find(|p| p.id == page)?;
-        let r = pg.rect();
-        let (mx, my) = (r.width() * 0.2, r.height() * 0.2);
-        let page_rect = tracedraw_core::geometry::Rect::new(r.x0 - mx, r.y0 - my, r.x1 + mx, r.y1 + my);
-        let zoom = OVERVIEW_SIDE / page_rect.width().max(page_rect.height()).max(1e-3);
-        if !zoom.is_finite() || zoom <= 0.0 {
-            return None;
+        let b = self.backdrop.as_ref().filter(|b| b.key == key)?;
+        Some((b.texture.id(), view.rect_to_screen(b.page_rect)))
+    }
+
+    /// True once the backdrop of the drawing at `revision` is there.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub fn has_backdrop(&self, revision: u64) -> bool {
+        self.backdrop
+            .as_ref()
+            .is_some_and(|b| b.key.revision == revision)
+    }
+
+    /// True while a backdrop is being drawn on its thread, for tests.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub fn backdrop_drawing(&self) -> bool {
+        self.backdrop_job.is_some()
+    }
+
+    /// The backdrop's texture, for tests.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub fn backdrop_texture(&self) -> Option<TextureId> {
+        self.backdrop.as_ref().map(|b| b.texture.id())
+    }
+
+    /// The drawing at `revision` for a render on a thread: the copy kept
+    /// from the last zoom render when it is of the same revision, or a new
+    /// copy, kept for the next steps of a zoom (`zoom`). Also the copy no
+    /// longer kept, for the render's thread to free (freeing a large
+    /// drawing takes time the window's thread does not have).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn copy_of(
+        &mut self,
+        doc: &Document,
+        revision: u64,
+        zoom: bool,
+    ) -> (std::sync::Arc<Document>, Option<std::sync::Arc<Document>>) {
+        match &self.kept {
+            Some((r, d)) if *r == revision => (d.clone(), None),
+            _ => {
+                let d = std::sync::Arc::new(doc.clone());
+                let keep = zoom.then(|| (revision, d.clone()));
+                let stale = std::mem::replace(&mut self.kept, keep);
+                (d, stale.map(|(_, d)| d))
+            }
         }
-        let w = (page_rect.width() * zoom).round().max(1.0) as u32;
-        let h = (page_rect.height() * zoom).round().max(1.0) as u32;
-        let opts = RenderOptions {
-            width: w,
-            height: h,
-            view: ViewTransform {
-                zoom,
-                origin_x: -page_rect.x0 * zoom,
-                origin_y: page_rect.y1 * zoom,
-            },
-            preview: None,
-            wireframe,
-            simulate_overprints,
-            complex_effects,
-            anti_alias: true,
-            draft: true,
-            focus: None,
-            master_view: self.master_view,
-        };
-        let lut = proof.then(|| {
-            self.proof
-                .get_or_insert_with(|| std::sync::Arc::new(ProofLut::new()))
-                .clone()
-        });
-        // The old picture stays until the new one is in, but is not shown
-        // for another drawing.
-        let texture = self.overview.take().and_then(|o| o.texture);
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let doc = self
-                .snapshot
-                .clone()
-                .unwrap_or_else(|| std::sync::Arc::new(doc.clone()));
-            let (tx, rx) = std::sync::mpsc::channel();
-            let wake = ctx.clone();
-            std::thread::spawn(move || {
-                let image = render_page(&doc, page, &opts).map(|pm| to_image(&pm, lut.as_deref()));
-                let _ = tx.send(image);
-                wake.request_repaint();
-            });
-            self.overview = Some(Overview {
-                key,
-                texture,
-                page_rect,
-                rx: Some(rx),
-            });
-            None
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let image = render_page(doc, page, &opts).map(|pm| to_image(&pm, lut.as_deref()))?;
-            let texture = match texture {
-                Some(mut t) => {
-                    t.set(image, TextureOptions::LINEAR);
-                    t
-                }
-                None => ctx.load_texture("page_overview", image, TextureOptions::LINEAR),
-            };
-            let id = texture.id();
-            self.overview = Some(Overview {
-                key,
-                texture: Some(texture),
-                page_rect,
-            });
-            Some((id, page_rect))
-        }
+    }
+
+    /// The copy of the drawing kept for renders on a thread, with its
+    /// revision, for other pictures of the same drawing to share.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn kept_copy(&self) -> Option<(u64, std::sync::Arc<Document>)> {
+        self.kept.clone()
+    }
+
+    /// True when the view asked for (`new`) differs from the picture's
+    /// (`old`) by its zoom and the picture is the main canvas's: rendered
+    /// at once on a thread instead of shown scaled until the view rests.
+    /// The pages beside the current one in the Multipage View keep waiting
+    /// (many come due at once, #903), and the browser has no threads.
+    fn zooms_at_once(&self, old: &Key, new: &Key) -> bool {
+        cfg!(not(target_arch = "wasm32")) && !self.follows_zoom && old.zoom != new.zoom
     }
 
     /// The last picture, where its part of the page now is on screen
@@ -1094,14 +1256,19 @@ mod tests {
         out.expect("texture")
     }
 
-    /// A pan or a zoom shows the last render moved or scaled into place
-    /// at once, and renders the page anew once the view has rested.
+    /// A pan shows the last render moved into place at once, and renders
+    /// the page anew once the view has rested; a zoom renders at once (on
+    /// its thread), the old picture scaled into place meanwhile.
     #[test]
     fn a_moving_view_shows_the_last_render_until_it_rests() {
+        static TURNS: Turns = Turns::new();
         let ctx = Context::default();
         let doc = Document::new("t", Size::new(100.0, 50.0));
         let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
-        let mut raster = Raster::default();
+        let mut raster = Raster {
+            turns: Some(&TURNS),
+            ..Default::default()
+        };
         let view = View::default();
         let (first, screen) = pass(&ctx, &mut raster, &doc, &view, rect, 0.0);
         assert_eq!(screen, rect);
@@ -1115,26 +1282,20 @@ mod tests {
         assert_eq!(raster.key, key, "no new render yet");
         assert!((screen.min.x - 10.0).abs() < 1e-3, "{screen:?}");
         assert!(raster.settle.is_some());
-        // Zoomed: the texture scaled about the page, still the old one.
-        let mut zoomed = moved;
-        zoomed.zoom *= 2.0;
-        let (tex, screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, 0.05);
-        assert_eq!(tex, first);
-        assert!((screen.width() - 640.0).abs() < 1e-3, "{screen:?}");
         // The view rests: rendered anew for where it is now.
         let (_, screen) = pass(
             &ctx,
             &mut raster,
             &doc,
-            &zoomed,
+            &moved,
             rect,
-            0.05 + SETTLE_SECONDS + 0.01,
+            0.01 + SETTLE_SECONDS + 0.01,
         );
         assert_ne!(raster.key, key);
         assert_eq!(screen, rect);
         assert!(raster.settle.is_none());
         // Moving on at once re-arms the wait from the latest move.
-        let mut again = zoomed;
+        let mut again = moved;
         again.pan(egui::vec2(0.0, 5.0));
         let before = raster.key.clone();
         pass(&ctx, &mut raster, &doc, &again, rect, 1.0);
@@ -1156,6 +1317,38 @@ mod tests {
             1.0 + SETTLE_SECONDS + 0.01,
         );
         assert_ne!(raster.key, before);
+        // Zoomed: no wait for the view to rest. The render starts in the
+        // same frame, on its thread, the old texture scaled about the page
+        // meanwhile.
+        let shown = raster.texture.as_ref().map(|t| t.id());
+        let renders = raster.render_count();
+        let mut zoomed = again;
+        zoomed.zoom *= 2.0;
+        let (tex, screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, 2.0);
+        assert_eq!(Some(tex), shown);
+        assert!((screen.width() - 640.0).abs() < 1e-3, "{screen:?}");
+        assert_eq!(raster.render_count(), renders + 1, "rendered at once");
+        assert!(raster.settle.is_none(), "no wait for the view to rest");
+        assert!(raster.job.is_some(), "on its thread");
+        let mut done = false;
+        for i in 0..200 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            let (_, screen) = pass(
+                &ctx,
+                &mut raster,
+                &doc,
+                &zoomed,
+                rect,
+                2.0 + 0.001 * i as f64,
+            );
+            if raster.picture_zoom() == Some(zoomed.zoom) {
+                assert_eq!(screen, rect);
+                done = true;
+                break;
+            }
+        }
+        assert!(done, "the zoomed picture came well before the view rested");
+        assert_eq!(raster.render_count(), renders + 1);
     }
 
     /// A slow page is drawn on a thread of its own: the frame that asks
@@ -1176,10 +1369,11 @@ mod tests {
         let view = View::default();
         let (first, _) = pass(&ctx, &mut raster, &doc, &view, rect, 0.0);
         let key = raster.key.clone();
-        // Taken for slow: the next render runs on a thread.
+        // Taken for slow: the next render runs on a thread. Panned, so the
+        // render waits for the view to rest first (a zoom would not).
         raster.last_seconds = 1.0;
         let mut zoomed = view;
-        zoomed.zoom *= 2.0;
+        zoomed.pan(egui::vec2(40.0, 0.0));
         let t = SETTLE_SECONDS + 0.01;
         pass(&ctx, &mut raster, &doc, &zoomed, rect, 0.0);
         let (mut tex, mut screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, t);
@@ -1194,7 +1388,7 @@ mod tests {
         assert_eq!(tex, first);
         assert!(raster.job.is_some(), "drawn on its thread");
         assert_eq!(raster.key, key, "the old picture shows meanwhile");
-        assert!((screen.width() - 640.0).abs() < 1e-3, "{screen:?}");
+        assert!((screen.min.x - 40.0).abs() < 1e-3, "{screen:?}");
         // Ready a moment later: taken, for the view asked for.
         let mut done = false;
         for i in 0..200 {
@@ -1208,6 +1402,250 @@ mod tests {
         }
         assert!(done, "the picture from the thread was taken");
         assert!(raster.last_seconds < 1.0, "its time measured");
+    }
+
+    /// The whole page is drawn small once the picture has rested, on a
+    /// thread and without counting as a render of the picture; it shows
+    /// where the page is on screen at any zoom, only for the drawing as
+    /// it is now, and is not drawn while the view keeps moving (#2048).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_whole_page_is_drawn_small_once_the_picture_rests() {
+        static TURNS: Turns = Turns::new();
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let page = doc.pages[0].id;
+        let area = tracedraw_core::geometry::Rect::new(0.0, 0.0, 100.0, 50.0);
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        let mut raster = Raster {
+            turns: Some(&TURNS),
+            ..Default::default()
+        };
+        // Where the pointer moves to in the next frame, if it does.
+        let pointer = std::cell::Cell::new(None::<egui::Pos2>);
+        // One frame: the picture, then the backdrop.
+        let frame = |raster: &mut Raster, view: &View, revision: u64, time: f64| {
+            let mut out = (None, None);
+            let input = egui::RawInput {
+                time: Some(time),
+                events: pointer
+                    .take()
+                    .map(egui::Event::PointerMoved)
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            };
+            let mut full = ctx.run_ui(input, |ui| {
+                let main = raster.texture(
+                    ui.ctx(),
+                    &doc,
+                    page,
+                    view,
+                    rect,
+                    None,
+                    revision,
+                    false,
+                    false,
+                    false,
+                    false,
+                    None,
+                    None,
+                );
+                let back = raster.backdrop(
+                    ui.ctx(),
+                    &doc,
+                    page,
+                    area,
+                    view,
+                    rect,
+                    revision,
+                    false,
+                    false,
+                    false,
+                    false,
+                );
+                out = (main, back);
+            });
+            full.textures_delta.clear();
+            out
+        };
+        // Frames at rest until the backdrop of `revision` is there.
+        let wait = |raster: &mut Raster, view: &View, revision: u64, from: f64| {
+            for i in 0..400 {
+                let (_, back) = frame(raster, view, revision, from + 0.001 * i as f64);
+                if let Some(b) = back {
+                    return b;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            panic!("the backdrop never came");
+        };
+        // Zoomed in on the middle of the page.
+        let mut view = View::default();
+        view.zoom = 16.0;
+        // Moving every frame, for longer than the rest: no backdrop.
+        let mut t = 0.0;
+        for _ in 0..20 {
+            view.pan(egui::vec2(1.0, 0.0));
+            let (main, back) = frame(&mut raster, &view, 1, t);
+            assert!(main.is_some());
+            assert!(back.is_none());
+            t += BACKDROP_REST / 10.0;
+        }
+        assert_eq!(raster.backdrops, 0, "none while the view moves");
+        // At rest: not before the rest is over, then once.
+        frame(&mut raster, &view, 1, 10.0);
+        frame(&mut raster, &view, 1, 10.0 + SETTLE_SECONDS + 0.01);
+        let rested = 10.0 + SETTLE_SECONDS + 0.02;
+        frame(&mut raster, &view, 1, rested);
+        frame(&mut raster, &view, 1, rested + BACKDROP_REST / 2.0);
+        assert_eq!(raster.backdrops, 0, "not before the picture has rested");
+        // Rested, but the pointer is moving over the page: not in such a
+        // frame (the drawing is copied for the thread when it starts).
+        for i in 0..10 {
+            pointer.set(Some(egui::pos2(20.0 + 9.0 * i as f32, 30.0)));
+            let t = rested + BACKDROP_REST + 0.01 + 0.016 * i as f64;
+            frame(&mut raster, &view, 1, t);
+        }
+        assert_eq!(raster.backdrops, 0, "not while the pointer moves");
+        let rested = rested + 1.0;
+        let renders = raster.render_count();
+        let (_, back) = frame(&mut raster, &view, 1, rested + BACKDROP_REST + 0.01);
+        assert!(back.is_none(), "on its thread");
+        assert_eq!(raster.backdrops, 1);
+        let (tex, at) = wait(&mut raster, &view, 1, rested + BACKDROP_REST + 0.02);
+        assert_eq!(raster.backdrops, 1);
+        assert_eq!(raster.render_count(), renders, "no render of the picture");
+        // The page, where it is on screen.
+        let page_at = view.rect_to_screen(area);
+        assert!((at.min - page_at.min).length() < 1e-2, "{at:?} {page_at:?}");
+        assert!((at.max - page_at.max).length() < 1e-2, "{at:?} {page_at:?}");
+        // Zoomed far out: the picture, scaled into place, covers a small
+        // part of the page; the backdrop covers the page.
+        let mut out = view;
+        out.zoom_at(rect.center(), 1.0 / 16.0);
+        let (main, back) = frame(&mut raster, &out, 1, 20.0);
+        let (_, main_at) = main.expect("the last picture");
+        let (back_tex, back_at) = back.expect("the backdrop");
+        assert_eq!(back_tex, tex);
+        let page_at = out.rect_to_screen(area);
+        assert!(main_at.width() < page_at.width() / 4.0, "{main_at:?}");
+        assert!((back_at.min - page_at.min).length() < 1e-2, "{back_at:?}");
+        assert!((back_at.max - page_at.max).length() < 1e-2, "{back_at:?}");
+        // The drawing changed: the old backdrop is not shown, and the new
+        // one waits for the picture to rest again.
+        let (_, back) = frame(&mut raster, &out, 2, 30.0);
+        assert!(back.is_none(), "never the backdrop of an earlier state");
+        assert_eq!(raster.backdrops, 1);
+        for i in 0..400 {
+            frame(&mut raster, &out, 2, 30.0 + 0.001 * i as f64);
+            if !raster.drawing() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        frame(&mut raster, &out, 2, 31.0);
+        frame(&mut raster, &out, 2, 31.0 + BACKDROP_REST + 0.01);
+        wait(&mut raster, &out, 2, 31.0 + BACKDROP_REST + 0.02);
+        assert_eq!(raster.backdrops, 2);
+        assert!(raster.has_backdrop(2));
+        // Dropped with the picture.
+        raster.invalidate();
+        assert!(!raster.has_backdrop(2));
+    }
+
+    /// A burst of zoom steps while a render runs: the render is not
+    /// restarted for each step; once it ends its picture is taken (the
+    /// nearest to the zoom shown so far) and the next render starts in the
+    /// same frame for the latest zoom only, covering only the canvas, the
+    /// part of the page on screen.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_latest_zoom_wins_without_restarting_renders() {
+        static TURNS: Turns = Turns::new();
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        let hold = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let mut raster = Raster {
+            turns: Some(&TURNS),
+            hold: Some(hold.clone()),
+            ..Default::default()
+        };
+        let mut view = View::default();
+        pass(&ctx, &mut raster, &doc, &view, rect, 0.0);
+        let renders = raster.render_count();
+        // The first step starts a render, held on its thread.
+        let held = hold.lock().expect("lock");
+        let at = egui::pos2(160.0, 100.0);
+        view.zoom_at(at, 1.15);
+        let first_step = view.zoom;
+        pass(&ctx, &mut raster, &doc, &view, rect, 0.01);
+        assert_eq!(raster.render_count(), renders + 1);
+        let copy = raster.kept_copy().expect("the drawing copied").1;
+        // Nineteen more steps while it runs: nothing restarted, nothing
+        // started beside it.
+        for i in 0..19 {
+            view.zoom_at(at, 1.15f32.powf(0.25));
+            pass(
+                &ctx,
+                &mut raster,
+                &doc,
+                &view,
+                rect,
+                0.02 + 0.016 * i as f64,
+            );
+            assert_eq!(raster.render_count(), renders + 1, "restarted");
+            assert_eq!(raster.job.as_ref().map(|j| j.key.zoom), Some(first_step));
+        }
+        drop(held);
+        // Its picture taken, and the latest zoom's render started at once.
+        let mut next = None;
+        for i in 0..400 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            pass(&ctx, &mut raster, &doc, &view, rect, 1.0 + 0.001 * i as f64);
+            if raster.render_count() > renders + 1 {
+                next = Some(i);
+                break;
+            }
+        }
+        assert!(next.is_some(), "the latest zoom was never rendered");
+        assert_eq!(
+            raster.picture_zoom(),
+            Some(first_step),
+            "the first step's picture taken"
+        );
+        assert_eq!(raster.job.as_ref().map(|j| j.key.zoom), Some(view.zoom));
+        assert_eq!(raster.render_count(), renders + 2);
+        // The second render shares the first one's copy of the drawing.
+        let again = raster.kept_copy().expect("kept").1;
+        assert!(std::sync::Arc::ptr_eq(&copy, &again), "copied again");
+        for i in 0..400 {
+            if raster.picture_zoom() == Some(view.zoom) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            pass(&ctx, &mut raster, &doc, &view, rect, 2.0 + 0.001 * i as f64);
+        }
+        assert_eq!(raster.picture_zoom(), Some(view.zoom));
+        assert_eq!(
+            raster.render_count(),
+            renders + 2,
+            "two renders for twenty steps"
+        );
+        // The picture is the canvas's size and shows only the part of the
+        // page on screen.
+        assert_eq!(raster.texture.as_ref().map(|t| t.size()), Some([320, 200]));
+        let shown = raster.page_rect.expect("page rect");
+        let want = view.visible_page_rect(rect);
+        for (a, b) in [
+            (shown.x0, want.x0),
+            (shown.y0, want.y0),
+            (shown.x1, want.x1),
+            (shown.y1, want.y1),
+        ] {
+            assert!((a - b).abs() < 1e-3, "{shown:?} {want:?}");
+        }
     }
 
     /// A page beside the current one in the Multipage View is rendered

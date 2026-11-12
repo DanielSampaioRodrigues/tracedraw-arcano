@@ -56,13 +56,16 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::RenamePage { .. } => "pages-layout/pages#rename-page",
         Dialog::GoToPage { .. } => "pages-layout/pages#go-to-page",
         Dialog::PageSpacing { .. } => "pages-layout/multipage-view#page-spacing",
+        Dialog::MultipagePages { .. } => "pages-layout/multipage-view#choose-pages",
         Dialog::InsertPage { .. } => "pages-layout/pages#insert-page",
         Dialog::DeletePage { .. } => "pages-layout/pages#delete-page",
         Dialog::DuplicatePage { .. } => "pages-layout/pages#duplicate-page",
         Dialog::PageSize { .. } => "pages-layout/pages#page-size",
         Dialog::Options => options_topic(options),
         Dialog::PageNumberSettings => "pages-layout/pages#page-numbers",
-        Dialog::LineStyle(_) | Dialog::OutlinePen(_) => "lines-shapes/outlines#outline-pen",
+        Dialog::LineStyle(_) | Dialog::OutlinePen(_) | Dialog::ArrowheadEditor(_) => {
+            "lines-shapes/outlines#outline-pen"
+        }
         Dialog::LineOptions(_) => "text/adding-text#property-bar",
         Dialog::EditFill(_) => "color/fills#edit-fill",
         Dialog::TableCount(_) => "objects/tables",
@@ -107,7 +110,10 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::BorderGrommet(_) => "printing/border-and-grommet",
         Dialog::ColorManagement(_) | Dialog::ConvertColors(_) => "color/color-management",
         Dialog::FontManager(_) => "text/fonts#font-manager",
+        Dialog::TraceCut(_) => "objects/tracecut",
         Dialog::PaletteEditor(_) => "color/palettes#palette-editor",
+        Dialog::PictureColors(_) => "color/palettes#using",
+        Dialog::ConfirmResetPalette => "color/palettes#document-palette",
         Dialog::NewDocument(_) => "get-started/new-document",
         Dialog::Capa(_) => "get-started/new-document",
         Dialog::Impos(_) => "printing/booklet",
@@ -124,6 +130,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::PublishPdf(_) => "file-formats/publish-pdf",
         Dialog::PdfPassword(_) => "file-formats/publish-pdf#password",
         Dialog::PdfText(_) => "file-formats/import#formats",
+        Dialog::PdfPages(_) => "file-formats/import#pdf-pages",
         Dialog::ChangeDefaults(_) => "templates-styles/object-styles#document-defaults",
         Dialog::SaveAs(_) | Dialog::Package(_) => "get-started/open-and-save#save-as",
     }

@@ -938,6 +938,7 @@ mod tests {
         Ok(HttpResponse {
             status: 200,
             body: reply.to_string(),
+            retry_after: None,
         })
     }
 
@@ -963,6 +964,7 @@ mod tests {
         Ok(HttpResponse {
             status: 200,
             body: reply.to_string(),
+            retry_after: None,
         })
     }
 
@@ -1043,6 +1045,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 body: reply.to_string(),
+                retry_after: None,
             })
         }
         let mut app = App::headless();
@@ -1086,6 +1089,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 body: reply.to_string(),
+                retry_after: None,
             })
         }
         app.assistente.fake = Some(ok);

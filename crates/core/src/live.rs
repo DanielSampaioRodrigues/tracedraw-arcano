@@ -8,6 +8,10 @@
 use crate::document::{Shape, ShapeKind};
 use crate::geometry::{Affine, BezPath, PathEl, Point, Rect, Shape as _, Vec2};
 use crate::style::{lerp_color, Fill};
+// The colour blend lives with the fills now (fountain fills use it too,
+// #1208); it keeps its place here for the code that knows it as a blend
+// option.
+pub use crate::style::{blend_color, ColorBlend};
 use crate::Color;
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +158,10 @@ pub enum Effect {
     },
 }
 
+/// How a transparency (or a drop shadow) mixes with what lies beneath.
+/// The names in `.tdraw` files are the variants in lower case
+/// (`softlight`, `colordodge`); `docs/behavior/transparency.md` has the
+/// formulas the renderer uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MergeMode {
@@ -166,9 +174,13 @@ pub enum MergeMode {
     Divide,
     IfLighter,
     IfDarker,
+    /// The backdrop darkened by the source's lightness (a grey multiply).
+    Texturize,
     Hue,
     Saturation,
     Color,
+    /// The source's HSL lightness with the backdrop's hue and saturation.
+    Lightness,
     Invert,
     And,
     Or,
@@ -176,10 +188,19 @@ pub enum MergeMode {
     Red,
     Green,
     Blue,
+    /// The source shows only where the backdrop is clear.
+    Behind,
+    Screen,
+    Overlay,
+    SoftLight,
+    HardLight,
+    ColorDodge,
+    ColorBurn,
+    Exclusion,
 }
 
 impl MergeMode {
-    pub const ALL: [MergeMode; 18] = [
+    pub const ALL: [MergeMode; 28] = [
         MergeMode::Normal,
         MergeMode::Add,
         MergeMode::Subtract,
@@ -188,9 +209,11 @@ impl MergeMode {
         MergeMode::Divide,
         MergeMode::IfLighter,
         MergeMode::IfDarker,
+        MergeMode::Texturize,
         MergeMode::Hue,
         MergeMode::Saturation,
         MergeMode::Color,
+        MergeMode::Lightness,
         MergeMode::Invert,
         MergeMode::And,
         MergeMode::Or,
@@ -198,6 +221,14 @@ impl MergeMode {
         MergeMode::Red,
         MergeMode::Green,
         MergeMode::Blue,
+        MergeMode::Behind,
+        MergeMode::Screen,
+        MergeMode::Overlay,
+        MergeMode::SoftLight,
+        MergeMode::HardLight,
+        MergeMode::ColorDodge,
+        MergeMode::ColorBurn,
+        MergeMode::Exclusion,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -209,9 +240,11 @@ impl MergeMode {
             MergeMode::Divide => "Divide",
             MergeMode::IfLighter => "If Lighter",
             MergeMode::IfDarker => "If Darker",
+            MergeMode::Texturize => "Texturize",
             MergeMode::Hue => "Hue",
             MergeMode::Saturation => "Saturation",
             MergeMode::Color => "Color",
+            MergeMode::Lightness => "Lightness",
             MergeMode::Invert => "Invert",
             MergeMode::And => "And",
             MergeMode::Or => "Or",
@@ -219,6 +252,14 @@ impl MergeMode {
             MergeMode::Red => "Red",
             MergeMode::Green => "Green",
             MergeMode::Blue => "Blue",
+            MergeMode::Behind => "Behind",
+            MergeMode::Screen => "Screen",
+            MergeMode::Overlay => "Overlay",
+            MergeMode::SoftLight => "Soft Light",
+            MergeMode::HardLight => "Hard Light",
+            MergeMode::ColorDodge => "Color Dodge",
+            MergeMode::ColorBurn => "Color Burn",
+            MergeMode::Exclusion => "Exclusion",
         }
     }
 }
@@ -402,7 +443,9 @@ impl Effect {
 
     /// Draws objects made from the outline as it is at its place in the
     /// stack (contours, blends, extrusions, shadows, symmetry...): a warp
-    /// after it changes nothing of what it drew, so it stays live.
+    /// after it changes nothing of what it drew, so it stays live. (An
+    /// extrusion's body is built from the outline as the warps after it
+    /// leave it, #2214; a bake still leaves those warps live.)
     fn draws_from_outline(&self) -> bool {
         !self.warps_outline() && !matches!(self, Effect::Lens(_) | Effect::Transparency { .. })
     }
@@ -479,6 +522,7 @@ pub fn bake_outline_warps(shape: &Shape) -> Option<Shape> {
     out.parked_effects = parked;
     out.node_types.clear();
     out.spline = None;
+    out.spline_fixed.clear();
     Some(out)
 }
 
@@ -900,30 +944,59 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
     ev
 }
 
+/// The box of the object's outline where the effect at `at` of its list
+/// takes it: after the warps before it. The other effects leave the
+/// outline alone, but for an extrusion turned in space or bevelled, whose
+/// object is drawn among its faces: a warp after an extrusion is put on
+/// the outline before the body is built (#2214), so the box is the
+/// outline's there too.
+pub fn warp_box(shape: &Shape, at: usize) -> Rect {
+    let mut s = shape.clone();
+    s.effects.truncate(at);
+    s.effects.retain(Effect::warps_outline);
+    evaluate(&s).main.local_path().bounding_box()
+}
+
+/// One outline warp (envelope, perspective, distortion) applied to
+/// `main` in the box of its outline; other effects change nothing.
+fn warp_shape(main: &mut Shape, effect: &Effect) {
+    match effect {
+        Effect::Distort(how) => {
+            reshape(main, &|p, b| crate::effects::distort_in(p, b, *how));
+        }
+        Effect::Envelope {
+            nodes,
+            keep_lines,
+            handles,
+            corners,
+            mapping,
+        } => {
+            if let Some(frame) = crate::envelope::Frame::from_parts(nodes, handles, corners) {
+                reshape(main, &|p, b| {
+                    crate::envelope::apply_in(p, b, &frame, *keep_lines, *mapping)
+                });
+            }
+        }
+        Effect::Perspective { corners } => {
+            reshape(main, &|p, b| perspective_in(p, b, corners));
+        }
+        _ => {}
+    }
+}
+
 fn evaluate_now(shape: &Shape) -> Evaluated {
     let mut main = shape.clone();
     let mut below: Vec<Shape> = Vec::new();
     let mut above: Vec<Shape> = Vec::new();
-    for effect in &shape.effects {
+    // The warps left in the list were applied ahead, for an extrusion.
+    let mut warped_ahead = false;
+    for (at, effect) in shape.effects.iter().enumerate() {
         match effect {
-            Effect::Distort(how) => {
-                reshape(&mut main, &|p, b| crate::effects::distort_in(p, b, *how));
-            }
-            Effect::Envelope {
-                nodes,
-                keep_lines,
-                handles,
-                corners,
-                mapping,
-            } => {
-                if let Some(frame) = crate::envelope::Frame::from_parts(nodes, handles, corners) {
-                    reshape(&mut main, &|p, b| {
-                        crate::envelope::apply_in(p, b, &frame, *keep_lines, *mapping)
-                    });
+            Effect::Distort(_) | Effect::Envelope { .. } | Effect::Perspective { .. } => {
+                // An extrusion before it already took it into its outline.
+                if !warped_ahead {
+                    warp_shape(&mut main, effect);
                 }
-            }
-            Effect::Perspective { corners } => {
-                reshape(&mut main, &|p, b| perspective_in(p, b, corners));
             }
             Effect::Contour {
                 steps,
@@ -939,6 +1012,7 @@ fn evaluate_now(shape: &Shape) -> Evaluated {
             } => {
                 let shapes = contour(
                     &main,
+                    area_rule(shape),
                     &ContourParams {
                         steps: *steps,
                         offset: *offset,
@@ -1021,11 +1095,38 @@ fn evaluate_now(shape: &Shape) -> Evaluated {
                 ) {
                     body.bevel = *bevel;
                     body.solid = space.clone();
-                    let faces = body.faces(&main);
+                    // The body follows the outline as the warps after it
+                    // in the list leave it (#2214): an envelope put on an
+                    // extruded object bends the object, and the sides and
+                    // the far face built from the outline before it stayed
+                    // behind, poking out around the bent object.
+                    let rest = shape.effects.get(at + 1..).unwrap_or(&[]);
+                    let ahead =
+                        (!warped_ahead && rest.iter().any(Effect::warps_outline)).then(|| {
+                            let mut bent = main.clone();
+                            for e in rest {
+                                warp_shape(&mut bent, e);
+                            }
+                            bent
+                        });
+                    let faces = body.faces(ahead.as_ref().unwrap_or(&main));
                     below.extend(faces.below);
                     above.extend(faces.above);
-                    if let Some(m) = faces.main {
-                        main = m;
+                    // The bent outline is the object's from here on, unless
+                    // an effect between the extrusion and a warp draws from
+                    // the outline as it is at its own place (a contour, a
+                    // blend): the warps then come at their places.
+                    let plain_rest = !rest.iter().any(Effect::draws_from_outline);
+                    match (faces.main, ahead) {
+                        (Some(m), bent) => {
+                            warped_ahead |= bent.is_some();
+                            main = m;
+                        }
+                        (None, Some(bent)) if plain_rest => {
+                            warped_ahead = true;
+                            main = bent;
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -1033,19 +1134,101 @@ fn evaluate_now(shape: &Shape) -> Evaluated {
                 above.extend(bevel(&main, e));
             }
             Effect::BlockShadow { offset, color, gap } => {
-                below.extend(block_shadow(&main, *offset, *color, *gap));
+                // Cast by all the object draws, and beneath all of it
+                // (#2218).
+                let cast = cast_area(&main, area_rule(shape), below.iter().chain(&above));
+                let shadow = block_shadow(&main, cast, *offset, *color, *gap);
+                below.splice(0..0, shadow);
             }
-            Effect::Symmetry {
-                center,
-                angle,
-                lines,
-            } => {
-                above.extend(symmetry(&main, *center, *angle, *lines));
-            }
+            // Mirrored last, whatever its place in the list: the copies
+            // carry every other effect of the object (#2121).
+            Effect::Symmetry { .. } => {}
             Effect::Lens(_) | Effect::Transparency { .. } => {}
         }
     }
+    for effect in &shape.effects {
+        if let Effect::Symmetry {
+            center,
+            angle,
+            lines,
+        } = effect
+        {
+            let mut original = main.clone();
+            // The copies keep the effects the renderer draws on the object
+            // itself (transparency, lens); the objects the other effects
+            // add are mirrored with it.
+            original
+                .effects
+                .retain(|e| matches!(e, Effect::Lens(_) | Effect::Transparency { .. }));
+            let mirrors = symmetry_mirrors(*center, *angle, *lines);
+            let (mut under, mut over) = (Vec::new(), Vec::new());
+            for m in &mirrors {
+                // A fountain fill or a gradient transparency is placed on
+                // the object's page box, so it is mirrored with the copy:
+                // without this the copy's gradient ran the same way as
+                // the object's instead of as its mirror image (#2121).
+                let flip = |s: &Shape| {
+                    let mut s = s.clone();
+                    s.carry_fills(*m, Affine::IDENTITY);
+                    s.transform = *m * s.transform;
+                    s
+                };
+                under.extend(below.iter().map(flip));
+                over.push(flip(&original));
+                over.extend(above.iter().map(flip));
+            }
+            below.extend(under);
+            above.extend(over);
+        }
+    }
     Evaluated { below, main, above }
+}
+
+/// The parts of `shape` a transparency with `target` (0 the fill, 1 the
+/// outline, 2 the whole object) draws, in drawing order, each with
+/// whether the transparency applies to it. The fill and the outline of
+/// an object that has both are drawn apart, the outline first when it is
+/// set behind the fill; a part the object lacks leaves the other drawn as
+/// it is. Groups, clip frames, tables and symbols, whose members have
+/// fills and outlines of their own, and pictures are faded whole.
+pub fn transparency_parts(shape: &Shape, target: u8) -> Vec<(Shape, bool)> {
+    let container = matches!(
+        shape.kind,
+        ShapeKind::Group { .. }
+            | ShapeKind::ClipFrame { .. }
+            | ShapeKind::Table(_)
+            | ShapeKind::SymbolInstance { .. }
+            | ShapeKind::Bitmap { .. }
+    );
+    let has_fill = !matches!(shape.fill, Fill::None);
+    let has_outline = shape.stroke.is_some();
+    if target >= 2 || container {
+        return vec![(shape.clone(), true)];
+    }
+    let fill_faded = target == 0;
+    match (has_fill, has_outline) {
+        (true, true) => {
+            let mut fill = shape.clone();
+            fill.stroke = None;
+            let mut outline = shape.clone();
+            outline.fill = Fill::None;
+            // The shadow goes once, beneath the part drawn first.
+            let behind = shape.stroke.as_ref().is_some_and(|s| s.behind_fill);
+            if let Some(st) = outline.stroke.as_mut() {
+                st.behind_fill = false;
+            }
+            if behind {
+                fill.shadow = None;
+                vec![(outline, !fill_faded), (fill, fill_faded)]
+            } else {
+                outline.shadow = None;
+                vec![(fill, fill_faded), (outline, !fill_faded)]
+            }
+        }
+        (true, false) => vec![(shape.clone(), fill_faded)],
+        (false, true) => vec![(shape.clone(), !fill_faded)],
+        (false, false) => vec![(shape.clone(), true)],
+    }
 }
 
 /// Reshape `shape` by `f`, which works in the shape's own space. A group
@@ -1077,6 +1260,7 @@ fn reshape(shape: &mut Shape, f: &dyn Fn(&BezPath, Rect) -> BezPath) {
             .collect();
         shape.kind = ShapeKind::Group { children };
         shape.spline = None;
+        shape.spline_fixed.clear();
         shape.node_types.clear();
         return;
     }
@@ -1128,6 +1312,19 @@ fn reshape_inside(
             set_path(shape, t.inverse() * warped);
         }
     }
+    // A blend on the object mixes it with its end copy, in the same space
+    // as the object, along a path in that space: both bend with it, or
+    // the steps between them ignore the warp (#2120).
+    for effect in shape.effects.iter_mut() {
+        if let Effect::Blend { end, path, .. } = effect {
+            reshape_inside(end, parent, b, f);
+            if let Some(p) = path.as_mut() {
+                if parent.determinant().abs() > 1e-12 {
+                    *p = parent.inverse() * f(&(parent * p.clone()), b);
+                }
+            }
+        }
+    }
 }
 
 fn set_path(shape: &mut Shape, path: BezPath) {
@@ -1139,6 +1336,7 @@ fn set_path(shape: &mut Shape, path: BezPath) {
     // A warped outline is no longer the B-spline of its control points,
     // and its nodes are new (#647).
     shape.spline = None;
+    shape.spline_fixed.clear();
     shape.node_types.clear();
 }
 
@@ -1275,7 +1473,7 @@ pub const MAX_BLEND_STEPS: u32 = 999;
 /// object's transformation applied and brought back to its local
 /// coordinates, so a scaled or stretched object keeps the distance the
 /// user typed (#754).
-fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
+fn contour(shape: &Shape, rule: crate::shaping::FillRule, p: &ContourParams) -> Vec<Shape> {
     let to_page = shape.transform;
     let to_local = if to_page.determinant().abs() > 1e-12 {
         to_page.inverse()
@@ -1294,7 +1492,7 @@ fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
     let mut paths = Vec::new();
     if p.to_center {
         for i in 1..=MAX_CONTOUR_STEPS {
-            let q = crate::shaping::offset_with(&base, sign * offset * i as f64, p.corners);
+            let q = crate::shaping::offset_filled(&base, sign * offset * i as f64, p.corners, rule);
             if q.elements().is_empty() {
                 break;
             }
@@ -1305,7 +1503,7 @@ fn contour(shape: &Shape, p: &ContourParams) -> Vec<Shape> {
         let total = offset * n as f64;
         for i in 1..=n {
             let d = total * accelerate(i as f64 / n as f64, p.accel_objects);
-            let q = crate::shaping::offset_with(&base, sign * d, p.corners);
+            let q = crate::shaping::offset_filled(&base, sign * d, p.corners, rule);
             if q.elements().is_empty() {
                 break;
             }
@@ -1379,7 +1577,33 @@ fn blend(
             te * m.end[1],
         ]
     });
-    let paths = crate::effects::blend_from_nodes(&a, &b, n, 120, nodes);
+    // Each step's place between the two objects: along the whole path
+    // the steps reach its ends; otherwise they sit between the objects.
+    let even: Vec<f64> = (0..n)
+        .map(|i| {
+            if options.full_path && path_samples.is_some() && n > 1 {
+                i as f64 / (n - 1) as f64
+            } else {
+                (i + 1) as f64 / (n + 1) as f64
+            }
+        })
+        .collect();
+    // The outline each step takes: the even morph, or with Apply to
+    // sizing the morph at the step's accelerated place, so that its shape
+    // and its size both follow the object acceleration, as the previews
+    // of the .cdr files with that setting show (#1576).
+    let looped = rotation != 0.0 && options.loop_rotation && path_samples.is_none();
+    let morph_at: Vec<f64> = even
+        .iter()
+        .map(|t| {
+            if options.accel_sizing {
+                blend_place(*t, accel_objects)
+            } else {
+                *t
+            }
+        })
+        .collect();
+    let paths = crate::effects::blend_from_nodes_at(&a, &b, &morph_at, 120, nodes);
     // The same outline at both ends, only turned, scaled or moved (a copy
     // rotated): the steps take the transformation part way, so each turns
     // by an even share and keeps its shape. Mixed point by point, as two
@@ -1398,16 +1622,10 @@ fn blend(
     let bb = b.bounding_box();
     let ca_center = ba.center();
     let cb_center = bb.center();
-    let size = |r: Rect| (r.width() + r.height()) / 2.0;
     let mut out = Vec::new();
     for (i, p) in paths.into_iter().enumerate() {
-        // Along the whole path the steps reach its ends; otherwise they
-        // sit between the two objects.
-        let t = if options.full_path && path_samples.is_some() && n > 1 {
-            i as f64 / (n - 1) as f64
-        } else {
-            (i + 1) as f64 / (n + 1) as f64
-        };
+        let t = even.get(i).copied().unwrap_or(0.5);
+        let m = morph_at.get(i).copied().unwrap_or(t);
         let to = blend_place(t, accel_objects);
         let tc = blend_place(t, accel_colors);
         let mut s = start.clone();
@@ -1415,21 +1633,11 @@ fn blend(
         s.shadow = None;
         s.transform = Affine::IDENTITY;
         let mut geo = match turned {
-            Some(pivot) => lerp_transform(start.transform, end.transform, pivot, t) * local.clone(),
+            Some(pivot) => lerp_transform(start.transform, end.transform, pivot, m) * local.clone(),
             None => p,
         };
         let center = geo.bounding_box().center();
         let mut extra = Affine::IDENTITY;
-        if options.accel_sizing {
-            // The size the acceleration asks for over the size the even
-            // blend gave.
-            let (sa, sb) = (size(ba), size(bb));
-            let even = sa + (sb - sa) * t;
-            let wanted = sa + (sb - sa) * to;
-            if even > 1e-9 {
-                extra = Affine::scale_about(wanted / even, center);
-            }
-        }
         // Each step turns about its own centre by its share of the
         // rotation; in a loop its centre also leaves the straight way
         // (see `loop_place`). Turned about the middle of the two objects
@@ -1438,16 +1646,17 @@ fn blend(
         if rotation != 0.0 {
             extra = Affine::rotate_about(rotation.to_radians() * to, center) * extra;
         }
-        if rotation != 0.0 && options.loop_rotation && path_samples.is_none() {
+        if looped {
             let at = loop_place(ca_center, cb_center, rotation, to);
             extra = Affine::translate(at - center) * extra;
-        } else if path_samples.is_none() && to != t {
+        } else if path_samples.is_none() && to != m {
             // Off a path the object acceleration moves the steps toward
             // one end: each goes where its accelerated place lies between
-            // the two objects' centres (the steps stay evenly sized unless
-            // Apply to sizing is on). It moved only sizes and turns, so
-            // the slider seemed to do nothing (#910).
-            extra = Affine::translate((cb_center - ca_center) * (to - t)) * extra;
+            // the two objects' centres (the steps stay evenly morphed and
+            // sized unless Apply to sizing is on, which morphed them there
+            // already). It moved only sizes and turns, so the slider
+            // seemed to do nothing (#910).
+            extra = Affine::translate((cb_center - ca_center) * (to - m)) * extra;
         }
         if let Some((pts, cum)) = &path_samples {
             if pts.len() >= 2 {
@@ -1551,18 +1760,6 @@ fn lerp_transform(a: Affine, b: Affine, pivot: Point, t: f64) -> Affine {
     }
 }
 
-/// How a blend's colours go from the start colour to the end colour.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum ColorBlend {
-    /// Straight through the colour space.
-    #[default]
-    Direct,
-    /// Around the colour wheel, hue increasing.
-    Clockwise,
-    /// Around the colour wheel, hue decreasing.
-    CounterClockwise,
-}
-
 /// A blend's further options.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -1607,28 +1804,6 @@ impl BlendOptions {
     pub fn is_default(&self) -> bool {
         *self == BlendOptions::default()
     }
-}
-
-/// A colour between `a` and `b` at `t`, straight or around the wheel.
-pub fn blend_color(a: Color, b: Color, t: f32, how: ColorBlend) -> Color {
-    let turn = match how {
-        ColorBlend::Direct => return lerp_color(a, b, t),
-        ColorBlend::Clockwise => 1.0,
-        ColorBlend::CounterClockwise => -1.0,
-    };
-    let (ha, sa, va) = a.to_hsb();
-    let (hb, sb, vb) = b.to_hsb();
-    // The hue's way round in the chosen direction, in degrees.
-    let mut d = (hb - ha).rem_euclid(360.0);
-    if turn < 0.0 {
-        d -= 360.0;
-        if d <= -360.0 {
-            d += 360.0;
-        }
-    }
-    let t = t as f64;
-    let h = (ha + d * t).rem_euclid(360.0);
-    Color::from_hsb(h, sa + (sb - sa) * t, va + (vb - va) * t)
 }
 
 /// The body an extrude effect on `main` describes (older files: Back
@@ -1826,10 +2001,11 @@ pub fn carry_effects<'a>(effects: impl IntoIterator<Item = &'a mut Effect>, t: A
 /// Mirror copies for the Symmetry effect. With `n` lines through `center`
 /// the result is the dihedral orbit of the shape: reflections across each
 /// line and the rotations they generate (2n - 1 copies).
-fn symmetry(shape: &Shape, center: Point, angle: f64, lines: u8) -> Vec<Shape> {
+/// The mirror maps of a symmetry, page to page: one reflection a mirror
+/// line, then the rotations between them (the identity left out).
+fn symmetry_mirrors(center: Point, angle: f64, lines: u8) -> Vec<Affine> {
     let n = lines.clamp(1, 12) as usize;
     let mut out = Vec::with_capacity(2 * n);
-    let base = shape.clone();
     let to_center = Affine::translate(center.to_vec2());
     let from_center = Affine::translate(-center.to_vec2());
     let reflect = |theta: f64| -> Affine {
@@ -1840,39 +2016,122 @@ fn symmetry(shape: &Shape, center: Point, angle: f64, lines: u8) -> Vec<Shape> {
     let a0 = angle.to_radians();
     for k in 0..n {
         let theta = a0 + std::f64::consts::PI * k as f64 / n as f64;
-        let m = to_center * reflect(theta) * from_center;
-        let mut s = base.clone();
-        s.effects.clear();
-        s.transform = m * s.transform;
-        out.push(s);
+        out.push(to_center * reflect(theta) * from_center);
     }
     // Rotations (products of two reflections), skipping the identity.
     for k in 1..n {
         let rot = Affine::rotate(2.0 * std::f64::consts::PI * k as f64 / n as f64);
-        let m = to_center * rot * from_center;
-        let mut s = base.clone();
-        s.effects.clear();
-        s.transform = m * s.transform;
-        out.push(s);
+        out.push(to_center * rot * from_center);
     }
     out
 }
 
-fn block_shadow(shape: &Shape, offset: Vec2, color: Color, gap: f64) -> Vec<Shape> {
-    let front = shape.page_path();
-    let pts = crate::effects::resample(&front, 96);
-    if pts.len() < 3 {
+/// How the area of `shape`'s outline is read: text (warped text too,
+/// whose outline is a curve by the time an effect reads it) and objects
+/// set to the nonzero rule have contours that overlap without making
+/// holes (#2156).
+fn area_rule(shape: &Shape) -> crate::shaping::FillRule {
+    if matches!(shape.kind, ShapeKind::Text { .. }) {
+        crate::shaping::FillRule::NonZero
+    } else {
+        shape.fill_rule
+    }
+}
+
+/// The outlines `shape` covers the page with, each with the rule it is
+/// read by: its own (`rule` when given), or those of the objects of a
+/// group, `parent` taking them to the page.
+fn cast_parts(
+    shape: &Shape,
+    parent: Affine,
+    rule: Option<crate::shaping::FillRule>,
+    depth: usize,
+    out: &mut Vec<(BezPath, crate::shaping::FillRule)>,
+) {
+    if !shape.visible || depth > 64 {
+        return;
+    }
+    if let ShapeKind::Group { children } = &shape.kind {
+        for c in children {
+            cast_parts(c, parent * shape.transform, None, depth + 1, out);
+        }
+        return;
+    }
+    let path = parent * shape.page_path();
+    if !path.elements().is_empty() {
+        out.push((path, rule.unwrap_or_else(|| area_rule(shape))));
+    }
+}
+
+/// The area [`cast_area`] joined last, with the object, its rule and the
+/// objects it was joined from. A drag of the shadow changes the offset in
+/// every frame and nothing of the area, and joining it costs as much as
+/// sweeping it.
+type CastKept = (Shape, crate::shaping::FillRule, Vec<Shape>, BezPath);
+static CAST: std::sync::Mutex<Option<CastKept>> = std::sync::Mutex::new(None);
+
+/// What a block shadow is cast from, with the rule to read it by: the
+/// object's own outline, or, for a group and for an object whose effects
+/// have drawn objects of their own (`drawn`: the body of an extrusion,
+/// the steps of a contour), the area all of them cover together. Each
+/// outline is made clean contours first, so that together they fill,
+/// with the nonzero rule, what any of them covers: read as one outline
+/// with the even-odd rule, two objects of a group were a hole where they
+/// overlap, and the body of an extruded object cast nothing (#2218).
+fn cast_area<'a>(
+    shape: &Shape,
+    rule: crate::shaping::FillRule,
+    drawn: impl Iterator<Item = &'a Shape>,
+) -> (BezPath, crate::shaping::FillRule) {
+    use crate::shaping::{overlay_with, FillRule, Op};
+    let drawn: Vec<Shape> = drawn.filter(|d| d.fill != Fill::None).cloned().collect();
+    let mut parts = Vec::new();
+    cast_parts(shape, Affine::IDENTITY, Some(rule), 0, &mut parts);
+    for d in &drawn {
+        cast_parts(d, Affine::IDENTITY, None, 0, &mut parts);
+    }
+    if parts.len() == 1 {
+        if let Some(only) = parts.pop() {
+            return only;
+        }
+    }
+    // The shadow's own settings are not part of what casts it.
+    let mut from = shape.clone();
+    from.effects.clear();
+    if let Ok(kept) = CAST.lock() {
+        if let Some((s, r, d, area)) = kept.as_ref() {
+            if *s == from && *r == rule && *d == drawn {
+                return (area.clone(), FillRule::NonZero);
+            }
+        }
+    }
+    let empty = BezPath::new();
+    let mut all = BezPath::new();
+    for (path, rule) in &parts {
+        all.extend(overlay_with(path, &empty, Op::Weld, *rule));
+    }
+    if let Ok(mut kept) = CAST.lock() {
+        *kept = Some((from, rule, drawn, all.clone()));
+    }
+    (all, FillRule::NonZero)
+}
+
+/// The solid the area `front` (read by `rule`) makes slid along `offset`
+/// (page space), each of its contours swept within itself, its own area
+/// included, less the area grown by `gap`. `shape` gives the rest.
+fn block_shadow(
+    shape: &Shape,
+    (front, rule): (BezPath, crate::shaping::FillRule),
+    offset: Vec2,
+    color: Color,
+    gap: f64,
+) -> Vec<Shape> {
+    let mut solid = crate::shaping::sweep(&front, offset, rule);
+    if solid.elements().is_empty() {
         return Vec::new();
     }
-    // Union of the swept quads and the back face, as one solid.
-    let mut solid = crate::effects::polygon(&pts.iter().map(|p| *p + offset).collect::<Vec<_>>());
-    for i in 0..pts.len() - 1 {
-        let (a, b) = (pts[i], pts[i + 1]);
-        let quad = crate::effects::polygon(&[a, b, b + offset, a + offset]);
-        solid = crate::shaping::overlay(&solid, &quad, crate::shaping::Op::Weld);
-    }
     if gap > 0.0 {
-        let grown = crate::shaping::offset(&front, gap);
+        let grown = crate::shaping::offset_filled(&front, gap, crate::shaping::Join::Round, rule);
         solid = crate::shaping::overlay(&solid, &grown, crate::shaping::Op::Trim);
     }
     let mut s = shape.clone();
@@ -2293,6 +2552,53 @@ pub fn homography(src: &[Point; 4], dst: &[Point; 4]) -> Option<[f64; 8]> {
 mod tests {
     use super::*;
 
+    /// The parts a transparency's target fades (live test of 0.41: the
+    /// target made no difference): the fill and the outline apart, the
+    /// outline first when it is behind the fill, an object lacking the
+    /// part named drawn as it is, a group faded whole.
+    #[test]
+    fn transparency_parts_follow_the_target() {
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 2.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.stroke = Some(crate::Stroke::new(Color::BLACK, 1.0));
+        let look = |parts: &[(Shape, bool)]| {
+            parts
+                .iter()
+                .map(|(p, faded)| (!matches!(p.fill, Fill::None), p.stroke.is_some(), *faded))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            look(&transparency_parts(&s, 0)),
+            [(true, false, true), (false, true, false)]
+        );
+        assert_eq!(
+            look(&transparency_parts(&s, 1)),
+            [(true, false, false), (false, true, true)]
+        );
+        assert_eq!(look(&transparency_parts(&s, 2)), [(true, true, true)]);
+        if let Some(st) = s.stroke.as_mut() {
+            st.behind_fill = true;
+        }
+        assert_eq!(
+            look(&transparency_parts(&s, 1)),
+            [(false, true, true), (true, false, false)]
+        );
+        // No outline: the outline target fades nothing, the fill target all.
+        s.stroke = None;
+        assert_eq!(look(&transparency_parts(&s, 1)), [(true, false, false)]);
+        assert_eq!(look(&transparency_parts(&s, 0)), [(true, false, true)]);
+        let group = Shape::new(crate::ShapeId(2), ShapeKind::Group { children: vec![s] });
+        let parts = transparency_parts(&group, 0);
+        assert!(parts.len() == 1 && parts[0].1);
+    }
+
     /// A symmetry goes with its object: the centre and the first line are
     /// carried by a move, a turn and a mirror, so the copies the object
     /// makes are those of the transformed whole.
@@ -2531,6 +2837,83 @@ mod tests {
         }
     }
 
+    /// #2218: a block shadow is cast by the whole object. A group casts
+    /// it from what its objects cover together (read as one outline, two
+    /// of them were a hole where they overlap), and an object with an
+    /// extrusion from itself and its body, beneath the body (it was the
+    /// object's alone, drawn over the body's faces).
+    #[test]
+    fn block_shadow_is_cast_by_the_whole_object() {
+        let shadow = Effect::BlockShadow {
+            offset: Vec2::new(4.0, -4.0),
+            color: Color::BLACK,
+            gap: 0.0,
+        };
+        let square = |id: u64, x: f64| {
+            let mut s = Shape::new(
+                crate::ShapeId(id),
+                ShapeKind::Rect {
+                    rect: Rect::new(x, 0.0, x + 10.0, 10.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Solid(Color::WHITE);
+            s
+        };
+        // Two squares 6 mm apart, overlapping by 4 mm.
+        let mut group = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Group {
+                children: vec![square(2, 0.0), square(3, 6.0)],
+            },
+        );
+        group.transform = Affine::translate((100.0, 50.0));
+        group.effects.push(shadow.clone());
+        let ev = evaluate(&group);
+        assert_eq!(ev.below.len(), 1);
+        let cast = ev.below[0].page_path();
+        // The 16 x 10 box they cover, slid by (4, -4).
+        let expected = 160.0 + 16.0 * 4.0 + 10.0 * 4.0;
+        assert!(
+            (cast.area().abs() - expected).abs() < 1e-3,
+            "{}",
+            cast.area()
+        );
+        assert!(cast.contains(Point::new(108.0, 55.0)), "where they overlap");
+        // A square with a body 10 mm up and to the right.
+        let mut s = rect_shape();
+        s.effects = vec![
+            Effect::Extrude {
+                depth: Vec2::new(10.0, 10.0),
+                vanishing: None,
+                amount: 0.0,
+                shade_from: None,
+                shade_to: None,
+                light_angle: 135.0,
+                light_intensity: 50.0,
+                bevel: 0.0,
+                kind: None,
+                on_object: false,
+                solid: None,
+                space: Default::default(),
+            },
+            shadow,
+        ];
+        let ev = evaluate(&s);
+        // Beneath the far face and the sides.
+        assert_eq!(ev.below.len(), 4);
+        assert_eq!(ev.below[0].fill, Fill::Solid(Color::BLACK));
+        let cast = ev.below[0].page_path();
+        // The body's far corner, slid: past the square's own shadow.
+        assert!(cast.contains(Point::new(33.0, 25.0)), "the body's shadow");
+        assert!(cast.contains(Point::new(23.0, -3.0)), "the object's shadow");
+        assert!(!cast.contains(Point::new(35.0, 2.0)));
+        // The square (400), its body (a hexagon of 800 with it) and
+        // their slide: 800 + 4 * (30 + 30).
+        assert!((cast.area().abs() - 1040.0).abs() < 1e-3, "{}", cast.area());
+    }
+
     #[test]
     fn block_shadow_keeps_corners_sharp() {
         let mut s = rect_shape();
@@ -2565,6 +2948,118 @@ mod tests {
             crate::shaping::Op::Intersect,
         );
         assert!(!inside.elements().is_empty());
+    }
+
+    /// An outline of several parts, as the letters of a word: the block
+    /// shadow of each part follows that part, and nothing joins the end of
+    /// one to the start of the next (the shards of #2156).
+    #[test]
+    fn block_shadow_follows_each_part_of_the_outline() {
+        let square = |x: f64| Rect::new(x, 0.0, x + 10.0, 10.0).to_path(0.01);
+        let mut path = square(0.0);
+        path.extend(square(30.0).elements().iter().copied());
+        // A hole in the second part, wider than the shadow's depth.
+        path.extend(Rect::new(32.0, 2.0, 38.0, 8.0).to_path(0.01));
+        let mut s = Shape::new(crate::ShapeId(1), ShapeKind::Path { path, closed: true });
+        let offset = Vec2::new(4.0, -0.5);
+        s.effects.push(Effect::BlockShadow {
+            offset,
+            color: Color::BLACK,
+            gap: 0.0,
+        });
+        let ev = evaluate(&s);
+        assert_eq!(ev.below.len(), 1);
+        let shadow = ev.below[0].page_path();
+        let solid = 100.0 + 10.0 * 4.0 + 10.0 * 0.5;
+        // The hole, 6 x 6, slid by (4, -0.5): 2 x 5.5 of it stays open.
+        let expected = 2.0 * solid - 11.0;
+        assert!(
+            (shadow.area().abs() - expected).abs() < 1e-3,
+            "{}",
+            shadow.area()
+        );
+        let parts = shadow
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(parts, 3);
+        // Nothing between the two parts.
+        let between = crate::shaping::overlay(
+            &shadow,
+            &Rect::new(14.5, -1.0, 29.5, 11.0).to_path(0.01),
+            crate::shaping::Op::Intersect,
+        );
+        assert!(between.elements().is_empty(), "{between:?}");
+        // The gap still trims the object grown by it away.
+        if let Some(Effect::BlockShadow { gap, .. }) = s.effects.first_mut() {
+            *gap = 1.0;
+        }
+        let trimmed = evaluate(&s).below[0].page_path();
+        assert!(trimmed.area().abs() < shadow.area().abs() - 1.0);
+    }
+
+    /// Text and objects set to the nonzero rule are read with it, so the
+    /// overlapping strokes of a letter make no holes in its contour or
+    /// block shadow (#2156).
+    #[test]
+    fn effects_read_text_with_the_nonzero_rule() {
+        use crate::shaping::FillRule;
+        let text = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Text {
+                spans: Vec::new(),
+                origin: Point::ZERO,
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            },
+        );
+        assert_eq!(area_rule(&text), FillRule::NonZero);
+        let mut curve = rect_shape();
+        assert_eq!(area_rule(&curve), FillRule::EvenOdd);
+        curve.fill_rule = FillRule::NonZero;
+        assert_eq!(area_rule(&curve), FillRule::NonZero);
+        // Two crossing bars turning the same way.
+        let mut path = Rect::new(0.0, 5.0, 20.0, 15.0).to_path(0.01);
+        path.extend(Rect::new(5.0, 0.0, 15.0, 20.0).to_path(0.01));
+        let mut s = Shape::new(crate::ShapeId(2), ShapeKind::Path { path, closed: true });
+        s.fill = Fill::Solid(Color::WHITE);
+        s.fill_rule = FillRule::NonZero;
+        s.effects.push(Effect::Contour {
+            steps: 1,
+            offset: 1.0,
+            outside: false,
+            to_center: false,
+            fill_to: Color::BLACK,
+            outline_to: None,
+            color_blend: 0,
+            corners: Some(crate::shaping::Join::Miter),
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+        });
+        let inside = evaluate(&s).above;
+        assert_eq!(inside.len(), 1);
+        let parts = |p: &BezPath| {
+            p.elements()
+                .iter()
+                .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                .count()
+        };
+        assert_eq!(parts(&inside[0].page_path()), 1);
+        s.effects = vec![Effect::BlockShadow {
+            offset: Vec2::new(1.0, 0.0),
+            color: Color::BLACK,
+            gap: 0.0,
+        }];
+        let shadow = evaluate(&s).below[0].page_path();
+        assert_eq!(parts(&shadow), 1);
+        assert!(
+            (shadow.area().abs() - 320.0).abs() < 1e-3,
+            "{}",
+            shadow.area()
+        );
     }
 
     /// The contour offset is the distance on the page, whatever the
@@ -2835,6 +3330,60 @@ mod tests {
             last = p;
         }
         assert!((blend_place(0.5, 1e-12) - 0.5).abs() < 1e-9);
+    }
+
+    /// With Apply to sizing each step is the morph at its accelerated
+    /// place, outline and size both: a square blended into a bigger
+    /// circle with the steps packed toward the circle has round steps
+    /// there, as the previews of the .cdr files with that setting show.
+    /// It scaled the evenly morphed step instead, so the steps by the
+    /// circle stayed square (#1576). Without the setting the steps keep
+    /// the even morph and only move.
+    #[test]
+    fn apply_to_sizing_morphs_each_step_at_its_accelerated_place() {
+        let start = rect_shape();
+        let mut end = Shape::new(
+            crate::ShapeId(2),
+            ShapeKind::Ellipse {
+                rect: Rect::new(100.0, -10.0, 140.0, 30.0),
+                arc: None,
+            },
+        );
+        end.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        let (a, b) = (start.page_path(), end.page_path());
+        let accel = -0.6;
+        let steps = |accel_sizing: bool| {
+            let options = BlendOptions {
+                accel_sizing,
+                ..Default::default()
+            };
+            blend(&start, &end, 4, (accel, 0.0), 0.0, None, false, &options)
+        };
+        let path = |s: &Shape| match &s.kind {
+            ShapeKind::Path { path, .. } => s.transform * path.clone(),
+            other => panic!("{other:?}"),
+        };
+        let near = |p: &BezPath, q: &BezPath| {
+            p.elements().len() == q.elements().len()
+                && p.elements().iter().zip(q.elements()).all(|(x, y)| {
+                    let (xs, ys) = (x.end_point(), y.end_point());
+                    matches!((xs, ys), (Some(u), Some(v)) if (u - v).hypot() < 1e-6)
+                        || (xs.is_none() && ys.is_none())
+                })
+        };
+        for (k, (sized, plain)) in steps(true).iter().zip(&steps(false)).enumerate() {
+            let t = (k + 1) as f64 / 5.0;
+            let to = blend_place(t, accel);
+            assert!(to > t + 0.05, "{k}: packed toward the circle");
+            let at = crate::effects::blend_from_nodes_at(&a, &b, &[to], 120, None);
+            assert!(near(&path(sized), &at[0]), "{k}: the morph at {to}");
+            // Unsized: the even morph, moved to the accelerated place.
+            let even = crate::effects::blend_from_nodes_at(&a, &b, &[t], 120, None);
+            let moved = Affine::translate(
+                (b.bounding_box().center() - a.bounding_box().center()) * (to - t),
+            ) * even[0].clone();
+            assert!(near(&path(plain), &moved), "{k}: the even morph moved");
+        }
     }
 
     #[test]
@@ -3441,6 +3990,52 @@ mod tests {
         assert!(same_outline(&p, &evaluate(&circle).main.local_path(), 0.05));
     }
 
+    /// A blend inside a group the group's envelope bends: its end copy
+    /// bends too, so the middle steps follow the warp (#2120). They were
+    /// mixed toward the unwarped end and stayed where they were.
+    #[test]
+    fn a_grouped_blend_bends_with_the_group() {
+        let a = rect_shape();
+        let mut b = rect_shape();
+        b.id = crate::ShapeId(2);
+        b.transform = Affine::translate((100.0, 0.0));
+        let mut start = a.clone();
+        start.effects.push(Effect::Blend {
+            end: Box::new(b.clone()),
+            steps: 3,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+            rotation: 0.0,
+            path: None,
+            rotate_on_path: false,
+            end_id: Some(b.id),
+            options: BlendOptions::default(),
+        });
+        let mut group = Shape::new(
+            crate::ShapeId(3),
+            ShapeKind::Group {
+                children: vec![start, b],
+            },
+        );
+        // The group moved: its objects' space is not the page.
+        group.transform = Affine::translate((5.0, 7.0));
+        // A warp raising everything by half its distance from the left.
+        reshape(&mut group, &|p, _| {
+            let mut q = p.clone();
+            q.apply_affine(Affine::new([1.0, 0.5, 0.0, 1.0, 0.0, 0.0]));
+            q
+        });
+        let ShapeKind::Group { children } = &group.kind else {
+            panic!("still a group");
+        };
+        let ev = evaluate(&children[0]);
+        let end = children[1].bounds().center();
+        let first = children[0].bounds().center();
+        let mid = ev.above[1].bounds().center();
+        let want = first.midpoint(end);
+        assert!((mid - want).hypot() < 0.5, "{mid:?} not {want:?}");
+    }
+
     /// A blend asking for more steps than the Blend tool offers draws
     /// that most, so a misread or edited value cannot fill the memory
     /// (#980).
@@ -3827,6 +4422,285 @@ mod tests {
 }
 
 #[cfg(test)]
+mod warped_extrusion_tests {
+    use super::*;
+    use crate::geometry::Rect;
+
+    /// A letter-like outline: a "D" with its hole, curves on the right.
+    fn letter() -> Shape {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((0.0, 30.0));
+        p.line_to((10.0, 30.0));
+        p.curve_to((30.0, 30.0), (30.0, 0.0), (10.0, 0.0));
+        p.close_path();
+        p.move_to((4.0, 5.0));
+        p.line_to((8.0, 5.0));
+        p.curve_to((20.0, 5.0), (20.0, 25.0), (8.0, 25.0));
+        p.line_to((4.0, 25.0));
+        p.close_path();
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Path {
+                path: p,
+                closed: true,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(160, 20, 40));
+        s
+    }
+
+    fn extrusion(depth: Vec2) -> Effect {
+        Effect::Extrude {
+            depth,
+            vanishing: None,
+            amount: 0.0,
+            shade_from: None,
+            shade_to: None,
+            light_angle: 135.0,
+            light_intensity: 50.0,
+            bevel: 0.0,
+            kind: None,
+            on_object: false,
+            solid: None,
+            space: Default::default(),
+        }
+    }
+
+    /// An envelope around `b` with its top side arched and its top-right
+    /// corner pulled up and out.
+    fn arch(b: Rect) -> Effect {
+        let mut frame = crate::envelope::Frame::around(b);
+        frame.move_node(5, Vec2::new(0.0, 12.0), crate::envelope::Mode::SingleArc);
+        frame.move_node(4, Vec2::new(6.0, 5.0), crate::envelope::Mode::SingleArc);
+        Effect::from_envelope(&frame, false, Default::default())
+    }
+
+    /// The lines of `p`, its curves flattened.
+    fn lines(p: &BezPath) -> Vec<(Point, Point)> {
+        let mut out = Vec::new();
+        let (mut at, mut start) = (Point::ZERO, Point::ZERO);
+        crate::geometry::flatten(p, 0.01, &mut |el| match el {
+            PathEl::MoveTo(q) => {
+                at = q;
+                start = q;
+            }
+            PathEl::LineTo(q) => {
+                out.push((at, q));
+                at = q;
+            }
+            PathEl::ClosePath => {
+                out.push((at, start));
+                at = start;
+            }
+            _ => {}
+        });
+        out
+    }
+
+    /// How far the corners of `a` lie from the lines of `b`, at most.
+    fn gap(a: &BezPath, b: &BezPath) -> f64 {
+        let to = lines(b);
+        let dist = |p: Point, (a, b): (Point, Point)| {
+            let d = b - a;
+            let len = d.hypot2();
+            let t = if len > 0.0 {
+                ((p - a).dot(d) / len).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            (p - (a + d * t)).hypot()
+        };
+        lines(a)
+            .iter()
+            .flat_map(|l| [l.0, l.1])
+            .map(|p| to.iter().map(|l| dist(p, *l)).fold(f64::MAX, f64::min))
+            .fold(0.0, f64::max)
+    }
+
+    /// How far the body of `ev` (a back parallel one, by `depth`) strays
+    /// from the object's outline: the far face from the outline moved by
+    /// the offset, and each side from the outline and that copy.
+    fn body_gap(ev: &Evaluated, depth: Vec2) -> f64 {
+        let front = ev.main.page_path();
+        let far = Affine::translate(depth) * front.clone();
+        let mut both = front;
+        both.extend(far.elements().iter().copied());
+        assert!(ev.below.len() > 1, "a far face and sides");
+        let back = ev.below[0].page_path();
+        let mut worst = gap(&back, &far).max(gap(&far, &back));
+        for side in &ev.below[1..] {
+            worst = worst.max(gap(&side.page_path(), &both));
+        }
+        worst
+    }
+
+    /// An envelope put on an extruded object bends the whole body
+    /// (#2214): the sides and the far face are built from the bent
+    /// outline, so they meet the object all along it. They were built
+    /// from the outline as it was before the envelope and stayed behind,
+    /// poking out around the bent object.
+    #[test]
+    fn an_envelope_on_an_extruded_object_bends_its_body() {
+        let depth = Vec2::new(10.0, -10.0);
+        let mut s = letter();
+        let b = s.local_path().bounding_box();
+        s.effects = vec![extrusion(depth), arch(b)];
+        let ev = evaluate(&s);
+        // The envelope did bend the object.
+        let front = ev.main.page_path().bounding_box();
+        assert!(front.y1 > 35.0, "{front:?}");
+        let worst = body_gap(&ev, depth);
+        assert!(worst < 0.1, "the body is {worst} mm off the bent outline");
+        // Large letters too: the same outline six times the size.
+        s.transform = Affine::scale(6.0);
+        let worst = body_gap(&evaluate(&s), depth);
+        assert!(worst < 0.1, "the large body is {worst} mm off");
+        // It is the body of the object enveloped first, then extruded.
+        s.transform = Affine::IDENTITY;
+        let mut first = s.clone();
+        first.effects.reverse();
+        let first = evaluate(&first);
+        assert_eq!(ev.main.page_path(), first.main.page_path());
+        assert_eq!(ev.below.len(), first.below.len());
+        for (a, b) in ev.below.iter().zip(&first.below) {
+            assert_eq!(a.page_path(), b.page_path());
+        }
+    }
+
+    /// Other warps after an extrusion bend its body too, and a front
+    /// body's near face (#2214).
+    #[test]
+    fn every_warp_after_an_extrusion_reaches_its_body() {
+        let depth = Vec2::new(8.0, 6.0);
+        let mut s = letter();
+        let b = s.local_path().bounding_box();
+        let lean = Effect::Perspective {
+            corners: [
+                Point::new(b.x0, b.y0),
+                Point::new(b.x1, b.y0 + 4.0),
+                Point::new(b.x1, b.y1 - 4.0),
+                Point::new(b.x0, b.y1),
+            ],
+        };
+        let mut front = extrusion(depth);
+        if let Effect::Extrude { kind, .. } = &mut front {
+            *kind = Some(crate::extrude::ExtrudeKind::FrontParallel);
+        }
+        s.effects = vec![front, lean.clone(), arch(b)];
+        let ev = evaluate(&s);
+        let mut plain = s.clone();
+        plain.effects = vec![lean, arch(b)];
+        let bent = evaluate(&plain).main.page_path();
+        assert_eq!(ev.main.page_path(), bent);
+        // The near face, drawn last, is the bent outline moved.
+        let near = ev.above.last().expect("a near face").page_path();
+        let moved = Affine::translate(depth) * bent;
+        let worst = gap(&near, &moved).max(gap(&moved, &near));
+        assert!(worst < 0.1, "the near face is {worst} mm off");
+    }
+
+    /// A contour between the extrusion and the envelope is still drawn
+    /// from the outline as it is at the contour's place, and the body
+    /// follows the envelope all the same (#2214).
+    #[test]
+    fn a_contour_before_the_envelope_keeps_its_outline() {
+        let depth = Vec2::new(10.0, -10.0);
+        let mut s = letter();
+        let b = s.local_path().bounding_box();
+        let contour = Effect::Contour {
+            steps: 1,
+            offset: 2.0,
+            outside: true,
+            to_center: false,
+            fill_to: Color::WHITE,
+            outline_to: None,
+            color_blend: 0,
+            corners: None,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+        };
+        s.effects = vec![extrusion(depth), contour.clone(), arch(b)];
+        let ev = evaluate(&s);
+        let mut alone = s.clone();
+        alone.effects = vec![contour];
+        let step = evaluate(&alone).below;
+        assert_eq!(step.len(), 1);
+        let drawn = ev.below.last().expect("the contour step");
+        assert_eq!(drawn.page_path(), step[0].page_path());
+        let mut body = ev.clone();
+        body.below.pop();
+        let worst = body_gap(&body, depth);
+        assert!(worst < 0.1, "the body is {worst} mm off the bent outline");
+    }
+
+    /// The box an envelope after an extrusion maps is the outline's. For a
+    /// body turned in space, whose object is drawn among its faces, it
+    /// was empty, and the envelope did nothing.
+    #[test]
+    fn the_warp_box_is_the_outline_before_the_body() {
+        let mut s = letter();
+        let b = s.local_path().bounding_box();
+        let mut turned = extrusion(Vec2::new(10.0, -10.0));
+        if let Effect::Extrude { space, .. } = &mut turned {
+            space.rotation = [0.0, 20.0, 0.0];
+        }
+        s.effects = vec![turned, arch(b)];
+        assert_eq!(warp_box(&s, 1), b);
+        assert_eq!(warp_box(&s, 0), b);
+        let bent = warp_box(&s, 2);
+        assert!(bent.y1 > b.y1 + 5.0, "{bent:?}");
+        // A fresh frame around that box leaves the body as it was.
+        let mut plain = s.clone();
+        plain.effects.truncate(1);
+        let mut framed = plain.clone();
+        framed.effects.push(Effect::envelope_around(b, false));
+        let (plain, framed) = (evaluate(&plain), evaluate(&framed));
+        // The object is drawn among the faces of a turned body.
+        let near = |ev: &Evaluated| ev.above.last().expect("the near face").page_path();
+        assert!(same_outline(&near(&plain), &near(&framed), 0.05));
+        let reach = |ev: &Evaluated| {
+            ev.above
+                .iter()
+                .map(|f| f.page_path().bounding_box())
+                .reduce(|a, c| a.union(c))
+                .expect("faces")
+        };
+        let (a, c) = (reach(&plain), reach(&framed));
+        assert!(
+            (a.x0 - c.x0).abs() < 0.05
+                && (a.y0 - c.y0).abs() < 0.05
+                && (a.x1 - c.x1).abs() < 0.05
+                && (a.y1 - c.y1).abs() < 0.05,
+            "{a:?} {c:?}"
+        );
+    }
+
+    /// A body turned in space is built from the bent outline as well: the
+    /// envelope is not put on the turned face again (#2214).
+    #[test]
+    fn a_turned_body_is_built_from_the_bent_outline() {
+        let depth = Vec2::new(10.0, -10.0);
+        let mut s = letter();
+        let b = s.local_path().bounding_box();
+        let mut turned = extrusion(depth);
+        if let Effect::Extrude { space, .. } = &mut turned {
+            space.rotation = [0.0, 20.0, 0.0];
+        }
+        s.effects = vec![turned.clone(), arch(b)];
+        let after = evaluate(&s);
+        s.effects = vec![arch(b), turned];
+        let before = evaluate(&s);
+        assert_eq!(after.below.len(), before.below.len());
+        assert!(!after.above.is_empty());
+        assert_eq!(after.above.len(), before.above.len());
+        for (a, b) in after.above.iter().zip(&before.above) {
+            assert_eq!(a.page_path(), b.page_path());
+        }
+    }
+}
+
+#[cfg(test)]
 mod symmetry_tests {
     use super::*;
     use crate::geometry::Rect;
@@ -3863,5 +4737,129 @@ mod symmetry_tests {
         };
         let ev = evaluate(&s);
         assert_eq!(ev.above.len(), 3);
+    }
+
+    /// A mirrored copy's fountain fill and gradient transparency are
+    /// mirror images of the object's (#2121): a fill running from red at
+    /// the left to blue at the right, towards the mirror line, runs
+    /// from red at the right to blue at the left on the copy at the other
+    /// side of the line. The copy's gradients ran the object's way.
+    #[test]
+    fn mirrored_copies_mirror_their_gradients() {
+        use crate::color::Color;
+        use crate::style::Fill;
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 0.0, 30.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        s.fill = Fill::linear(red, blue, 0.0);
+        s.effects = vec![
+            Effect::Symmetry {
+                center: Point::new(40.0, 0.0),
+                angle: 90.0,
+                lines: 1,
+            },
+            Effect::Transparency {
+                mask: Fill::linear(Color::WHITE, Color::BLACK, 0.0),
+                merge: MergeMode::Normal,
+                target: 2,
+            },
+        ];
+        let ev = evaluate(&s);
+        assert_eq!(ev.above.len(), 1);
+        let copy = &ev.above[0];
+        let b = copy.bounds();
+        assert!(
+            (b.x0 - 50.0).abs() < 1e-9 && (b.x1 - 70.0).abs() < 1e-9,
+            "{b:?}"
+        );
+        // Where each gradient starts and ends on the page.
+        let ends = |f: &Fill, on: Rect| match f {
+            Fill::Fountain(f) => {
+                let h = f.handles.unwrap_or_else(|| f.default_handles(on));
+                (
+                    crate::style::Fountain::rel_to_page(on, h.start),
+                    crate::style::Fountain::rel_to_page(on, h.end),
+                )
+            }
+            other => panic!("not a fountain: {other:?}"),
+        };
+        let (from, to) = ends(&ev.main.fill, ev.main.bounds());
+        assert!(from.x < to.x, "the object's fill runs to the right");
+        let (from, to) = ends(&copy.fill, b);
+        assert!(
+            (from.x - 70.0).abs() < 1e-6 && (to.x - 50.0).abs() < 1e-6,
+            "the copy's fill runs to the left: {from:?} {to:?}"
+        );
+        let Effect::Transparency { mask, .. } = &copy.effects[0] else {
+            panic!("the copy keeps its transparency");
+        };
+        let (from, to) = ends(mask, b);
+        assert!(
+            (from.x - 70.0).abs() < 1e-6 && (to.x - 50.0).abs() < 1e-6,
+            "the copy's transparency runs to the left: {from:?} {to:?}"
+        );
+    }
+
+    /// The mirrored copies carry the object's other effects (#2121): its
+    /// transparency stays on each copy, and what a contour draws around
+    /// the object is mirrored with it, whichever came first in the list.
+    #[test]
+    fn mirrored_copies_carry_the_other_effects() {
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 0.0, 20.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.effects = vec![
+            Effect::Symmetry {
+                center: Point::new(0.0, 0.0),
+                angle: 90.0,
+                lines: 1,
+            },
+            Effect::Transparency {
+                mask: crate::style::Fill::Solid(crate::color::Color::rgb8(128, 128, 128)),
+                merge: MergeMode::Normal,
+                target: 2,
+            },
+            Effect::Contour {
+                steps: 1,
+                offset: 2.0,
+                outside: true,
+                to_center: false,
+                fill_to: crate::color::Color::WHITE,
+                outline_to: None,
+                color_blend: 0,
+                corners: None,
+                accel_objects: 0.0,
+                accel_colors: 0.0,
+            },
+        ];
+        let ev = evaluate(&s);
+        assert_eq!(ev.above.len(), 1);
+        let copy = &ev.above[0];
+        assert_eq!(copy.effects.len(), 1);
+        assert!(matches!(copy.effects[0], Effect::Transparency { .. }));
+        let b = copy.bounds();
+        assert!(
+            (b.x0 + 20.0).abs() < 1e-9 && (b.x1 + 10.0).abs() < 1e-9,
+            "{b:?}"
+        );
+        // The contour step and its mirror image.
+        assert_eq!(ev.below.len(), 2);
+        let c = ev.below[1].page_path().bounding_box();
+        assert!(
+            (c.x0 + 22.0).abs() < 0.1 && (c.x1 + 8.0).abs() < 0.1,
+            "{c:?}"
+        );
     }
 }

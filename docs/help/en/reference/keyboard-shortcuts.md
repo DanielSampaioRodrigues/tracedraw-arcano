@@ -10,6 +10,7 @@ shortcut beside it, and you can add your own; see
 | Keys | Action |
 |---|---|
 | <kbd>F1</kbd> | the Help page of the open dialog box, else of the panel on show, else of the active tool |
+| <kbd>Ctrl+Shift+P</kbd> | Search Commands: find a menu command or a setting by name and run or open it |
 
 ## Files and editing {#files}
 
@@ -18,12 +19,15 @@ shortcut beside it, and you can add your own; see
 | <kbd>Ctrl+N</kbd>, <kbd>Ctrl+O</kbd> | new drawing, open |
 | <kbd>Ctrl+S</kbd>, <kbd>Ctrl+Shift+S</kbd> | save, save as |
 | <kbd>Ctrl+I</kbd>, <kbd>Ctrl+E</kbd>, <kbd>Ctrl+P</kbd> | import, export, print |
+| <kbd>Ctrl+Shift+E</kbd> | export with the options shown |
 | <kbd>Ctrl+F4</kbd>, <kbd>Alt+F4</kbd> | close the drawing, exit |
 | <kbd>Ctrl+Z</kbd>, <kbd>Ctrl+Shift+Z</kbd>, <kbd>Ctrl+R</kbd> | undo, redo, repeat |
+| <kbd>Alt+Backspace</kbd> | undo, as <kbd>Ctrl+Z</kbd> |
 | <kbd>Ctrl+X</kbd>, <kbd>Ctrl+C</kbd>, <kbd>Ctrl+V</kbd>, <kbd>Ctrl+Shift+V</kbd> | cut, copy, paste, paste in view |
 | <kbd>Ctrl+D</kbd>, <kbd>Ctrl+Shift+D</kbd> | duplicate, Repeat Copies panel |
 | <kbd>+</kbd> | duplicate the selection in place |
 | <kbd>Ctrl+A</kbd>, <kbd>Delete</kbd> | select all, delete |
+| <kbd>Ctrl+Shift+I</kbd> | invert the selection |
 | <kbd>Ctrl+0</kbd> to <kbd>Ctrl+9</kbd>, <kbd>0</kbd> to <kbd>9</kbd>, <kbd>Alt+0</kbd> to <kbd>Alt+9</kbd> | store, select (twice: zoom to) and add to selection groups |
 | <kbd>Ctrl+F</kbd>, <kbd>Ctrl+J</kbd>, <kbd>Ctrl+W</kbd> | Find and Replace panel, options, refresh the window |
 
@@ -34,7 +38,9 @@ shortcut beside it, and you can add your own; see
 | <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | Zoom tool for one zoom (then the tool before comes back; <kbd>Z</kbd> keeps it), zoom to the selection, zoom out |
 | <kbd>F4</kbd>, <kbd>Shift+F4</kbd> | zoom to fit, zoom to the page |
 | <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> | zoom in and out one step |
+| <kbd>N</kbd> (held) | the Navigator: move the pointer over the page's picture to go there ([[menu.view > menu.view.navigator]]) |
 | <kbd>Alt+Shift+R</kbd> | rulers on and off |
+| <kbd>Ctrl+;</kbd>, <kbd>Ctrl+'</kbd> | guidelines, document grid: shown and hidden |
 | <kbd>Alt+Q</kbd>, <kbd>Alt+Z</kbd>, <kbd>Ctrl+Y</kbd> | snapping off, snap to objects, snap to the grid |
 | <kbd>Alt+Shift+A</kbd>, <kbd>Alt+Shift+D</kbd> | alignment guides, dynamic guides |
 | <kbd>PgUp</kbd>, <kbd>PgDn</kbd> | previous and next page |
@@ -49,10 +55,12 @@ shortcut beside it, and you can add your own; see
 | <kbd>Ctrl+Home</kbd>, <kbd>Ctrl+End</kbd> | to front and back of the page |
 | <kbd>Shift+PgUp</kbd>, <kbd>Shift+PgDn</kbd> | to front and back of the layer |
 | <kbd>Ctrl+PgUp</kbd>, <kbd>Ctrl+PgDn</kbd> | forward one, back one |
+| <kbd>Ctrl+]</kbd>, <kbd>Ctrl+[</kbd>, <kbd>Ctrl+Shift+]</kbd>, <kbd>Ctrl+Shift+[</kbd> | also forward one, back one, to front and to back of the layer |
 | <kbd>L</kbd>, <kbd>R</kbd>, <kbd>T</kbd>, <kbd>B</kbd>, <kbd>E</kbd>, <kbd>C</kbd>, <kbd>P</kbd> | with a selection: align left, right, top, bottom, centers horizontally, centers vertically, center to page |
 | Arrow keys, with <kbd>Shift</kbd> or <kbd>Ctrl</kbd> | nudge, super nudge, micro nudge |
 | <kbd>Alt+S</kbd>, <kbd>Alt+E</kbd>, <kbd>Alt+Shift+E</kbd>, <kbd>Alt+Shift+S</kbd>, <kbd>Alt+X</kbd> | create, edit, finish, remove symmetry, break its link |
 | <kbd>Ctrl+M</kbd> | merge table cells |
+| <kbd>Ctrl+Shift+F3</kbd> | edit the contents of the selected clip frame, finish editing them |
 
 ## Panels {#panels}
 
@@ -99,6 +107,30 @@ Pressing a panel's shortcut when its panel is in front hides the panels.
 The [Toolbox](toolbox.md) page lists every tool. Each tool has its own keys
 while you use it, explained on its page; for the [[tool.shape]] tool, see
 [Shaping curves](../lines-shapes/shape-tool.md#editing).
+
+## Menus and lists {#menus}
+
+Press and release <kbd>Alt</kbd> to go to the menu bar: <kbd>Left</kbd> and
+<kbd>Right</kbd> move along the menus, <kbd>Down</kbd> or <kbd>Enter</kbd> opens
+one, and <kbd>Esc</kbd> leaves the bar. <kbd>Alt</kbd> with a menu's underlined
+letter opens that menu at once.
+
+In an open menu, <kbd>Down</kbd> and <kbd>Up</kbd> move from row to row,
+<kbd>Home</kbd> and <kbd>End</kbd> go to the first and last rows, and
+<kbd>Enter</kbd> or <kbd>Space</kbd> runs the row. <kbd>Right</kbd> opens a
+submenu and <kbd>Left</kbd> closes it; on other rows they go to the next or the
+previous menu. <kbd>Esc</kbd> closes one level. The right-click menus work the
+same way.
+
+In an open drop-down list, <kbd>Down</kbd>, <kbd>Up</kbd>, <kbd>Home</kbd>,
+<kbd>End</kbd>, <kbd>Page Down</kbd> and <kbd>Page Up</kbd> move the highlight,
+typing the first letters of a name jumps to it, <kbd>Enter</kbd> picks and
+<kbd>Esc</kbd> closes the list without a change. A list's button reached with
+<kbd>Tab</kbd> opens with <kbd>Down</kbd>, <kbd>Alt</kbd>+<kbd>Down</kbd> or
+<kbd>Enter</kbd>. In the font list, typing filters the fonts.
+
+While a menu or a list is open, the arrow keys do not move the selected
+objects.
 
 ## Dialog boxes {#dialogs}
 

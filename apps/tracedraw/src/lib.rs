@@ -19,6 +19,7 @@
 mod fork;
 mod ai;
 mod ai_image;
+mod ai_retry;
 mod anchors;
 #[cfg(target_os = "android")]
 mod android;
@@ -32,6 +33,7 @@ mod autocorrect;
 mod barcode;
 mod bg_remove;
 mod biblioteca;
+mod bitmap_file;
 mod bitmap_fx;
 mod bitmap_modes;
 mod blend_link;
@@ -48,9 +50,11 @@ mod color_policy;
 mod comments;
 mod common_shapes;
 mod connectors;
+mod content_link;
 mod contour_tool;
 mod coords;
 mod copy_effect;
+mod copy_props;
 mod corner_widgets;
 mod corners;
 mod crop_tool;
@@ -79,8 +83,10 @@ mod export;
 mod export_assets;
 mod extrude_tool;
 mod eyedropper;
+mod file_hold;
 mod file_presence;
 mod files;
+mod fill_page;
 mod fill_tool;
 mod fit_path;
 mod focus;
@@ -103,6 +109,7 @@ mod hunspell;
 mod i18n;
 mod image_dpi;
 mod imposicao;
+mod import_place;
 mod imposition;
 #[cfg(test)]
 mod input_method_tests;
@@ -130,6 +137,7 @@ mod mixed;
 #[cfg(test)]
 mod mockup_tests;
 mod multipage;
+mod my_shapes;
 mod net;
 mod new_document;
 mod node_edit;
@@ -138,8 +146,11 @@ mod object_thumbs;
 mod ops;
 mod ops2;
 mod package;
+mod page_drop;
+mod page_names;
 mod painterly_tool;
 mod palette;
+mod palm;
 mod pen;
 mod pen_look;
 mod personas;
@@ -169,13 +180,17 @@ mod scripting;
 mod secoes;
 mod segment_delete;
 mod select_region;
+mod select_similar;
 mod settings;
 mod shadow_tool;
 mod shape_tool;
+#[cfg(test)]
+mod shaping_tests;
 mod shelf;
 mod shortcuts;
 mod snap;
 mod snap_points;
+mod soft_canvas;
 mod soft_keyboard;
 mod spell;
 #[cfg(windows)]
@@ -197,6 +212,7 @@ mod system_locale;
 mod system_prefs;
 #[cfg(any(target_os = "macos", test))]
 mod system_quit;
+mod tab_ruler;
 mod table;
 mod table_tool;
 mod templates;
@@ -213,15 +229,25 @@ mod theme;
 mod thesaurus;
 mod thumbnails;
 mod time_tracker;
+#[cfg(any(target_os = "linux", test))]
+mod title_bar;
 mod tools;
 mod tools2;
+mod touch_modifiers;
+mod touch_taps;
 mod trace;
 mod trace_preview;
+mod tracecut;
+mod tracecut_cut;
+mod tracecut_make;
+mod tracecut_nest;
+mod tracecut_send;
 mod ui;
 mod updates;
 mod variable_outline;
 mod vector_mosaic;
 mod view;
+mod view_motion;
 #[cfg(target_arch = "wasm32")]
 mod web;
 #[cfg(any(target_arch = "wasm32", test))]
@@ -252,6 +278,27 @@ mod winit_quit_request;
 #[allow(dead_code)]
 #[path = "../../../vendor/winit/src/file_drop.rs"]
 mod winit_file_drop;
+// The pointer kept on a shortcut with Alt on Windows, of the same copy
+// (#1922).
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../../../vendor/winit/src/alt_shortcuts.rs"]
+mod winit_alt_shortcuts;
+// A graphics tablet's pen on Wayland, of the same copy (#1841).
+#[cfg(all(test, unix, not(target_arch = "wasm32")))]
+#[allow(dead_code)]
+#[path = "../../../vendor/winit/src/tablet_tool.rs"]
+mod winit_tablet_tool;
+// A finger or a pen on the window's frame on Wayland, of the same copy
+// (#2070).
+#[cfg(all(test, unix, not(target_arch = "wasm32")))]
+#[allow(dead_code)]
+#[path = "../../../vendor/winit/src/frame_input.rs"]
+mod winit_frame_input;
+// A mouse's buttons, wheel and hover on Android, of the same copy
+// (#2152, #2161).
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../../../vendor/winit/src/android_mouse.rs"]
+mod winit_android_mouse;
 mod workspace_file;
 
 /// The desktop program: the window, with the command line's files and
@@ -275,6 +322,7 @@ pub fn run() -> eframe::Result<()> {
     // The log in a file too and panics reported: the Windows build has no
     // console to show them (#570).
     startup_log::init();
+    updates::clean_leftovers();
     tracedraw_text::install();
     tracedraw_io::emf::install();
     // `tracedraw --mcp`: no window, a Model Context Protocol server on
@@ -290,15 +338,16 @@ pub fn run() -> eframe::Result<()> {
         return Ok(());
     }
     // `tracedraw --x11`: the window opens through X11 (XWayland on a
-    // Wayland desktop), where a graphics tablet's pen moves the pointer;
-    // Wayland compositors send pens only over a protocol the windowing
-    // layer does not speak yet (#850, see docs/behavior/pen-pressure.md).
+    // Wayland desktop), where a graphics tablet's pen moves the pointer
+    // (#850). The patched windowing layer reads a pen on Wayland too
+    // since #1841, so this is for compositors without the tablet
+    // protocol (see docs/behavior/pen-pressure.md).
     // Without an X server there is no window to open: say so and stop,
     // rather than let every renderer fail in turn.
     #[cfg(target_os = "linux")]
-    let x11 = args.iter().any(|a| a == "--x11");
+    let x11_asked = args.iter().any(|a| a == "--x11");
     #[cfg(target_os = "linux")]
-    if x11 && std::env::var_os("DISPLAY").is_none_or(|d| d.is_empty()) {
+    if x11_asked && !title_bar::env_set("DISPLAY") {
         // The log writes to stderr as well as to its file.
         log::error!(
             "tracedraw --x11: DISPLAY is not set, so there is no X server to open the window \
@@ -355,6 +404,20 @@ pub fn run() -> eframe::Result<()> {
     // The language picked in Options, else the installer's, else the
     // system's (docs/behavior/language.md).
     i18n::set_language(i18n::startup_language_here(&settings.language));
+    // Options > General > "Use the desktop's title bar": through XWayland
+    // when the Wayland compositor draws no title bars (#2070).
+    #[cfg(target_os = "linux")]
+    let x11 = x11_asked
+        || title_bar::through_x11(
+            settings.system_title_bar,
+            title_bar::env_set("WAYLAND_DISPLAY"),
+            title_bar::env_set("DISPLAY"),
+            title_bar::compositor_offers_title_bars,
+        );
+    #[cfg(target_os = "linux")]
+    if x11 && !x11_asked {
+        log::info!("opening the window through X11 for the desktop's title bar");
+    }
     let splash = settings.show_splash && !plain;
     let viewport = if splash {
         // The splash has no frame, so it cannot be dragged larger; it is
@@ -369,6 +432,7 @@ pub fn run() -> eframe::Result<()> {
             .with_icon(std::sync::Arc::new(
                 ui::brand::window_icon().unwrap_or_default(),
             ))
+            .with_app_id(splash::APP_ID)
     } else {
         splash::main_window_builder(&settings, plain).with_icon(std::sync::Arc::new(
             ui::brand::window_icon().unwrap_or_default(),
@@ -377,19 +441,23 @@ pub fn run() -> eframe::Result<()> {
     // The graphics card, or its software adapter with hardware
     // acceleration off; `--renderer=` when a start before could not open
     // the window (#445, #439).
-    // A start before that never got its window (the driver crashed or
-    // hung it) goes on with the next renderer (#570).
+    // A start before that never showed a frame (the driver crashed or
+    // hung it, before the window was made or while it drew the first
+    // frame) goes on with the next renderer (#570, #1999).
+    let last_failed = gpu::failed_attempt();
+    if let Some(f) = last_failed {
+        log::warn!("the last start did not show the window with {f:?}");
+    }
     let failed = gpu::Mode::from_args(&args)
         .is_none()
-        .then(gpu::failed_attempt)
+        .then_some(last_failed)
         .flatten();
-    if let Some(f) = failed {
-        log::warn!("the last start did not open the window with {f:?}");
-    }
     let mode = gpu::Mode::for_start(&args, &settings, failed);
     let first = gpu::Mode::first(&settings);
     let next = mode.next(first);
     gpu::note_next(next);
+    // Said in the status bar once a frame is shown (#1999).
+    gpu::note_fallback(gpu::fell_back(mode, first, last_failed));
     log::info!("opening the window with {mode:?} (Options asks for {first:?})");
     gpu::begin_attempt(mode);
     // A renderer that hangs never returns here to hand over (#570).
@@ -442,7 +510,7 @@ pub fn run() -> eframe::Result<()> {
                 } else {
                     Shell::new(cc, open_path)
                 };
-                shell.handed_over = Some(handed_over);
+                shell.handed_over = Some(instance::Inbox::new(handed_over));
                 Ok(Box::new(shell))
             }),
         )
@@ -513,7 +581,7 @@ struct Shell {
     open: Option<std::path::PathBuf>,
     /// Files later starts handed over (see instance.rs).
     #[cfg(not(target_arch = "wasm32"))]
-    handed_over: Option<std::sync::mpsc::Receiver<Vec<std::path::PathBuf>>>,
+    handed_over: Option<instance::Inbox>,
     /// Frames paced on a software adapter (#616).
     #[cfg(not(target_arch = "wasm32"))]
     pacer: gpu::Pacer,
@@ -832,9 +900,23 @@ impl eframe::App for Shell {
         soft_keyboard::take_into(raw_input);
         pen::filter_raw_input(ctx, raw_input);
         interaction::release_chorded_left(ctx, raw_input);
+        // The screen's safe area on Android (#1917).
+        if let Some(app) = self.app.as_ref() {
+            ui::screen_margins::apply(ctx, &app.settings, raw_input);
+        }
+        // Shift, Ctrl and Alt held from the toolbar by a finger (#1499).
+        if let Some(app) = self.app.as_ref() {
+            app.touch_mods.apply(ctx, raw_input);
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // The start works once a frame reached the screen, not when the
+        // window was made (#1999).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(mode) = gpu::mode_in_use() {
+            gpu::note_frame(ui.ctx(), mode);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         self.pacer.pace();
         #[cfg(not(target_arch = "wasm32"))]
@@ -924,8 +1006,8 @@ impl eframe::App for Shell {
         app.take_handed_pastes();
         // Files a later start handed over (one try_recv when none came).
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(rx) = &self.handed_over {
-            if instance::open_handed_over(app, ui.ctx(), rx) {
+        if let Some(inbox) = &mut self.handed_over {
+            if instance::take_handed_over(app, ui.ctx(), inbox) {
                 ui.ctx().request_repaint();
             }
         }
@@ -962,6 +1044,8 @@ impl eframe::App for Shell {
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
         ui::root(app, ui);
+        // The frame around the safe area (#1917).
+        ui::screen_margins::paint(ui.ctx(), &app.settings);
         // The emulator check's typing test (Android, soft_keyboard.rs).
         #[cfg(target_os = "android")]
         soft_keyboard::check::frame(app);
@@ -1035,6 +1119,10 @@ impl eframe::App for Shell {
         if let Some(app) = self.app.as_mut() {
             app.save_settings();
             app.leave_session();
+            // Restart after an update: the new version starts last, when
+            // the settings and the session are written.
+            #[cfg(not(target_arch = "wasm32"))]
+            app.installer.run_pending();
         }
     }
 }

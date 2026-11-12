@@ -28,7 +28,7 @@ nastavuje, jak program pracuje. Stránku zvolte ze seznamu vlevo.
   [[options.wheel_scroll]].
 - [[options.open_view]]: [[options.open_view_page]] (výchozí),
   [[options.open_view_objects]], [[options.open_view_width]],
-  [[options.open_view_height]], [[options.open_view_actual]] nebo
+  [[options.open_view_height]], [[options.open_view_actual]], [[options.open_view_percent]] nebo
   [[options.open_view_saved]] (stránka, místo a zvětšení uložené s každým
   uložením souboru TraceDraw).
 - [[options.ruler_calibration]]: přiložte k obrazovce pravítko a měňte
@@ -109,6 +109,7 @@ Stránka má pět karet.
 - [[options.paragraph_text]]: [[menu.text.show_text_frames]],
   [[menu.text.use_hyphenation]] a [[options.hyphenation_patterns]]
   (vestavěné, nebo slovník dělení slov pro váš jazyk).
+  - [[options.default_tab_spacing]]: kam skočí <kbd>Tab</kbd> v odstavci bez vlastních zarážek (12,7 mm, půl palce).
 - [[docker.fonts]]: [[options.show_recent_fonts]] nahoře v seznamech písem,
   [[options.recent_font_count]] (5, nejvýše 20) a
   [[options.font_sample_size]].

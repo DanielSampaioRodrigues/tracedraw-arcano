@@ -52,6 +52,9 @@ pub struct ExportState {
     /// "1-3, 5" (#1382).
     pub page_list: bool,
     pub pages: String,
+    /// With facing pages: each spread of the chosen pages as one page as
+    /// wide as both (#1972); else every page on its own.
+    pub spreads: bool,
     pub selection_only: bool,
     pub transparent: bool,
     pub quality: u8,
@@ -77,12 +80,27 @@ pub struct ExportState {
     /// A name being typed for a new preset (false) or for renaming the
     /// chosen one (true).
     pub preset_name: Option<(String, bool)>,
+    /// The preset whose delete button was pressed: the dialog asks
+    /// whether to delete it before it does (#1816).
+    pub preset_delete: Option<String>,
     /// The unit the bitmap size is typed in: an index into
     /// [`EXPORT_SIZE_UNITS`] (#617).
     pub size_unit: usize,
     /// Bitmaps: the artwork's printed size against the page's, the same
     /// across and down (1 = as drawn, #617).
     pub scale: f64,
+    /// JPEG and TIFF: the colours written, an index into
+    /// [`EXPORT_COLOR_MODES`] (0 RGB, 1 CMYK, 2 Grayscale; #1763).
+    pub color_mode: usize,
+    /// The file chosen in the Save dialog before the options were shown
+    /// (File > Export on the desktop): OK writes it, its extension
+    /// following the format chosen. `None`: OK asks where to save (the
+    /// presets for the web and office, the browser, Android).
+    pub target: Option<std::path::PathBuf>,
+    /// "Do not show this dialog again" as ticked in the dialog: it
+    /// becomes Options > Global > File Formats' setting on OK only, so
+    /// Cancel leaves the setting as it was.
+    pub dont_show: bool,
 }
 
 impl Default for ExportState {
@@ -94,6 +112,7 @@ impl Default for ExportState {
             all_pages: false,
             page_list: false,
             pages: String::new(),
+            spreads: false,
             selection_only: false,
             transparent: true,
             quality: 90,
@@ -109,8 +128,58 @@ impl Default for ExportState {
             webp_lossless: false,
             preset: String::new(),
             preset_name: None,
+            preset_delete: None,
             size_unit: 0,
             scale: 1.0,
+            color_mode: 0,
+            target: None,
+            dont_show: false,
+        }
+    }
+}
+
+/// The colour modes of a JPEG or TIFF export (#1763): RGB as drawn on
+/// screen, CMYK inks for print, or one channel of grey.
+pub const EXPORT_COLOR_MODES: [ExportColorMode; 3] = [
+    ExportColorMode::Rgb,
+    ExportColorMode::Cmyk,
+    ExportColorMode::Gray,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportColorMode {
+    Rgb,
+    Cmyk,
+    Gray,
+}
+
+impl ExportColorMode {
+    /// The name shown in the Export dialog.
+    pub fn label(self) -> String {
+        match self {
+            ExportColorMode::Rgb => "RGB".into(),
+            ExportColorMode::Cmyk => "CMYK".into(),
+            ExportColorMode::Gray => tr("palette.model_gray"),
+        }
+    }
+
+    /// The bitmap formats (by extension) that take a colour mode.
+    pub fn applies_to(ext: &str) -> bool {
+        matches!(ext, "jpg" | "tif")
+    }
+}
+
+impl ExportState {
+    /// The colour mode the export writes: the one chosen for JPEG and
+    /// TIFF, RGB for every other format.
+    pub fn color_mode_for(&self, ext: &str) -> ExportColorMode {
+        if ExportColorMode::applies_to(ext) {
+            EXPORT_COLOR_MODES
+                .get(self.color_mode)
+                .copied()
+                .unwrap_or(ExportColorMode::Rgb)
+        } else {
+            ExportColorMode::Rgb
         }
     }
 }
@@ -330,6 +399,19 @@ pub fn export_keeps_properties(ext: &str) -> bool {
     matches!(ext, "pdf" | "ai")
 }
 
+/// What Print's layout fields ask for besides the settings (#1796).
+#[derive(Debug, Clone, PartialEq)]
+pub enum LayoutPresetRequest {
+    /// Keep the layout as a preset of this name (replacing one).
+    Save(String),
+    /// Forget the preset of this name.
+    Delete(String),
+    /// Write the layout to a file the user names.
+    SaveFile,
+    /// Read a layout from a file the user picks.
+    OpenFile,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintState {
     /// With Print separations: the plates (in `export::plates` order)
@@ -380,8 +462,23 @@ pub struct PrintState {
     /// The sheet: an index into [`SHEETS`] (0 fits the sheet to the pages).
     pub sheet: usize,
     pub landscape: bool,
-    /// Space between pages on the sheet, mm.
+    /// Space between pages side by side on the sheet, mm.
     pub gutter: f64,
+    /// Space between the rows of pages on the sheet, mm (#1795).
+    pub gutter_y: f64,
+    /// The order of several pages per sheet: 0 across, 1 down the
+    /// columns of each sheet, 2 down each column through every sheet
+    /// (#1658), 3 cut and stack ([`crate::imposition::PageOrder`]).
+    pub page_order: usize,
+    /// The layout preset chosen (#1796), empty for none.
+    pub layout_preset: String,
+    /// The name being typed for a preset to save, while "+" is open.
+    pub layout_preset_typed: Option<String>,
+    /// A preset whose deletion is being asked.
+    pub layout_preset_delete: Option<String>,
+    /// What the layout fields asked of the preferences or the files,
+    /// done by [`take_saved_sheet`] (the fields only read the app).
+    pub layout_preset_request: Option<LayoutPresetRequest>,
     /// Booklet binding: 0 saddle stitch, 1 perfect bound (#788).
     pub booklet_binding: usize,
     /// Sheets in each signature of a perfect-bound booklet.
@@ -420,6 +517,11 @@ pub struct PrintState {
     pub parity: usize,
     /// Copies of a file come out as whole sets (on) or page by page.
     pub collate: bool,
+    /// Composite output in grays: every colour and picture as its grey
+    /// (#1657).
+    pub grayscale: bool,
+    /// The sheets in reverse order, the last first (#1394, #1571).
+    pub reverse_order: bool,
     /// Every sheet printed as one picture of `bitmap_dpi`.
     pub as_bitmap: bool,
     pub bitmap_dpi: f64,
@@ -427,6 +529,9 @@ pub struct PrintState {
     pub spot_to_cmyk: bool,
     /// Text in black, whatever its colour.
     pub text_black: bool,
+    /// The pages' background colour prints; off, it shows on screen only
+    /// (#1651).
+    pub page_background: bool,
     /// Black fills and outlines overprint what lies below.
     pub overprint_black: bool,
     /// How far beyond the page objects print, mm (with Bleed on).
@@ -677,6 +782,12 @@ impl Default for PrintState {
             sheet: 0,
             landscape: false,
             gutter: 5.0,
+            gutter_y: 5.0,
+            page_order: 0,
+            layout_preset: String::new(),
+            layout_preset_typed: None,
+            layout_preset_delete: None,
+            layout_preset_request: None,
             booklet_binding: 0,
             signature_sheets: 4,
             creep: 0.0,
@@ -693,10 +804,13 @@ impl Default for PrintState {
             pages: String::new(),
             parity: 0,
             collate: true,
+            grayscale: false,
+            reverse_order: false,
             as_bitmap: false,
             bitmap_dpi: 300.0,
             spot_to_cmyk: false,
             text_black: false,
+            page_background: true,
             overprint_black: false,
             bleed_limit: 4.0,
             info_text: String::new(),
@@ -727,6 +841,8 @@ pub struct PrintMergeState {
     /// step (0 when "continually increment" is off), digits, and the end
     /// value when one is set (#791).
     pub adding_number: NumberForm,
+    /// The Add Column form's settings for a random number field.
+    pub adding_random: RandomForm,
     /// The Go to Record field.
     pub go_to: String,
     /// The folder picture cells are looked for in first (the Print Merge
@@ -736,6 +852,33 @@ pub struct PrintMergeState {
     pub cells: Option<crate::print_merge::CellRange>,
     /// A drag selecting in the grid: what it selects and where it began.
     pub grid_drag: Option<(crate::print_merge::GridDrag, (usize, usize))>,
+}
+
+/// The settings of a random number field being added (see
+/// [`PrintMergeState::adding_random`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RandomForm {
+    pub min: i64,
+    pub max: i64,
+    pub digits: u32,
+    pub prefix: String,
+    pub unique: bool,
+    /// Records to make when there are fewer (0: none), so random numbers
+    /// merge without a data file.
+    pub records: usize,
+}
+
+impl Default for RandomForm {
+    fn default() -> Self {
+        RandomForm {
+            min: 1,
+            max: 1000,
+            digits: 1,
+            prefix: String::new(),
+            unique: true,
+            records: 0,
+        }
+    }
 }
 
 /// The counter of a number field being added (see
@@ -869,7 +1012,29 @@ pub struct OpenNotes {
     /// Fonts the drawing uses that are not installed (empty: none, or the
     /// warning is off).
     pub fonts: Vec<String>,
+    /// Pictures read smaller than the file holds them, each "from to" in
+    /// pixels (#1835); told whatever the warnings say.
+    pub shrunk: Vec<String>,
     pub dont_show: bool,
+}
+
+/// The sizes of pictures shrunk on reading, as the message gives them:
+/// "11160 x 14794 to 5580 x 7397".
+pub fn shrunk_sizes(pictures: &[tracedraw_io::pdf_import::ShrunkPicture]) -> Vec<String> {
+    pictures
+        .iter()
+        .map(|p| {
+            trf(
+                "notes.shrunk_size",
+                &[
+                    ("w", &p.width.to_string()),
+                    ("h", &p.height.to_string()),
+                    ("nw", &p.new_width.to_string()),
+                    ("nh", &p.new_height.to_string()),
+                ],
+            )
+        })
+        .collect()
 }
 
 impl OpenNotes {
@@ -891,6 +1056,20 @@ impl OpenNotes {
                 ],
             ));
         }
+        if !self.shrunk.is_empty() {
+            let mut sizes: Vec<String> = self.shrunk.iter().take(5).cloned().collect();
+            if self.shrunk.len() > 5 {
+                sizes.push("...".into());
+            }
+            parts.push(trf(
+                "notes.shrunk_pictures",
+                &[
+                    ("n", &self.shrunk.len().to_string()),
+                    ("name", &self.name),
+                    ("sizes", &sizes.join("; ")),
+                ],
+            ));
+        }
         parts.join("\n\n")
     }
 }
@@ -904,12 +1083,7 @@ pub struct EncodeState {
 
 pub use crate::ui::font_manager::FontManagerState;
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct PaletteEditorState {
-    pub palette: usize,
-    pub selected: Option<usize>,
-    pub name: String,
-}
+pub use crate::ui::palette_editor::PaletteEditorState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dialog {
@@ -942,6 +1116,12 @@ pub enum Dialog {
     /// Multipage View, in the document's units.
     PageSpacing {
         value: f64,
+    },
+    /// View > Pages in Multipage View (#1440): every page, or the pages
+    /// of `range` ("1-3, 7").
+    MultipagePages {
+        all: bool,
+        range: String,
     },
     InsertPage {
         count: u32,
@@ -977,10 +1157,16 @@ pub enum Dialog {
     },
     /// How a PDF's text is read in (#386).
     PdfText(crate::ui::pdf_import_dialog::PdfTextState),
+    /// Which pages of a PDF of several pages File > Import brings in,
+    /// and where.
+    PdfPages(crate::ui::pdf_pages::PdfPagesState),
     /// The Edit Fill dialog (F11, #361).
     EditFill(Box<crate::ui::edit_fill::EditFillState>),
     /// The Outline Pen dialog (F12, #357).
     OutlinePen(Box<crate::ui::outline_pen::OutlinePenState>),
+    /// The Arrowhead editor: one end's head, size, offset, mirror and
+    /// rotation (#1210).
+    ArrowheadEditor(Box<crate::ui::arrowhead_editor::ArrowheadEditorState>),
     /// Text > Edit Text: the text of a text object in a box of its own
     /// (#355).
     EditText {
@@ -1064,7 +1250,15 @@ pub enum Dialog {
     /// Tools > Convert Colors (#972).
     ConvertColors(crate::ui::convert_colors::ConvertColorsState),
     FontManager(FontManagerState),
+    /// Launch > TraceCut, Tools > TraceCut.
+    TraceCut(Box<crate::tracecut::TraceCutState>),
     PaletteEditor(PaletteEditorState),
+    /// A picture dropped on a palette bar: how many of its colours go
+    /// to that palette (#2137).
+    PictureColors(Box<crate::ui::picture_colors::PictureColorsState>),
+    /// Reset Palette of the document palette: keep only the colours the
+    /// drawing uses?
+    ConfirmResetPalette,
     NewDocument(crate::new_document::NewDocState),
     /// Arcano edition: File > New Book Cover.
     Capa(Box<crate::capa::CapaDialog>),
@@ -1509,6 +1703,8 @@ fn unit_value(ui: &mut Ui, label: &str, tip: &str, mm: &mut f64, units: Units) -
 }
 
 pub fn show(app: &mut App, ctx: &Context) {
+    // A plotter job sent on a thread of its own tells how it went.
+    crate::tracecut_send::poll(app);
     crate::ui::chrome::set_center_dialogs(ctx, app.settings.center_dialogs);
     // An options dialog replaced by another dialog keeps its changes.
     if !matches!(app.dialog, Dialog::Options) {
@@ -1527,6 +1723,12 @@ pub fn show(app: &mut App, ctx: &Context) {
         if let Some(back) = app.dialog_return.take() {
             app.dialog = *back;
         }
+    }
+    // The Arrowhead editor asked for beside an arrowhead list: on the
+    // Outline Pen dialog's outline when that dialog is open (it comes
+    // back after), else on the selection's.
+    if let Some(end) = crate::ui::arrowhead_editor::take_request(ctx) {
+        app.open_arrowhead_editor(end);
     }
     // The Edit Fill dialog closed some other way (Esc): its preview goes.
     if app.fill_preview && !matches!(app.dialog, Dialog::EditFill(_)) {
@@ -1653,6 +1855,61 @@ pub fn show(app: &mut App, ctx: &Context) {
                 });
                 if ok_cancel(ui, &mut close) {
                     app.set_page_spacing(u.to_mm(*value));
+                }
+            });
+        }
+        Dialog::MultipagePages { all, range } => {
+            let count = app.doc().pages.len();
+            window(ctx, tr("dialog.multipage_pages")).show(ctx, |ui| {
+                ui.radio_value(all, true, tr("dialog.multipage_all_pages"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.multipage_all_pages",
+                        "dialog.multipage_all_pages_desc",
+                    ));
+                ui.horizontal(|ui| {
+                    ui.radio_value(all, false, tr("dialog.multipage_some_pages"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.multipage_some_pages",
+                            "dialog.multipage_some_pages_desc",
+                        ));
+                    let field = ui
+                        .add(
+                            egui::TextEdit::singleline(range)
+                                .hint_text("1-3, 7")
+                                .desired_width(140.0),
+                        )
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.multipage_some_pages",
+                            "dialog.multipage_some_pages_desc",
+                        ));
+                    if field.changed() {
+                        *all = false;
+                    }
+                });
+                let shown = tracedraw_core::document::parse_page_range(range, count).len();
+                let bad = !*all && shown == 0;
+                ui.label(
+                    egui::RichText::new(if bad {
+                        tr("dialog.multipage_no_page")
+                    } else if *all {
+                        trf("dialog.multipage_n_pages", &[("n", &count.to_string())])
+                    } else {
+                        trf("dialog.multipage_n_pages", &[("n", &shown.to_string())])
+                    })
+                    .size(12.0)
+                    .color(Tokens::text_dim()),
+                );
+                if ok_cancel(ui, &mut close) {
+                    if bad {
+                        // Nothing to show: the dialog stays open.
+                        close = false;
+                    } else {
+                        let r = if *all { String::new() } else { range.clone() };
+                        app.set_multipage_pages(&r);
+                        if !app.multipage {
+                            app.set_multipage(true);
+                        }
+                    }
                 }
             });
         }
@@ -1877,8 +2134,12 @@ pub fn show(app: &mut App, ctx: &Context) {
         }
         Dialog::Options => crate::ui::options::options_dialog(app, ctx, &mut close),
         Dialog::OutlinePen(st) => crate::ui::outline_pen::dialog(app, ctx, st, &mut close),
+        Dialog::ArrowheadEditor(st) => {
+            crate::ui::arrowhead_editor::dialog(app, ctx, st, &mut close)
+        }
         Dialog::EditFill(st) => crate::ui::edit_fill::dialog(app, ctx, st, &mut close),
         Dialog::PdfText(st) => crate::ui::pdf_import_dialog::dialog(app, ctx, st, &mut close),
+        Dialog::PdfPages(st) => crate::ui::pdf_pages::dialog(app, ctx, st, &mut close),
         Dialog::OldCdrVersion { version } => {
             let mut choose = false;
             window(ctx, tr("dialog.old_cdr_title")).show(ctx, |ui| {
@@ -1952,58 +2213,47 @@ pub fn show(app: &mut App, ctx: &Context) {
             let source_label = tr("updates.from_source");
             match app.updates.get() {
                 UpdateState::Available(r) if install != crate::updates::InstallState::Idle => {
-                    use crate::updates::InstallState;
-                    let (text, buttons): (String, Vec<String>) = match &install {
-                        InstallState::Downloading { done, total } => {
-                            ctx.request_repaint_after(std::time::Duration::from_millis(200));
-                            let mb = |b: u64| format!("{:.1}", b as f64 / 1_048_576.0);
-                            (
-                                trf(
-                                    "updates.downloading",
-                                    &[
-                                        ("new", &r.version),
-                                        ("done", &mb(*done)),
-                                        ("total", &mb(*total)),
-                                    ],
-                                ),
-                                vec![close_label.clone()],
-                            )
+                    use crate::ui::update_progress::{self, Action};
+                    let phase = update_progress::phase(&install, app.installer.progress());
+                    let picked = phase
+                        .as_ref()
+                        .and_then(|p| update_progress::dialog(ctx, version, &r.version, p));
+                    match picked {
+                        // Back to Idle: the box offers Install again.
+                        Some(Action::Cancel) => {
+                            app.installer.cancel();
                         }
-                        InstallState::Installed(v) if r.setup.is_some() => (
-                            trf("updates.installer_ready", &[("new", v)]),
-                            vec![tr("updates.run_installer"), close_label.clone()],
-                        ),
-                        InstallState::Installed(v) => (
-                            trf("updates.installed", &[("new", v)]),
-                            vec![close_label.clone()],
-                        ),
-                        InstallState::Failed(e) => (
-                            trf("updates.install_failed", &[("error", e)]),
-                            vec![tr("updates.download"), close_label.clone()],
-                        ),
-                        InstallState::Idle => (String::new(), vec![close_label.clone()]),
-                    };
-                    let labels: Vec<&str> = buttons.iter().map(String::as_str).collect();
-                    match crate::ui::chrome::message_box(
-                        ctx,
-                        crate::ui::chrome::MessageIcon::Info,
-                        &text,
-                        &labels,
-                    ) {
-                        Some(0) if matches!(install, InstallState::Failed(_)) => {
+                        // Restart: exit the usual way (asking about unsaved
+                        // drawings); the new version starts when the
+                        // program has exited.
+                        Some(Action::Restart) => {
+                            if app.installer.arm() {
+                                app.request_exit();
+                            }
+                            close = true;
+                        }
+                        Some(Action::TryAgain) => {
+                            match r.installer.clone().zip(crate::updates::install_target()) {
+                                Some((package, target)) => app.installer.start(
+                                    r.version.clone(),
+                                    package,
+                                    target,
+                                    Some(ctx.clone()),
+                                ),
+                                None => {
+                                    let url = r.download.clone().unwrap_or_else(|| r.page.clone());
+                                    app.open_url(&url);
+                                    close = true;
+                                }
+                            }
+                        }
+                        Some(Action::Website) => {
                             let url = r.download.clone().unwrap_or_else(|| r.page.clone());
                             app.open_url(&url);
                             close = true;
                         }
-                        Some(0)
-                            if matches!(install, InstallState::Installed(_))
-                                && r.setup.is_some() =>
-                        {
-                            app.pending_installer = crate::updates::setup_target();
-                            app.request_exit();
-                            close = true;
-                        }
-                        Some(_) => close = true,
+                        // A download goes on behind the card.
+                        Some(Action::Later | Action::Close) => close = true,
                         None => {}
                     }
                 }
@@ -2051,14 +2301,9 @@ pub fn show(app: &mut App, ctx: &Context) {
                         tr("updates.notes"),
                         tr("updates.skip"),
                     );
-                    // A running AppImage can be replaced in place; a
-                    // Windows installer is downloaded and run on closing.
-                    let target = crate::updates::appimage_target();
-                    let in_place = r
-                        .appimage
-                        .clone()
-                        .zip(target)
-                        .or_else(|| r.setup.clone().zip(crate::updates::setup_target()));
+                    // An AppImage, a Windows setup copy and a macOS app
+                    // update themselves in place.
+                    let in_place = r.installer.clone().zip(crate::updates::install_target());
                     let install_label = tr("updates.install");
                     let mut labels: Vec<&str> = Vec::new();
                     if in_place.is_some() {
@@ -2216,14 +2461,24 @@ pub fn show(app: &mut App, ctx: &Context) {
                 vec![&ok]
             };
             let text = notes.text();
-            let picked = crate::ui::chrome::message_box_check(
-                ctx,
-                crate::ui::chrome::MessageIcon::Info,
-                &text,
-                &buttons,
-                &tr("notes.dont_show"),
-                &mut notes.dont_show,
-            );
+            // Shrunk pictures alone: no warning to turn off.
+            let picked = if notes.unread == 0 && notes.fonts.is_empty() {
+                crate::ui::chrome::message_box(
+                    ctx,
+                    crate::ui::chrome::MessageIcon::Info,
+                    &text,
+                    &buttons,
+                )
+            } else {
+                crate::ui::chrome::message_box_check(
+                    ctx,
+                    crate::ui::chrome::MessageIcon::Info,
+                    &text,
+                    &buttons,
+                    &tr("notes.dont_show"),
+                    &mut notes.dont_show,
+                )
+            };
             if let Some(i) = picked {
                 if notes.dont_show {
                     if notes.unread > 0 {
@@ -2757,7 +3012,27 @@ pub fn show(app: &mut App, ctx: &Context) {
             crate::ui::color_management::dialog(app, ctx, st, &mut close)
         }
         Dialog::FontManager(st) => font_manager_dialog(app, ctx, st, &mut close),
-        Dialog::PaletteEditor(st) => palette_editor_dialog(app, ctx, st, &mut close),
+        Dialog::TraceCut(st) => crate::ui::tracecut::dialog(app, ctx, st, &mut close),
+        Dialog::PaletteEditor(st) => crate::ui::palette_editor::dialog(app, ctx, st, &mut close),
+        Dialog::PictureColors(st) => crate::ui::picture_colors::dialog(app, ctx, st, &mut close),
+        Dialog::ConfirmResetPalette => {
+            let (reset, cancel) = (tr("palette.reset"), tr("dialog.cancel"));
+            match crate::ui::chrome::message_box(
+                ctx,
+                crate::ui::chrome::MessageIcon::Question,
+                &tr("palette.reset_question"),
+                &[&reset, &cancel],
+            ) {
+                Some(0) => {
+                    if app.has_document() {
+                        app.reset_document_palette();
+                    }
+                    close = true;
+                }
+                Some(_) => close = true,
+                None => {}
+            }
+        }
         Dialog::NewDocument(st) => {
             crate::new_document::new_document_dialog(app, ctx, st, &mut close)
         }
@@ -3558,6 +3833,11 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 "options.show_page_border",
                 "options.show_page_border_tip",
             ));
+        ui.checkbox(&mut app.show_page_shadow, tr("options.show_page_shadow"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_page_shadow",
+                "options.show_page_shadow_tip",
+            ));
         ui.add_space(6.0);
         if ui
             .add_sized(
@@ -3682,12 +3962,14 @@ fn export_preview_key(app: &App, st: &ExportState) -> u64 {
     st.all_pages.hash(&mut h);
     st.page_list.hash(&mut h);
     st.pages.hash(&mut h);
+    st.spreads.hash(&mut h);
     st.text_as_curves.hash(&mut h);
     st.ai_version.hash(&mut h);
     st.quality.hash(&mut h);
     st.dpi.to_bits().hash(&mut h);
     st.scale_or_one().to_bits().hash(&mut h);
     st.webp_lossless.hash(&mut h);
+    st.color_mode.hash(&mut h);
     if st.selection_only {
         for id in &app.selection {
             id.raw().hash(&mut h);
@@ -3797,29 +4079,189 @@ fn export_preview_box(app: &App, ui: &mut Ui, st: &ExportState, size: egui::Vec2
     preview.bytes
 }
 
-/// Ask for the file and export to it with `st`'s choices.
-pub fn export_with_file_dialog(app: &mut App, st: &ExportState) {
+/// File > Export asks for the file before the options (the folder, the
+/// name and the format, from the extension), as on every desktop; in a
+/// browser, which has no Save dialog (the file is downloaded under the
+/// name given), and on Android, whose picker makes the document as soon
+/// as it is chosen, the options come first and OK asks for the file.
+pub const EXPORT_FILE_FIRST: bool = !crate::files::WEB && !crate::files::ANDROID;
+
+/// The extensions a file of the export format `ext` takes, the usual one
+/// first: "jpg" and "jpeg" for JPEG, "tif" and "tiff" for TIFF, "html"
+/// and "htm" for HTML.
+pub fn export_extensions(ext: &'static str) -> Vec<&'static str> {
+    match export_patterns(ext) {
+        "*.*" => vec![ext],
+        patterns => patterns
+            .split(';')
+            .map(|p| p.trim_start_matches("*."))
+            .collect(),
+    }
+}
+
+/// The export format (an index into [`EXPORT_FORMATS`]) whose extension
+/// `path` has, in any case; `None` for a name without one of them.
+pub fn export_format_of(path: &std::path::Path) -> Option<usize> {
+    let typed = path.extension()?.to_str()?.to_ascii_lowercase();
+    EXPORT_FORMATS
+        .iter()
+        .position(|(_, e)| export_extensions(e).contains(&typed.as_str()))
+}
+
+/// The Save dialog of an export with `st`: every format, the one of `st`
+/// (the last one used) first, so the extension of the name typed decides
+/// (live test of 0.41: only the format of Options > File Formats was
+/// offered); the drawing's name with that format's extension; the folder
+/// exported to last, else the drawing's own (#1817).
+fn export_save_dialog(app: &App, st: &ExportState) -> crate::files::Dialog {
     let (name, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
     let stem = app
         .file
         .as_ref()
         .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
         .unwrap_or_else(|| "Graphic1".into());
-    let st = st.clone();
-    crate::files::Dialog::new()
-        .add_filter(name, &[ext])
-        .set_file_name(format!("{stem}.{ext}"))
-        .save_file(app, move |app, path| {
-            match crate::export::export(app, &path, &st) {
-                Ok(msg) => app.status = msg,
-                Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
+    let mut dialog = crate::files::Dialog::new().add_filter(name, &export_extensions(ext));
+    for (other, e) in EXPORT_FORMATS.iter() {
+        if *e != ext {
+            dialog = dialog.add_filter(*other, &export_extensions(e));
+        }
+    }
+    let folder = app
+        .settings
+        .last_export_dir
+        .clone()
+        .filter(|d| crate::files::is_dir(d))
+        .or_else(|| {
+            app.file
+                .as_ref()
+                .and_then(|f| f.parent())
+                .map(|p| p.to_path_buf())
+        })
+        .or_else(|| app.settings.last_dir.clone());
+    if let Some(dir) = folder {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog.set_file_name(format!("{stem}.{ext}"))
+}
+
+/// The file `path` chosen in an export's Save dialog: its folder is the
+/// next export's, its extension picks the format (with the choices that
+/// format was exported with last), and a name without an export format's
+/// extension gets the extension of `st`'s format. Returns the path to
+/// write.
+pub fn export_chosen_file(
+    app: &mut App,
+    st: &mut ExportState,
+    path: std::path::PathBuf,
+) -> std::path::PathBuf {
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        app.settings.last_export_dir = Some(dir.to_path_buf());
+    }
+    match export_format_of(&path) {
+        Some(i) => {
+            if i != st.format || st.script.is_some() {
+                app.recall_export_format(st, i);
             }
-        });
+            path
+        }
+        None => {
+            let ext = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)].1;
+            match path.extension().filter(|e| !e.is_empty()) {
+                // "Poster.v2": the extension is added, not put instead.
+                Some(_) => {
+                    let mut name = path.into_os_string();
+                    name.push(".");
+                    name.push(ext);
+                    name.into()
+                }
+                None => path.with_extension(ext),
+            }
+        }
+    }
+}
+
+/// Write the export of `st` to `path` and say so on the status line.
+/// With `last_options` (the options dialog was not shown) the status line
+/// says the last options were used and how to see them, and a click on it
+/// opens Options > Global > File Formats, where the setting is.
+pub fn write_export(app: &mut App, path: &std::path::Path, st: &ExportState, last_options: bool) {
+    match crate::export::export(app, path, st) {
+        Ok(msg) if last_options => {
+            log::info!("{msg}");
+            app.status = tr("status.exported_last_options");
+            app.status_opens_options = Some((app.status.clone(), OptionsPage::FileFormats));
+        }
+        Ok(msg) => app.status = msg,
+        Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
+    }
+}
+
+/// Ask for the file and export to it with `st`'s choices: the options
+/// were chosen first (the presets for the web and office, the browser,
+/// Android) or are not shown (`last_options`).
+pub fn export_with_file_dialog(app: &mut App, st: &ExportState, last_options: bool) {
+    let st = st.clone();
+    export_save_dialog(app, &st).save_file(app, move |app, path| {
+        let mut st = st;
+        let path = export_chosen_file(app, &mut st, path);
+        write_export(app, &path, &st, last_options);
+    });
+}
+
+/// File > Export on the desktop: the Save dialog with every format, then
+/// the Export dialog with the options of the format chosen and the file
+/// in its title; OK writes it, Cancel writes nothing. With `skip` ("Do not
+/// show this dialog again" on, Shift not held) the file is written right
+/// after the Save dialog with the last options instead.
+pub fn choose_export_file(app: &mut App, st: ExportState, skip: bool) {
+    export_save_dialog(app, &st).save_file(app, move |app, path| {
+        let mut st = st;
+        let path = export_chosen_file(app, &mut st, path);
+        if skip {
+            write_export(app, &path, &st, true);
+            app.keep_export_choices(&st);
+        } else {
+            st.target = Some(path);
+            st.dont_show = app.settings.formats.skip_export_dialog;
+            app.dialog = Dialog::Export(st);
+        }
+    });
+}
+
+/// The file chosen before the options takes the extension of the format
+/// chosen in them (a script filter's first one): "Graphic1.svg" becomes
+/// "Graphic1.png" when PNG is chosen. An extension the format already
+/// takes ("photo.jpeg" for JPEG) stays.
+pub fn sync_export_target(app: &App, st: &mut ExportState) {
+    let Some(path) = st.target.as_mut() else {
+        return;
+    };
+    let wanted: Vec<String> = match &st.script {
+        Some(name) => app
+            .settings
+            .script_filters
+            .iter()
+            .find(|f| &f.name == name && f.export)
+            .map(|f| f.extensions.clone())
+            .unwrap_or_default(),
+        None => export_extensions(EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)].1)
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+    };
+    let Some(first) = wanted.first() else {
+        return;
+    };
+    let has = path.extension().and_then(|e| e.to_str());
+    if has.is_some_and(|h| wanted.iter().any(|w| w.eq_ignore_ascii_case(h))) {
+        return;
+    }
+    path.set_extension(first);
 }
 
 /// The Export dialog's presets (#547): a list of every saved one, each
 /// with its format, "+" to save the choices under a name, rename and
-/// delete for the chosen one. Choosing a preset brings its format along;
+/// delete for the chosen one, which asks first (#1816). Choosing a preset brings its format along;
 /// changing the format leaves the preset unchosen while the whole list
 /// stays (#612).
 fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
@@ -3873,6 +4315,7 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
             .clicked()
         {
             st.preset_name = Some((String::new(), false));
+            st.preset_delete = None;
         }
         let chosen = !st.preset.is_empty();
         if ui
@@ -3881,16 +4324,58 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
             .clicked()
         {
             st.preset_name = Some((st.preset.clone(), true));
+            st.preset_delete = None;
         }
         if ui
             .add_enabled(chosen, egui::Button::new("\u{2212}").small())
             .rich_tip(crate::ui::tips::keyed("dialog.export_preset_delete"))
             .clicked()
         {
-            app.settings.formats.delete_preset(&st.preset, st.format);
-            st.preset.clear();
+            st.preset_name = None;
+            st.preset_delete = Some(st.preset.clone());
         }
     });
+    // Delete asks first, in a row of its own under the list, as naming
+    // a preset does: one click lost a preset for good (#1816).
+    if st
+        .preset_delete
+        .as_ref()
+        .is_some_and(|name| *name != st.preset || st.script.is_some())
+    {
+        st.preset_delete = None;
+    }
+    if let Some(name) = st.preset_delete.clone() {
+        let mut answer: Option<bool> = None;
+        ui.horizontal(|ui| {
+            ui.label(trf(
+                "dialog.export_preset_delete_question",
+                &[("name", &name)],
+            ));
+            if ui
+                .small_button(tr("dialog.yes"))
+                .rich_tip(crate::ui::tips::keyed("dialog.yes"))
+                .clicked()
+            {
+                answer = Some(true);
+            }
+            if ui
+                .small_button(tr("dialog.no"))
+                .rich_tip(crate::ui::tips::keyed("dialog.no"))
+                .clicked()
+            {
+                answer = Some(false);
+            }
+        });
+        match answer {
+            Some(true) => {
+                app.settings.formats.delete_preset(&name, st.format);
+                st.preset.clear();
+                st.preset_delete = None;
+            }
+            Some(false) => st.preset_delete = None,
+            None => {}
+        }
+    }
     let mut done: Option<bool> = None;
     if let Some((name, _)) = st.preset_name.as_mut() {
         ui.horizontal(|ui| {
@@ -3969,16 +4454,27 @@ pub(crate) fn preset_label(p: &crate::prefs::ExportPreset) -> String {
     }
 }
 
+/// The Export dialog's title: the file chosen before it ("Export
+/// Graphic1.png"), else Export, or Export for Web for that preset.
+pub fn export_dialog_title(st: &ExportState) -> String {
+    if st.web {
+        return tr("menu.file.export_for_web");
+    }
+    match st.target.as_ref().and_then(|p| p.file_name()) {
+        Some(name) => trf(
+            "dialog.export_file_title",
+            &[("name", &name.to_string_lossy())],
+        ),
+        None => tr("dialog.export"),
+    }
+}
+
 fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut bool) {
-    window(
-        ctx,
-        if st.web {
-            tr("menu.file.export_for_web")
-        } else {
-            tr("dialog.export")
-        },
-    )
-    .show(ctx, |ui| {
+    // The file chosen follows the format chosen in the dialog.
+    sync_export_target(app, st);
+    // Named apart from its title, which follows the file chosen.
+    let win = window(ctx, export_dialog_title(st)).id_salt("export_dialog");
+    win.show(ctx, |ui| {
         ui.horizontal_top(|ui| {
             let estimate = export_preview_box(app, ui, st, egui::vec2(260.0, 300.0));
             ui.add_space(14.0);
@@ -4086,6 +4582,25 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         )
                         .rich_tip(crate::ui::tips::keyed("dialog.quality"));
                     }
+                    let (_, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
+                    if ExportColorMode::applies_to(ext) {
+                        // RGB, CMYK inks for print or grey (#1763).
+                        ui.horizontal(|ui| {
+                            ui.label(tr("dialog.color_mode"));
+                            crate::ui::keynav::ComboBox::from_id_salt("exp_color_mode")
+                                .selected_text(st.color_mode_for(ext).label())
+                                .show_ui(ui, |ui| {
+                                    for (i, m) in EXPORT_COLOR_MODES.iter().enumerate() {
+                                        ui.selectable_value(&mut st.color_mode, i, m.label());
+                                    }
+                                })
+                                .response
+                                .rich_tip(crate::ui::tips::pair(
+                                    "dialog.color_mode",
+                                    "dialog.export_color_mode_desc",
+                                ));
+                        });
+                    }
                     let b = if st.selection_only {
                         app.selection_bounds().unwrap_or(app.page_rect())
                     } else {
@@ -4154,8 +4669,12 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     // What comes out: pixels, the resolution the file
                     // records and its colours.
                     let (pw, ph) = export_pixels(b.width(), b.height(), st.render_dpi());
-                    let (_, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
                     let alpha = st.transparent && crate::export::keeps_alpha(ext);
+                    let mode = match st.color_mode_for(ext) {
+                        ExportColorMode::Rgb if alpha => "sRGB + alpha".to_string(),
+                        ExportColorMode::Rgb => "sRGB".to_string(),
+                        other => other.label(),
+                    };
                     ui.label(
                         egui::RichText::new(trf(
                             "dialog.export_output",
@@ -4163,7 +4682,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                 ("w", &pw.to_string()),
                                 ("h", &ph.to_string()),
                                 ("dpi", &format!("{:.0}", st.dpi)),
-                                ("mode", if alpha { "sRGB + alpha" } else { "sRGB" }),
+                                ("mode", &mode),
                             ],
                         ))
                         .color(Tokens::text_dim()),
@@ -4237,16 +4756,6 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 if !st.selection_only {
                     export_range_fields(app, ui, st);
                 }
-                if !st.web {
-                    ui.checkbox(
-                        &mut app.settings.formats.skip_export_dialog,
-                        tr("dialog.skip_export_dialog"),
-                    )
-                    .rich_tip(crate::ui::tips::pair(
-                        "dialog.skip_export_dialog",
-                        "dialog.skip_export_dialog_tip",
-                    ));
-                }
                 if !scripted && export_keeps_properties(EXPORT_FORMATS[st.format].1) {
                     egui::Grid::new("exp_props").num_columns(2).show(ui, |ui| {
                         ui.label(tr("dialog.title"));
@@ -4274,38 +4783,70 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 }
             });
         });
+        // File > Export's own setting, in sight where it takes effect; it
+        // is kept on OK only (it was the preference itself, so a tick
+        // undone by Cancel stayed, and every export after went straight
+        // to the file).
+        if st.remember {
+            ui.add_space(4.0);
+            ui.checkbox(&mut st.dont_show, tr("dialog.skip_export_dialog"))
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.skip_export_dialog",
+                    "dialog.skip_export_dialog_tip",
+                ));
+        }
         if ok_cancel(ui, close) {
-            let filter = st.script.as_ref().and_then(|n| {
-                app.settings
-                    .script_filters
-                    .iter()
-                    .find(|f| &f.name == n && f.export)
-                    .cloned()
-            });
-            if let Some(filter) = filter {
-                let stem = app
-                    .file
-                    .as_ref()
-                    .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
-                    .unwrap_or_else(|| "Graphic1".into());
-                let ext = filter.extensions.first().cloned().unwrap_or_default();
-                let exts: Vec<&str> = filter.extensions.iter().map(String::as_str).collect();
-                let st2 = st.clone();
-                crate::files::Dialog::new()
-                    .add_filter(filter.label(), &exts)
-                    .set_file_name(format!("{stem}.{ext}"))
-                    .save_file(app, move |app, path| {
-                        match app.export_with_script(&path, &filter, &st2) {
-                            Ok(msg) => app.status = msg,
-                            Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
-                        }
-                    });
-                return;
-            }
-            export_with_file_dialog(app, st);
-            app.keep_export_choices(st);
+            export_dialog_ok(app, st);
         }
     });
+}
+
+/// OK in the Export dialog: "Do not show this dialog again" becomes the
+/// preference (File > Export only), then the file chosen before the
+/// dialog is written, or, without one, the Save dialog asks for it.
+pub fn export_dialog_ok(app: &mut App, st: &ExportState) {
+    if st.remember && app.settings.formats.skip_export_dialog != st.dont_show {
+        app.settings.formats.skip_export_dialog = st.dont_show;
+        app.settings.save();
+    }
+    let filter = st.script.as_ref().and_then(|n| {
+        app.settings
+            .script_filters
+            .iter()
+            .find(|f| &f.name == n && f.export)
+            .cloned()
+    });
+    if let Some(filter) = filter {
+        let (label, exts) = (filter.label(), filter.extensions.clone());
+        let write = move |app: &mut App, path: std::path::PathBuf, st: &ExportState| match app
+            .export_with_script(&path, &filter, st)
+        {
+            Ok(msg) => app.status = msg,
+            Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
+        };
+        if let Some(path) = st.target.clone() {
+            write(app, path, st);
+            return;
+        }
+        let stem = app
+            .file
+            .as_ref()
+            .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "Graphic1".into());
+        let ext = exts.first().cloned().unwrap_or_default();
+        let patterns: Vec<&str> = exts.iter().map(String::as_str).collect();
+        let st2 = st.clone();
+        crate::files::Dialog::new()
+            .add_filter(label, &patterns)
+            .set_file_name(format!("{stem}.{ext}"))
+            .save_file(app, move |app, path| write(app, path, &st2));
+        return;
+    }
+    match st.target.clone() {
+        Some(path) => write_export(app, &path, st, false),
+        None => export_with_file_dialog(app, st, false),
+    }
+    app.keep_export_choices(st);
 }
 
 /// Export: the pages to export (the current page, every page or a list
@@ -4341,6 +4882,11 @@ fn export_range_fields(app: &App, ui: &mut Ui, st: &mut ExportState) {
     });
     st.all_pages = range != 0;
     st.page_list = range == 2;
+    // Facing pages: the spreads as pages of their own (#1972).
+    if app.doc().facing().is_some() && !st.selection_only {
+        ui.checkbox(&mut st.spreads, tr("dialog.export_spreads"))
+            .rich_tip(pair("dialog.export_spreads", "dialog.export_spreads_desc"));
+    }
     let current = app
         .doc()
         .pages
@@ -4378,12 +4924,224 @@ pub(crate) fn delete_page_range(from: usize, to: usize, through: bool, n: usize)
 /// with a sketch of the first sheet.
 /// A Custom sheet size saved in the layout fields goes into the
 /// preferences (replacing one of that name, #591).
+/// A layout preset saved, deleted, written to or read from a file in
+/// the layout fields is done here (#1796).
 pub(crate) fn take_saved_sheet(app: &mut App, st: &mut PrintState) {
     if let Some((name, size)) = st.sheet_to_save.take() {
         let list = &mut app.settings.printing.sheet_presets;
         list.retain(|(n, _)| *n != name);
         list.push((name, size));
     }
+    use crate::prefs::LayoutPreset;
+    match st.layout_preset_request.take() {
+        Some(LayoutPresetRequest::Save(name)) => {
+            let list = &mut app.settings.printing.layout_presets;
+            list.retain(|p| p.name != name);
+            list.push(LayoutPreset::from_state(&name, st));
+            st.layout_preset = name;
+        }
+        Some(LayoutPresetRequest::Delete(name)) => {
+            app.settings
+                .printing
+                .layout_presets
+                .retain(|p| p.name != name);
+            if st.layout_preset == name {
+                st.layout_preset.clear();
+            }
+        }
+        Some(LayoutPresetRequest::SaveFile) => {
+            let name = if st.layout_preset.trim().is_empty() {
+                tr("print.layout_file_default")
+            } else {
+                st.layout_preset.trim().to_string()
+            };
+            let text = LayoutPreset::from_state(&name, st).to_file();
+            crate::files::Dialog::new()
+                .add_filter(tr("print.layout_file"), &[LAYOUT_EXTENSION])
+                .set_file_name(format!(
+                    "{}.{LAYOUT_EXTENSION}",
+                    crate::files::safe_file_name(&name)
+                ))
+                .save_bytes(app, text.into_bytes());
+        }
+        Some(LayoutPresetRequest::OpenFile) => {
+            crate::files::Dialog::new()
+                .add_filter(tr("print.layout_file"), &[LAYOUT_EXTENSION, "json"])
+                .pick_file(app, |app, path| match crate::files::read(&path) {
+                    Ok(bytes) => match LayoutPreset::from_file(&String::from_utf8_lossy(&bytes)) {
+                        Some(p) => load_layout(app, &p),
+                        None => app.status = tr("print.layout_file_bad"),
+                    },
+                    Err(e) => app.status = e.to_string(),
+                });
+        }
+        None => {}
+    }
+}
+
+/// The extension of print layout files (#1796).
+pub const LAYOUT_EXTENSION: &str = "tdlayout";
+
+/// A layout read from a file goes into the open Print Preview, else the
+/// open Print dialog, and is kept as a preset of its name (#1796).
+pub(crate) fn load_layout(app: &mut App, p: &crate::prefs::LayoutPreset) {
+    let mut p = p.clone();
+    if p.name.trim().is_empty() {
+        p.name = tr("print.layout_file_default");
+    }
+    let list = &mut app.settings.printing.layout_presets;
+    list.retain(|x| x.name != p.name);
+    list.push(p.clone());
+    if let Some(pv) = app.print_preview.as_mut() {
+        p.apply(&mut pv.st);
+    } else if let Dialog::Print(st) = &mut app.dialog {
+        p.apply(st);
+    }
+    app.status = trf("print.layout_loaded", &[("name", &p.name)]);
+}
+
+/// The layout presets' rows at the top of the layout fields (#1796): the
+/// list, "+" to keep the layout under a name, "-" to delete the chosen
+/// preset (asked first), and the layout written to or read from a file.
+fn layout_preset_rows(app: &App, ui: &mut Ui, st: &mut PrintState) {
+    let presets = &app.settings.printing.layout_presets;
+    // A preset whose settings were changed since is no longer chosen.
+    let current = crate::prefs::LayoutPreset::from_state("", st);
+    if !st.layout_preset.is_empty()
+        && !presets
+            .iter()
+            .any(|p| p.name == st.layout_preset && p.same_layout(&current))
+    {
+        st.layout_preset.clear();
+    }
+    ui.label(tr("print.layout_preset"))
+        .rich_tip(crate::ui::tips::keyed("print.layout_preset"));
+    ui.horizontal(|ui| {
+        let shown = if st.layout_preset.is_empty() {
+            tr("print.layout_preset_none")
+        } else {
+            st.layout_preset.clone()
+        };
+        crate::ui::keynav::ComboBox::from_id_salt("print_layout_preset")
+            .selected_text(shown)
+            .width(130.0)
+            .show_ui(ui, |ui| {
+                if presets.is_empty() {
+                    ui.label(tr("print.layout_preset_empty"));
+                }
+                for p in presets {
+                    if ui
+                        .selectable_label(p.name == st.layout_preset, &p.name)
+                        .clicked()
+                    {
+                        p.apply(st);
+                    }
+                }
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("print.layout_preset"));
+        if ui
+            .add(egui::Button::new("+").small())
+            .rich_tip(crate::ui::tips::keyed("print.layout_preset_add"))
+            .clicked()
+        {
+            st.layout_preset_typed = Some(st.layout_preset.clone());
+            st.layout_preset_delete = None;
+        }
+        if ui
+            .add_enabled(
+                !st.layout_preset.is_empty(),
+                egui::Button::new("\u{2212}").small(),
+            )
+            .rich_tip(crate::ui::tips::keyed("print.layout_preset_delete"))
+            .clicked()
+        {
+            st.layout_preset_delete = Some(st.layout_preset.clone());
+            st.layout_preset_typed = None;
+        }
+    });
+    ui.end_row();
+    // Naming the preset to save, in a row of its own.
+    if let Some(mut name) = st.layout_preset_typed.take() {
+        let mut keep = true;
+        ui.label("");
+        ui.horizontal(|ui| {
+            let r = ui.add(
+                egui::TextEdit::singleline(&mut name)
+                    .desired_width(120.0)
+                    .hint_text(tr("print.sheet_name")),
+            );
+            let typed = name.trim().to_string();
+            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if (ui
+                .add_enabled(
+                    !typed.is_empty(),
+                    egui::Button::new(tr("dialog.ok")).small(),
+                )
+                .rich_tip(crate::ui::tips::keyed("print.layout_preset_add"))
+                .clicked()
+                || enter)
+                && !typed.is_empty()
+            {
+                st.layout_preset_request = Some(LayoutPresetRequest::Save(typed));
+                keep = false;
+            }
+            if ui
+                .small_button(tr("dialog.cancel"))
+                .rich_tip(tr("dialog.cancel"))
+                .clicked()
+            {
+                keep = false;
+            }
+        });
+        ui.end_row();
+        if keep {
+            st.layout_preset_typed = Some(name);
+        }
+    }
+    if let Some(name) = st.layout_preset_delete.clone() {
+        ui.label("");
+        ui.horizontal(|ui| {
+            ui.label(trf(
+                "print.layout_preset_delete_question",
+                &[("name", &name)],
+            ));
+            if ui
+                .small_button(tr("dialog.yes"))
+                .rich_tip(crate::ui::tips::keyed("dialog.yes"))
+                .clicked()
+            {
+                st.layout_preset_request = Some(LayoutPresetRequest::Delete(name.clone()));
+                st.layout_preset_delete = None;
+            }
+            if ui
+                .small_button(tr("dialog.no"))
+                .rich_tip(crate::ui::tips::keyed("dialog.no"))
+                .clicked()
+            {
+                st.layout_preset_delete = None;
+            }
+        });
+        ui.end_row();
+    }
+    ui.label("");
+    ui.horizontal(|ui| {
+        if ui
+            .small_button(tr("print.layout_save_file"))
+            .rich_tip(crate::ui::tips::keyed("print.layout_save_file"))
+            .clicked()
+        {
+            st.layout_preset_request = Some(LayoutPresetRequest::SaveFile);
+        }
+        if ui
+            .small_button(tr("print.layout_open_file"))
+            .rich_tip(crate::ui::tips::keyed("print.layout_open_file"))
+            .clicked()
+        {
+            st.layout_preset_request = Some(LayoutPresetRequest::OpenFile);
+        }
+    });
+    ui.end_row();
 }
 
 /// The paper's margins kept clear (left, right, top, bottom, mm), in a
@@ -4416,6 +5174,7 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                 .num_columns(2)
                 .spacing([8.0, 6.0])
                 .show(ui, |ui| {
+                    layout_preset_rows(app, ui, st);
                     ui.label(tr("print.imposition"));
                     let kinds = [
                         "print.layout_as_is",
@@ -4439,6 +5198,33 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                             ui.label("x");
                             ui.add(crate::ui::field::NumField::new(&mut st.rows).range(1..=99));
                         });
+                        ui.end_row();
+                    }
+                    // Several pages per sheet: across, or down the
+                    // columns (#1658).
+                    if st.layout_kind == 1 {
+                        let orders = [
+                            "print.order_across",
+                            "print.order_down",
+                            "print.order_down_sheets",
+                            "print.order_cut_stack",
+                        ];
+                        ui.label(tr("print.page_order"))
+                            .rich_tip(crate::ui::tips::keyed("print.page_order"));
+                        crate::ui::keynav::ComboBox::from_id_salt("print_page_order")
+                            .selected_text(tr(orders[st.page_order.min(orders.len() - 1)]))
+                            .width(170.0)
+                            .show_ui(ui, |ui| {
+                                for (i, k) in orders.iter().enumerate() {
+                                    ui.selectable_value(&mut st.page_order, i, tr(k))
+                                        .rich_tip(crate::ui::tips::pair(k, &format!("{k}_desc")));
+                                }
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::pair(
+                                orders[st.page_order.min(orders.len() - 1)],
+                                &format!("{}_desc", orders[st.page_order.min(orders.len() - 1)]),
+                            ));
                         ui.end_row();
                     }
                     ui.label(tr("print.sheet"));
@@ -4519,13 +5305,36 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                         ui.end_row();
                     }
                     if matches!(st.layout_kind, 1 | 3) {
+                        // Across and down, each its own (#1795).
                         ui.label(tr("print.gutter"));
-                        ui.add(
-                            crate::ui::field::NumField::new(&mut st.gutter)
-                                .range(0.0..=50.0)
-                                .speed(0.5)
-                                .suffix(" mm"),
-                        );
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                crate::ui::field::NumField::new(&mut st.gutter)
+                                    .range(0.0..=50.0)
+                                    .speed(0.5)
+                                    .suffix(" mm"),
+                            )
+                            .rich_tip(crate::ui::tips::pair(
+                                "print.gap_across",
+                                "print.gap_across_tip",
+                            ));
+                            ui.label(tr("print.gap_across"));
+                        });
+                        ui.end_row();
+                        ui.label("");
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                crate::ui::field::NumField::new(&mut st.gutter_y)
+                                    .range(0.0..=50.0)
+                                    .speed(0.5)
+                                    .suffix(" mm"),
+                            )
+                            .rich_tip(crate::ui::tips::pair(
+                                "print.gap_down",
+                                "print.gap_down_tip",
+                            ));
+                            ui.label(tr("print.gap_down"));
+                        });
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut st.back_side, tr("print.back_side"))
@@ -4907,6 +5716,9 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
                         Ok(_) => {}
                         Err(e) => app.status = format!("{}: {e}", tr("dialog.print_failed")),
                     }
+                    if st.destination == 0 {
+                        app.printer_last = st.printer.clone();
+                    }
                     if app.settings.printing.remember_last {
                         app.settings.printing.remember(st);
                         app.settings.save();
@@ -5133,6 +5945,8 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<Stri
                 )
                 .rich_tip(crate::ui::tips::keyed("print.collate"))
                 .rich_disabled_tip(crate::ui::tips::keyed("print.collate"));
+                ui.checkbox(&mut st.reverse_order, tr("print.reverse_order"))
+                    .rich_tip(tr("print.reverse_order_tip"));
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -5168,6 +5982,14 @@ fn print_tab_color(ui: &mut Ui, st: &mut PrintState) {
             ui.label(tr("print.color"));
             ui.vertical(|ui| {
                 ui.radio_value(&mut st.separations, false, tr("print.composite_output"));
+                ui.indent("print_gray", |ui| {
+                    ui.add_enabled(
+                        !st.separations,
+                        egui::Checkbox::new(&mut st.grayscale, tr("print.grayscale")),
+                    )
+                    .rich_tip(tr("print.grayscale_tip"))
+                    .rich_disabled_tip(tr("print.grayscale_tip"));
+                });
                 ui.radio_value(&mut st.separations, true, tr("print.separations_output"));
             });
             ui.end_row();
@@ -5183,6 +6005,7 @@ fn print_tab_composite(ui: &mut Ui, st: &mut PrintState) {
     print_group(ui, &tr("print.options"), |ui| {
         ui.checkbox(&mut st.text_black, tr("print.text_black"));
         ui.checkbox(&mut st.overprint_black, tr("print.overprint_black"));
+        ui.checkbox(&mut st.page_background, tr("print.page_background"));
     });
 }
 
@@ -5337,12 +6160,13 @@ fn print_tab_issues(
     }
 }
 
-fn merge_kind_names() -> [String; 4] {
+fn merge_kind_names() -> [String; 5] {
     [
         tr("merge.kind_text"),
         tr("merge.kind_number"),
         tr("merge.kind_image"),
         tr("merge.kind_qr"),
+        tr("merge.kind_random"),
     ]
 }
 
@@ -5357,8 +6181,49 @@ fn merge_kind_of(index: usize) -> crate::print_merge::FieldKind {
         },
         2 => FieldKind::Image,
         3 => FieldKind::Qr,
+        4 => {
+            let f = RandomForm::default();
+            FieldKind::Random {
+                min: f.min,
+                max: f.max,
+                digits: f.digits,
+                prefix: f.prefix,
+                unique: f.unique,
+                seed: crate::print_merge::new_seed(),
+            }
+        }
         _ => FieldKind::Text,
     }
+}
+
+/// A random number field's range, digits, text before and No repeats.
+fn merge_random_fields(
+    ui: &mut egui::Ui,
+    min: &mut i64,
+    max: &mut i64,
+    digits: &mut u32,
+    prefix: &mut String,
+    unique: &mut bool,
+) {
+    ui.horizontal(|ui| {
+        ui.add(crate::ui::field::NumField::new(min).prefix(tr("merge.random_min")))
+            .rich_tip(crate::ui::tips::keyed("merge.random_min"));
+        ui.add(crate::ui::field::NumField::new(max).prefix(tr("merge.random_max")))
+            .rich_tip(crate::ui::tips::keyed("merge.random_max"));
+    });
+    ui.horizontal(|ui| {
+        ui.add(
+            crate::ui::field::NumField::new(digits)
+                .range(1..=12)
+                .prefix(tr("merge.digits")),
+        )
+        .rich_tip(crate::ui::tips::keyed("merge.digits"));
+        ui.label(tr("merge.prefix"));
+        ui.add(egui::TextEdit::singleline(prefix).desired_width(90.0))
+            .rich_tip(crate::ui::tips::keyed("merge.prefix"));
+    });
+    ui.checkbox(unique, tr("merge.random_unique"))
+        .rich_tip(crate::ui::tips::keyed("merge.random_unique"));
 }
 
 /// A number field's Format: 1, 2, 3 / A, B, C / a, b, c / Custom, and for
@@ -5541,6 +6406,25 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                         .rich_tip_always(crate::ui::tips::keyed("merge.end_value"));
                     });
                 }
+                // A random number field: its range and, with no data
+                // file, how many records to make.
+                if *kind == 4 {
+                    let f = &mut st.adding_random;
+                    merge_random_fields(
+                        ui,
+                        &mut f.min,
+                        &mut f.max,
+                        &mut f.digits,
+                        &mut f.prefix,
+                        &mut f.unique,
+                    );
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut f.records)
+                            .range(0..=crate::print_merge::MAX_RANGE_RECORDS)
+                            .prefix(tr("merge.random_records")),
+                    )
+                    .rich_tip(crate::ui::tips::keyed("merge.random_records"));
+                }
                 ui.horizontal(|ui| {
                     let ok = !name.trim().is_empty();
                     if ui
@@ -5572,6 +6456,19 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                         f.digits,
                         f.format,
                         (f.use_end && f.increment).then_some(f.end),
+                    );
+                } else if kind == 4 {
+                    let f = st.adding_random.clone();
+                    pm::add_random_field(
+                        st,
+                        &name,
+                        f.min,
+                        f.max,
+                        f.digits,
+                        &f.prefix,
+                        f.unique,
+                        pm::new_seed(),
+                        f.records,
                     );
                 } else {
                     pm::add_field(st, &name);
@@ -5620,6 +6517,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                         FieldKind::Number { .. } => 1,
                                         FieldKind::Image => 2,
                                         FieldKind::Qr => 3,
+                                        FieldKind::Random { .. } => 4,
                                     };
                                     let mut pick = cur;
                                     crate::ui::combo::from_id_salt(("merge_kind", i))
@@ -5664,6 +6562,24 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                         )
                                         .rich_tip_always(crate::ui::tips::keyed("merge.digits"));
                                     }
+                                    if let FieldKind::Random {
+                                        min,
+                                        max,
+                                        digits,
+                                        prefix,
+                                        unique,
+                                        seed,
+                                    } = &mut st.kinds[i]
+                                    {
+                                        merge_random_fields(ui, min, max, digits, prefix, unique);
+                                        if ui
+                                            .button(tr("merge.random_draw"))
+                                            .rich_tip(crate::ui::tips::keyed("merge.random_draw"))
+                                            .clicked()
+                                        {
+                                            *seed = pm::new_seed();
+                                        }
+                                    }
                                 });
                                 ui.separator();
                             }
@@ -5673,6 +6589,11 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         }
         if let Some(i) = remove_field {
             pm::remove_field(st, i);
+        }
+        // A range without repeats too small for the records: said here,
+        // and the merge is not made.
+        if let Err(why) = pm::check(st) {
+            ui.label(egui::RichText::new(why).color(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C)));
         }
         st.current = st.current.min(st.rows.len().saturating_sub(1));
         // The records: a grid, or the current one as a form.
@@ -5696,7 +6617,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                     c: usize,
                                     w: f32|
                          -> Option<egui::Response> {
-                            if matches!(pm::kind_of(st, c), FieldKind::Number { .. }) {
+                            if pm::kind_of(st, c).is_generated() {
                                 let v = values
                                     .get(r)
                                     .and_then(|row| row.get(c))
@@ -6029,103 +6950,32 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
     });
 }
 
-/// The rows of the Tabs dialog: each stop's position, how it aligns the
-/// text after it, the leader before it and, for a decimal stop, the
-/// character it lines up on. True when a stop changed.
-pub(crate) fn tab_stop_rows(ui: &mut Ui, p: &mut tracedraw_core::ParagraphStyle, u: Units) -> bool {
-    use tracedraw_core::TabAlign;
-    let mut changed = false;
-    let mut remove = None;
-    let align_name = |a: TabAlign| {
-        tr(match a {
-            TabAlign::Left => "dialog.tab_left",
-            TabAlign::Center => "dialog.tab_center",
-            TabAlign::Right => "dialog.tab_right",
-            TabAlign::Decimal => "dialog.tab_decimal",
-        })
-    };
-    for i in 0..p.tabs.len() {
-        let mut d = p.tab_detail(i);
-        let before = d.clone();
-        ui.horizontal(|ui| {
-            let tip = crate::ui::tips::pair("dialog.tab_stop", "dialog.tab_stop_desc");
-            if let Some(t) = p.tabs.get_mut(i) {
-                changed |= unit_value(ui, &format!("{}", i + 1), &tip, t, u);
-            }
-            crate::ui::combo::from_id_salt(("tab_align", i))
-                .width(86.0)
-                .selected_text(align_name(d.align))
-                .show_ui(ui, |ui| {
-                    for a in TabAlign::ALL {
-                        if ui.selectable_label(d.align == a, align_name(a)).clicked() {
-                            d.align = a;
-                        }
-                    }
-                })
-                .response
-                .rich_tip(crate::ui::tips::keyed("dialog.tab_align"));
-            ui.label(tr("dialog.tab_leader"));
-            ui.add(
-                egui::TextEdit::singleline(&mut d.leader)
-                    .desired_width(34.0)
-                    .char_limit(4),
-            )
-            .rich_tip(crate::ui::tips::pair("dialog.tab_leader", "dialog.tab_leader_desc"));
-            if d.align == TabAlign::Decimal {
-                ui.label(tr("dialog.tab_align_on"));
-                let mut on = d.align_on.to_string();
-                if ui
-                    .add(egui::TextEdit::singleline(&mut on).desired_width(18.0).char_limit(1))
-                    .rich_tip(crate::ui::tips::pair(
-                        "dialog.tab_align_on",
-                        "dialog.tab_align_on_desc",
-                    ))
-                    .changed()
-                {
-                    if let Some(c) = on.chars().next() {
-                        d.align_on = c;
-                    }
-                }
-            }
-            if ui
-                .small_button("x")
-                .rich_tip(crate::ui::tips::keyed("dialog.remove_tab"))
-                .clicked()
-            {
-                remove = Some(i);
-            }
-        });
-        if d != before {
-            p.set_tab_detail(i, d);
-            changed = true;
-        }
+/// The name of a tab kind, as the Tabs dialog and the tab ruler show it.
+pub(crate) fn tab_kind_name(k: tracedraw_core::TabKind) -> String {
+    tr(tab_kind_key(k))
+}
+
+/// The i18n key of a tab kind's name.
+pub(crate) fn tab_kind_key(k: tracedraw_core::TabKind) -> &'static str {
+    use tracedraw_core::TabKind;
+    match k {
+        TabKind::Left => "text.tab_left",
+        TabKind::Center => "text.tab_center",
+        TabKind::Right => "text.tab_right",
+        TabKind::Decimal => "text.tab_decimal",
     }
-    if let Some(i) = remove {
-        p.remove_tab(i);
-        changed = true;
-    }
-    // Ready-made leaders for the last stop.
-    if p.tabs.is_empty() {
-        return changed;
-    }
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(tr("dialog.tab_leaders_ready")).color(Tokens::text_dim()));
-        for l in [". ", ".", "-", "_"] {
-            if ui
-                .small_button(format!("{l}{l}{l}").trim_end().to_string())
-                .rich_tip(crate::ui::tips::keyed("dialog.tab_leaders_ready"))
-                .clicked()
-            {
-                if let Some(i) = p.tabs.len().checked_sub(1) {
-                    let mut d = p.tab_detail(i);
-                    d.leader = l.to_string();
-                    p.set_tab_detail(i, d);
-                    changed = true;
-                }
-            }
-        }
-    });
-    changed
+}
+
+/// `v` with at most three decimals and no trailing zeros.
+pub(crate) fn trim_number(v: f64) -> String {
+    let s = format!("{v:.3}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// Where Add tab puts a new stop: 10 mm past the last one (the first at
+/// 10 mm).
+pub(crate) fn next_tab_position(tabs: &[tracedraw_core::TabStop]) -> f64 {
+    tabs.iter().map(|t| t.pos).fold(0.0, f64::max) + 10.0
 }
 
 fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bool) {
@@ -6148,15 +6998,74 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
     window(ctx, title).show(ctx, |ui| {
         match which {
             Dialog::TextTabs => {
+                use tracedraw_core::{TabKind, TabStop};
                 ui.label(tr("dialog.tab_stops"));
-                changed |= tab_stop_rows(ui, &mut p, u);
+                if p.tabs.is_empty() {
+                    ui.label(
+                        egui::RichText::new(crate::i18n::trf(
+                            "dialog.tab_default_grid",
+                            &[(
+                                "step",
+                                &format!(
+                                    "{} {}",
+                                    trim_number(u.from_mm(tracedraw_core::default_tab_step())),
+                                    u.short()
+                                ),
+                            )],
+                        ))
+                        .color(Tokens::text_dim()),
+                    );
+                }
+                let mut remove = None;
+                for (i, t) in p.tabs.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        let tip = crate::ui::tips::pair("dialog.tab_stop", "dialog.tab_stop_desc");
+                        changed |= unit_value(ui, &format!("{}", i + 1), &tip, &mut t.pos, u);
+                        egui::ComboBox::from_id_salt(("tab_kind", i))
+                            .selected_text(tab_kind_name(t.kind))
+                            .show_ui(ui, |ui| {
+                                for k in TabKind::ALL {
+                                    changed |= ui
+                                        .selectable_value(&mut t.kind, k, tab_kind_name(k))
+                                        .changed();
+                                }
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::keyed("dialog.tab_kind"));
+                        let leader_name = |l: Option<char>| match l {
+                            None => tr("dialog.tab_leader_none"),
+                            Some(c) => format!("{c}{c}{c}"),
+                        };
+                        egui::ComboBox::from_id_salt(("tab_leader", i))
+                            .selected_text(leader_name(t.leader))
+                            .show_ui(ui, |ui| {
+                                for l in [None, Some('.'), Some('-'), Some('_')] {
+                                    changed |= ui
+                                        .selectable_value(&mut t.leader, l, leader_name(l))
+                                        .changed();
+                                }
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::keyed("dialog.tab_leader"));
+                        if ui
+                            .small_button("x")
+                            .rich_tip(crate::ui::tips::keyed("dialog.remove_tab"))
+                            .clicked()
+                        {
+                            remove = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = remove {
+                    p.tabs.remove(i);
+                    changed = true;
+                }
                 if ui
                     .button(tr("dialog.add_tab"))
                     .rich_tip(crate::ui::tips::keyed("dialog.add_tab"))
                     .clicked()
                 {
-                    let last = p.tabs.iter().copied().fold(0.0, f64::max);
-                    p.tabs.push(last + 12.7);
+                    p.tabs.push(TabStop::left(next_tab_position(&p.tabs)));
                     changed = true;
                 }
             }
@@ -6694,196 +7603,30 @@ fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, 
     crate::ui::font_manager::dialog(app, ctx, st, close);
 }
 
-fn palette_editor_dialog(
-    app: &mut App,
-    ctx: &Context,
-    st: &mut PaletteEditorState,
-    close: &mut bool,
-) {
-    window(ctx, tr("menu.window.palette_editor")).show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(tr("dialog.palette"));
-            let names: Vec<String> = app.palettes.iter().map(|p| p.display_name()).collect();
-            crate::ui::combo::from_id_salt("pal_sel")
-                .selected_text(names.get(st.palette).cloned().unwrap_or_default())
-                .show_ui(ui, |ui| {
-                    for (i, n) in names.iter().enumerate() {
-                        if ui.selectable_label(st.palette == i, n).clicked() {
-                            st.palette = i;
-                            st.selected = None;
-                        }
-                    }
-                })
-                .response
-                .rich_tip(crate::ui::tips::pair(
-                    "dialog.palette",
-                    "dialog.palette_pick_desc",
-                ));
-            if ui
-                .button(tr("dialog.new_palette"))
-                .rich_tip(crate::ui::tips::pair(
-                    "dialog.new_palette_tip",
-                    "dialog.new_palette_desc",
-                ))
-                .clicked()
-            {
-                app.palettes.push(crate::palette::Palette {
-                    name: format!("Palette {}", app.palettes.len() + 1),
-                    key: "",
-                    colors: Vec::new(),
-                    builtin: false,
-                    path: None,
-                });
-                st.palette = app.palettes.len() - 1;
-            }
-        });
-        // A locked palette shows as a built-in one does: nothing changes
-        // it until it is unlocked in the Palette Manager (#1343).
-        let locked = app.palette_locked(st.palette);
-        let mut save_as = None;
-        let Some(pal) = app.palettes.get_mut(st.palette) else {
-            *close = true;
-            return;
-        };
-        let read_only = pal.builtin || locked;
-        if !read_only {
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.name"));
-                ui.text_edit_singleline(&mut pal.name)
-                    .rich_tip(crate::ui::tips::pair(
-                        "dialog.name",
-                        "dialog.palette_name_desc",
-                    ));
-            });
-        }
-        let cols = 12;
-        egui::ScrollArea::vertical()
-            .max_height(180.0)
-            .show(ui, |ui| {
-                egui::Grid::new("pal_grid")
-                    .spacing(egui::vec2(2.0, 2.0))
-                    .show(ui, |ui| {
-                        for (i, (_, c)) in pal.colors.iter().enumerate() {
-                            let [r, g, b] = c.to_rgb8();
-                            let (rect, resp) = ui
-                                .allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
-                            ui.painter()
-                                .rect_filled(rect, 2.0, egui::Color32::from_rgb(r, g, b));
-                            if st.selected == Some(i) {
-                                ui.painter().rect_stroke(
-                                    rect,
-                                    2.0,
-                                    egui::Stroke::new(2.0, egui::Color32::BLACK),
-                                    egui::StrokeKind::Outside,
-                                );
-                            }
-                            let resp = resp.rich_tip_with(|| {
-                                format!("{}\n{}", pal.colors[i].0, tr("dialog.palette_swatch_desc"))
-                            });
-                            if resp.clicked() {
-                                st.selected = Some(i);
-                            }
-                            if (i + 1) % cols == 0 {
-                                ui.end_row();
-                            }
-                        }
-                    });
-            });
-        if let Some(i) = st.selected {
-            if let Some((name, c)) = pal.colors.get_mut(i) {
-                ui.horizontal(|ui| {
-                    // A built-in or locked palette's names stay as they are.
-                    let mut shown = name.clone();
-                    let name = if read_only { &mut shown } else { name };
-                    ui.add_enabled(!read_only, egui::TextEdit::singleline(name))
-                        .rich_tip(crate::ui::tips::pair(
-                            "dialog.color_name",
-                            "dialog.color_name_desc",
-                        ));
-                    let mut edited = *c;
-                    let changed = crate::ui::tips::tip_over(
-                        ui,
-                        crate::ui::tips::pair("dialog.color_value", "dialog.color_value_desc"),
-                        |ui| crate::ui::color_picker::color_button(ui, &mut edited),
-                    );
-                    if changed && !read_only {
-                        *c = edited;
-                    }
-                    ui.label(crate::app::color_description(*c));
-                });
-            }
-        }
-        if !read_only {
-            ui.horizontal(|ui| {
-                if ui
-                    .button(tr("dialog.add_color"))
-                    .rich_tip(crate::ui::tips::keyed("dialog.add_color"))
-                    .clicked()
-                {
-                    let n = pal.colors.len() + 1;
-                    pal.colors
-                        .push((format!("Color {n}"), Color::rgb8(128, 128, 128)));
-                    st.selected = Some(pal.colors.len() - 1);
-                }
-                if let Some(i) = st.selected {
-                    if ui
-                        .button(tr("dialog.remove_color"))
-                        .rich_tip(crate::ui::tips::keyed("dialog.remove_color"))
-                        .clicked()
-                        && i < pal.colors.len()
-                    {
-                        pal.colors.remove(i);
-                        st.selected = None;
-                    }
-                }
-                if ui
-                    .button(tr("dialog.save_palette"))
-                    .rich_tip(crate::ui::tips::keyed("dialog.save_palette"))
-                    .clicked()
-                {
-                    save_as = Some(pal.name.clone());
-                }
-            });
-        } else {
-            ui.label(
-                egui::RichText::new(tr(if pal.builtin {
-                    "dialog.builtin_palette_hint"
-                } else {
-                    "dialog.locked_palette_hint"
-                }))
-                .color(Tokens::text_dim())
-                .size(11.0),
-            );
-        }
-        // The save dialog, a download, or the system's save picker on
-        // Android (#1402); the palette keeps the file it was saved as.
-        if let Some(name) = save_as {
-            let index = st.palette;
-            crate::files::Dialog::new()
-                .add_filter(
-                    crate::palette::filter_label(&tr("file.palettes"), &["tdpal", "gpl"]),
-                    &["tdpal", "gpl"],
-                )
-                .set_file_name(format!("{name}.tdpal"))
-                .save_file(app, move |app, p| {
-                    let Some(pal) = app.palettes.get_mut(index) else {
-                        return;
-                    };
-                    match crate::palette::save_palette(pal, &p) {
-                        Ok(()) => pal.path = Some(p),
-                        Err(e) => app.status = e.to_string(),
-                    }
-                });
-        }
-        if ui
-            .button(tr("dialog.close"))
-            .rich_tip(crate::ui::tips::keyed("dialog.close"))
-            .clicked()
-        {
-            app.rebuild_palette();
-            *close = true;
-        }
-    });
+/// A palette editor entry's colour: a spot colour when `spot` (its ink
+/// named after the entry, the colour as its process stand-in; a spot
+/// colour keeps its stand-in and tint under the new name), otherwise the
+/// colour itself (a spot colour's process colour at its tint when it was
+/// one).
+pub(crate) fn palette_entry_color(name: &str, c: Color, spot: bool) -> Color {
+    match (spot, c) {
+        (
+            true,
+            Color::Spot {
+                tint, c, m, y, k, ..
+            },
+        ) => Color::Spot {
+            ink: crate::palette::spot_ink_id(name),
+            tint,
+            c,
+            m,
+            y,
+            k,
+        },
+        (true, other) => crate::palette::spot_color(name, other),
+        (false, s @ Color::Spot { .. }) => s.process(),
+        (false, other) => other,
+    }
 }
 
 #[cfg(test)]
@@ -6966,6 +7709,54 @@ pub(crate) mod tests {
     }
     use super::*;
 
+    #[test]
+    fn palette_entries_turn_into_spot_colours_and_back() {
+        let cmyk = Color::cmyk_pct(10.0, 20.0, 30.0, 40.0);
+        let spot = palette_entry_color("Spot_2_L", cmyk, true);
+        assert_eq!(spot, crate::palette::spot_color("Spot_2_L", cmyk));
+        // Renaming the entry renames its ink, the stand-in stays.
+        let renamed = palette_entry_color("Spot_4_F", spot, true);
+        let (Color::Spot { ink: a, c: ca, .. }, Color::Spot { ink: b, c: cb, .. }) =
+            (spot, renamed)
+        else {
+            panic!("not spot colours");
+        };
+        assert_ne!(a, b);
+        assert_eq!(b, crate::palette::spot_ink_id("Spot_4_F"));
+        assert!((ca - cb).abs() < 1e-6);
+        // A tint is kept under the new name.
+        let half = Color::Spot {
+            ink: 3,
+            tint: 0.5,
+            c: 0.0,
+            m: 1.0,
+            y: 0.0,
+            k: 0.0,
+        };
+        let Color::Spot { ink, tint, m, .. } = palette_entry_color("Rose", half, true) else {
+            panic!("not a spot colour");
+        };
+        assert_eq!(ink, crate::palette::spot_ink_id("Rose"));
+        assert_eq!((tint, m), (0.5, 1.0));
+        // Unticked, the entry is its process colour at its tint.
+        assert_eq!(
+            palette_entry_color("Rose", half, false),
+            Color::Cmyk {
+                c: 0.0,
+                m: 0.5,
+                y: 0.0,
+                k: 0.0
+            }
+        );
+        let back = palette_entry_color("Spot_4_F", renamed, false);
+        let Color::Cmyk { c, m, y, k } = back else {
+            panic!("not CMYK: {back:?}");
+        };
+        assert!((c - 0.1).abs() < 1e-3 && (m - 0.2).abs() < 1e-3);
+        assert!((y - 0.3).abs() < 1e-3 && (k - 0.4).abs() < 1e-3);
+        assert_eq!(palette_entry_color("Plain", cmyk, false), cmyk);
+    }
+
     /// Every dialog, as the menus open it.
     pub(crate) fn all_dialogs(app: &App) -> Vec<Dialog> {
         let layer = app.active_layer().unwrap_or(tracedraw_core::LayerId(1));
@@ -6983,6 +7774,10 @@ pub(crate) mod tests {
             },
             Dialog::GoToPage { page: 1 },
             Dialog::PageSpacing { value: 30.0 },
+            Dialog::MultipagePages {
+                all: false,
+                range: "1-2".into(),
+            },
             Dialog::InsertPage {
                 count: 1,
                 after: true,
@@ -7098,7 +7893,15 @@ pub(crate) mod tests {
             Dialog::BorderGrommet(crate::border_grommet::BorderGrommetState::default()),
             Dialog::ColorManagement(Default::default()),
             Dialog::FontManager(FontManagerState::default()),
+            Dialog::TraceCut(Box::default()),
             Dialog::PaletteEditor(PaletteEditorState::default()),
+            Dialog::PictureColors(Box::new(
+                crate::ui::picture_colors::PictureColorsState::new(
+                    crate::ui::picture_colors::PaletteTarget::Document,
+                    vec![[200, 20, 20], [20, 20, 200], [250, 250, 250]],
+                ),
+            )),
+            Dialog::ConfirmResetPalette,
             Dialog::NewDocument(crate::new_document::NewDocState::from_settings(
                 &Default::default(),
                 "n".into(),
@@ -7167,6 +7970,138 @@ pub(crate) mod tests {
             walk(&c.shape, &mut texts);
         }
         texts
+    }
+
+    /// Text > Tabs on a paragraph frame just drawn (no text yet, being
+    /// edited with the Text tool): Add tab puts a stop on that frame, the
+    /// dialog lists it, and a second click adds the next one (#1852).
+    #[test]
+    fn add_tab_works_on_a_new_empty_paragraph_frame() {
+        use egui::{Event, Modifiers, PointerButton};
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.start_text(
+            tracedraw_core::Point::new(20.0, 20.0),
+            Some(tracedraw_core::Size::new(100.0, 60.0)),
+        );
+        let id = app.text_edit.as_ref().expect("editing").shape;
+        app.dialog = Dialog::TextTabs;
+        let tabs = |app: &App| {
+            let s = app.doc().find_shape(id).expect("frame").clone();
+            app.paragraph_style_of(&s).expect("text").1.tabs
+        };
+        let click = |ctx: &Context, app: &mut App, t: &str| {
+            let mut texts = Vec::new();
+            for _ in 0..2 {
+                texts = frame_texts(ctx, app, Vec::new());
+            }
+            let p = texts
+                .iter()
+                .find(|(s, _)| s == t)
+                .map(|(_, p)| *p)
+                .unwrap_or_else(|| panic!("{t} not drawn: {texts:?}"));
+            let press = |pressed| Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            };
+            frame_texts(ctx, app, vec![Event::PointerMoved(p)]);
+            frame_texts(ctx, app, vec![press(true)]);
+            frame_texts(ctx, app, vec![press(false)]);
+        };
+        assert!(tabs(&app).is_empty());
+        click(&ctx, &mut app, &tr("dialog.add_tab"));
+        assert_eq!(tabs(&app).len(), 1, "{:?}", tabs(&app));
+        click(&ctx, &mut app, &tr("dialog.add_tab"));
+        assert_eq!(tabs(&app).len(), 2, "{:?}", tabs(&app));
+        assert!(tabs(&app)[1].pos > tabs(&app)[0].pos);
+        // The rows show each stop with its kind; text typed afterwards
+        // keeps the stops.
+        let texts = frame_texts(&ctx, &mut app, Vec::new());
+        let left = tr("text.tab_left");
+        assert_eq!(texts.iter().filter(|(t, _)| *t == left).count(), 2);
+        // One undo step per click.
+        app.undo();
+        assert_eq!(tabs(&app).len(), 1, "{:?}", tabs(&app));
+        app.insert_text("Mango\t89,-");
+        assert_eq!(tabs(&app).len(), 1, "{:?}", tabs(&app));
+    }
+
+    /// Add Column with Random number makes the field and, with Records,
+    /// the records, with no data file; the grid shows the numbers drawn,
+    /// Configure Columns edits the field and Draw Again draws new ones; a
+    /// range too small for No repeats is said in the dialog.
+    #[test]
+    fn the_merge_dialog_adds_a_random_number_field() {
+        use crate::print_merge::FieldKind;
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let mut st = PrintMergeState {
+            adding: Some(("Ticket".into(), 4)),
+            ..Default::default()
+        };
+        st.adding_random = RandomForm {
+            min: 1,
+            max: 50,
+            digits: 3,
+            prefix: "T".into(),
+            unique: true,
+            records: 20,
+        };
+        app.dialog = Dialog::PrintMerge(st);
+        let mut texts = Vec::new();
+        for _ in 0..3 {
+            texts = frame_texts(&ctx, &mut app, Vec::new());
+        }
+        let add = texts
+            .iter()
+            .find(|(t, _)| *t == tr("merge.add"))
+            .map(|(_, p)| *p)
+            .expect("Add is drawn");
+        let press = |pressed| egui::Event::PointerButton {
+            pos: add,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame_texts(&ctx, &mut app, vec![egui::Event::PointerMoved(add)]);
+        frame_texts(&ctx, &mut app, vec![press(true)]);
+        frame_texts(&ctx, &mut app, vec![press(false)]);
+        let texts = frame_texts(&ctx, &mut app, Vec::new());
+        let Dialog::PrintMerge(st) = &mut app.dialog else {
+            panic!("the dialog closed");
+        };
+        assert_eq!(st.headers, ["Ticket"]);
+        assert_eq!(st.rows.len(), 20);
+        assert!(matches!(
+            st.kinds[0],
+            FieldKind::Random {
+                min: 1,
+                max: 50,
+                digits: 3,
+                unique: true,
+                ..
+            }
+        ));
+        let drawn = crate::print_merge::values(st);
+        assert!(drawn
+            .iter()
+            .all(|r| r[0].starts_with('T') && r[0].len() == 4));
+        assert!(
+            texts.iter().any(|(t, _)| *t == drawn[0][0]),
+            "the grid shows them"
+        );
+        // Too small a range for No repeats: said in the dialog.
+        if let FieldKind::Random { max, .. } = &mut st.kinds[0] {
+            *max = 10;
+        }
+        st.configure = true;
+        let why = crate::print_merge::check(st).expect_err("too small");
+        let texts = frame_texts(&ctx, &mut app, Vec::new());
+        assert!(texts.iter().any(|(t, _)| *t == why), "{why}");
+        assert!(texts.iter().any(|(t, _)| *t == tr("merge.random_draw")));
+        assert!(texts.iter().any(|(t, _)| *t == tr("merge.random_unique")));
     }
 
     /// A drag from one cell of the Print Merge grid to another selects the
@@ -7259,6 +8194,50 @@ pub(crate) mod tests {
         assert_eq!(app.doc().metadata.page_spacing, Some(15.0));
         app.undo();
         assert_eq!(app.page_spacing(), 30.0);
+    }
+
+    /// View > Pages in Multipage View: OK keeps the range in the drawing
+    /// (one undo step) and turns the view on; a range naming no page of
+    /// the drawing keeps the dialog open; All pages clears it (#1440).
+    #[test]
+    fn the_multipage_pages_dialog_keeps_the_range_and_shows_the_view() {
+        let mut app = App::headless();
+        for _ in 0..4 {
+            app.insert_page(true);
+        }
+        assert_eq!(app.doc().pages.len(), 5);
+        let ctx = crate::theme::ui_context();
+        app.dialog = Dialog::MultipagePages {
+            all: false,
+            range: "9-12".into(),
+        };
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, true);
+        assert!(
+            matches!(app.dialog, Dialog::MultipagePages { .. }),
+            "no page in the range: the dialog stays"
+        );
+        app.dialog = Dialog::MultipagePages {
+            all: false,
+            range: "2-3, 5".into(),
+        };
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, true);
+        assert!(matches!(app.dialog, Dialog::None));
+        assert!(app.multipage);
+        assert_eq!(app.doc().metadata.multipage_pages, "2-3, 5");
+        assert_eq!(app.multipage_page_indices(), vec![1, 2, 4]);
+        assert_eq!(app.multipage_layout().len(), 3);
+        app.dialog = Dialog::MultipagePages {
+            all: true,
+            range: "2-3, 5".into(),
+        };
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, true);
+        assert_eq!(app.doc().metadata.multipage_pages, "");
+        assert_eq!(app.multipage_layout().len(), 5);
+        app.undo();
+        assert_eq!(app.doc().metadata.multipage_pages, "2-3, 5");
     }
 
     #[test]
@@ -7363,6 +8342,73 @@ pub(crate) mod tests {
         assert_ne!(ctx.layer_id_at(egui::pos2(5.0, 5.0)), Some(blocker));
     }
 
+    /// The file chosen in the Save dialog picks the export format by its
+    /// extension, in any case and with the other spellings ("jpeg",
+    /// "TIFF"); a name without an export format's extension gets the
+    /// format's; and a format chosen in the options afterwards changes
+    /// the extension, one the format takes staying as typed.
+    #[test]
+    fn the_exported_file_follows_the_format() {
+        use std::path::{Path, PathBuf};
+        let at = |ext: &str| EXPORT_FORMATS.iter().position(|f| f.1 == ext).expect(ext);
+        assert_eq!(export_format_of(Path::new("a/photo.JPEG")), Some(at("jpg")));
+        assert_eq!(export_format_of(Path::new("scan.TIFF")), Some(at("tif")));
+        assert_eq!(export_format_of(Path::new("page.htm")), Some(at("html")));
+        assert_eq!(export_format_of(Path::new("logo.svg")), Some(at("svg")));
+        assert_eq!(export_format_of(Path::new("Poster.v2")), None);
+        assert_eq!(export_format_of(Path::new("Poster")), None);
+        assert_eq!(export_extensions("jpg"), ["jpg", "jpeg"]);
+        assert_eq!(export_extensions("svg"), ["svg"]);
+        let mut app = App::headless();
+        let mut st = ExportState {
+            format: at("svg"),
+            remember: true,
+            ..ExportState::default()
+        };
+        // The extension typed picks the format.
+        let p = export_chosen_file(&mut app, &mut st, PathBuf::from("/x/photo.jpeg"));
+        assert_eq!((p, st.format), (PathBuf::from("/x/photo.jpeg"), at("jpg")));
+        assert_eq!(app.settings.last_export_dir, Some(PathBuf::from("/x")));
+        // None, or one of no export format: the format's is added.
+        let p = export_chosen_file(&mut app, &mut st, PathBuf::from("/x/Poster"));
+        assert_eq!(p, PathBuf::from("/x/Poster.jpg"));
+        let p = export_chosen_file(&mut app, &mut st, PathBuf::from("/x/Poster.v2"));
+        assert_eq!(p, PathBuf::from("/x/Poster.v2.jpg"));
+        assert_eq!(st.format, at("jpg"));
+        // The options' format decides the extension.
+        st.target = Some(PathBuf::from("/x/photo.jpeg"));
+        sync_export_target(&app, &mut st);
+        assert_eq!(st.target, Some(PathBuf::from("/x/photo.jpeg")), "kept");
+        st.format = at("png");
+        sync_export_target(&app, &mut st);
+        assert_eq!(st.target, Some(PathBuf::from("/x/photo.png")));
+        st.format = at("tif");
+        sync_export_target(&app, &mut st);
+        assert_eq!(st.target, Some(PathBuf::from("/x/photo.tif")));
+        assert!(export_dialog_title(&st).contains("photo.tif"));
+        // An installed script filter: its own extension.
+        app.settings
+            .script_filters
+            .push(crate::scripting::ScriptFilter {
+                name: "Plotter".into(),
+                extensions: vec!["hpgl".into()],
+                import: false,
+                export: true,
+                source: String::new(),
+            });
+        st.script = Some("Plotter".into());
+        sync_export_target(&app, &mut st);
+        assert_eq!(st.target, Some(PathBuf::from("/x/photo.hpgl")));
+        // No file chosen yet (the browser, Android, the presets): the
+        // dialog keeps its plain title.
+        let plain = ExportState::default();
+        assert_eq!(export_dialog_title(&plain), tr("dialog.export"));
+        assert_eq!(
+            export_dialog_title(&ExportState::web()),
+            tr("menu.file.export_for_web")
+        );
+    }
+
     #[test]
     fn the_export_list_puts_the_common_formats_first() {
         let order = export_format_order();
@@ -7428,12 +8474,11 @@ pub(crate) mod tests {
             version: "9.0.0".into(),
             page: "https://example.org/r".into(),
             download: None,
-            appimage: Some(Package {
+            installer: Some(Package {
                 url: "https://example.org/a.AppImage".into(),
                 sha256: "0".repeat(64),
                 size: 3 << 20,
             }),
-            setup: None,
         };
         let checks = [
             UpdateState::Idle,
@@ -7449,6 +8494,7 @@ pub(crate) mod tests {
                 total: 3 << 20,
             },
             InstallState::Installed("9.0.0".into()),
+            InstallState::Ready("9.0.0".into()),
             InstallState::Failed("digest".into()),
         ];
         for check in &checks {
@@ -7464,6 +8510,128 @@ pub(crate) mod tests {
                 );
             }
         }
+    }
+
+    /// One frame of `show` with `events`, as the accessibility tree sees
+    /// it: each widget's role, label, whether it is enabled and its id.
+    fn frame_widgets(
+        ctx: &Context,
+        app: &mut App,
+        events: Vec<egui::Event>,
+    ) -> Vec<(egui::accesskit::Role, String, bool, egui::accesskit::NodeId)> {
+        ctx.enable_accesskit();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| show(app, &ui.ctx().clone()));
+        out.textures_delta.clear();
+        out.platform_output
+            .accesskit_update
+            .map(|u| {
+                u.nodes
+                    .iter()
+                    .map(|(id, n)| {
+                        (
+                            n.role(),
+                            n.label().unwrap_or_default().to_string(),
+                            !n.is_disabled(),
+                            *id,
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn click(id: egui::accesskit::NodeId) -> egui::Event {
+        egui::Event::AccessKitActionRequest(egui::accesskit::ActionRequest {
+            action: egui::accesskit::Action::Click,
+            target_node: id,
+            target_tree: egui::accesskit::TreeId::ROOT,
+            data: None,
+        })
+    }
+
+    /// The update progress dialog: a progress bar and Cancel while the
+    /// file downloads, Cancel greyed while it is checked, Restart Now and
+    /// Later when the update is ready, Try Again and the website after a
+    /// failure. Cancel stops the download and the box offers Install
+    /// again.
+    #[test]
+    fn the_update_dialog_shows_the_progress_and_the_buttons_of_each_step() {
+        use crate::updates::{InstallState, Package, Release, UpdateState};
+        use egui::accesskit::{NodeId, Role};
+        type Widgets = [(Role, String, bool, NodeId)];
+        let mut app = App::headless();
+        let ctx = crate::theme::ui_context();
+        let release = Release {
+            version: "9.0.0".into(),
+            page: "https://example.org/r".into(),
+            download: None,
+            installer: Some(Package {
+                url: "https://example.org/a.AppImage".into(),
+                sha256: "0".repeat(64),
+                size: 3 << 20,
+            }),
+        };
+        *app.updates.state.lock().expect("lock") = UpdateState::Available(release);
+        app.dialog = Dialog::Updates;
+        let shown = |app: &mut App, install: InstallState| {
+            *app.installer.state.lock().expect("lock") = install;
+            frame_widgets(&ctx, app, Vec::new());
+            frame_widgets(&ctx, app, Vec::new())
+        };
+        let button = |w: &Widgets, label: &str| {
+            w.iter()
+                .find(|(r, l, _, _)| *r == Role::Button && l == label)
+                .map(|(_, _, enabled, id)| (*enabled, *id))
+        };
+        let bar = |w: &Widgets| w.iter().any(|(r, _, _, _)| *r == Role::ProgressIndicator);
+        let downloading = InstallState::Downloading {
+            done: 1 << 20,
+            total: 3 << 20,
+        };
+        let w = shown(&mut app, downloading.clone());
+        assert!(bar(&w), "a progress bar: {w:?}");
+        assert_eq!(button(&w, "Cancel").map(|b| b.0), Some(true), "{w:?}");
+        assert!(button(&w, "Restart Now").is_none());
+        let w = shown(&mut app, InstallState::Checking);
+        assert_eq!(button(&w, "Cancel").map(|b| b.0), Some(false), "greyed");
+        assert!(!bar(&w), "a moving bar, not a share");
+        let w = shown(&mut app, InstallState::Installing);
+        assert_eq!(button(&w, "Cancel").map(|b| b.0), Some(false), "greyed");
+        let w = shown(&mut app, InstallState::Installed("9.0.0".into()));
+        assert!(button(&w, "Restart Now").is_some_and(|b| b.0), "{w:?}");
+        assert!(button(&w, "Later").is_some_and(|b| b.0));
+        assert!(button(&w, "Cancel").is_none() && !bar(&w));
+        let w = shown(&mut app, InstallState::Ready("9.0.0".into()));
+        assert!(button(&w, "Restart Now").is_some() && button(&w, "Later").is_some());
+        let w = shown(
+            &mut app,
+            InstallState::Failed("the download answered 404".into()),
+        );
+        assert!(button(&w, "Try Again").is_some(), "{w:?}");
+        assert!(button(&w, "Download from the website").is_some());
+        // Later closes the box.
+        let w = shown(&mut app, InstallState::Installed("9.0.0".into()));
+        let (_, later) = button(&w, "Later").expect("Later");
+        frame_widgets(&ctx, &mut app, vec![click(later)]);
+        assert!(matches!(app.dialog, Dialog::None), "Later closed it");
+        // Cancel: the download stops, the box stays and offers Install.
+        app.dialog = Dialog::Updates;
+        let w = shown(&mut app, downloading);
+        let (_, cancel) = button(&w, "Cancel").expect("Cancel");
+        frame_widgets(&ctx, &mut app, vec![click(cancel)]);
+        assert_eq!(app.installer.get(), InstallState::Idle);
+        assert!(matches!(app.dialog, Dialog::Updates), "still open");
+        let w = frame_widgets(&ctx, &mut app, Vec::new());
+        assert!(!bar(&w));
+        assert!(button(&w, "Install").is_some() || button(&w, "Download").is_some());
     }
 }
 
@@ -7760,5 +8928,153 @@ mod desktop_message_tests {
         });
         out.textures_delta.clear();
         assert_eq!(picked, Some(0));
+    }
+}
+
+#[cfg(test)]
+mod layout_preset_tests {
+    use super::*;
+
+    fn run(
+        ctx: &egui::Context,
+        app: &App,
+        st: &mut PrintState,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, egui::Rect)> {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(480.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| print_layout_fields(app, ui, st));
+        out.textures_delta.clear();
+        out.shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => {
+                    Some((t.galley.text().to_string(), t.visual_bounding_rect()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn click(ctx: &egui::Context, app: &App, st: &mut PrintState, at: egui::Pos2) {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(ctx, app, st, vec![egui::Event::PointerMoved(at)]);
+        run(ctx, app, st, vec![button(true)]);
+        run(ctx, app, st, vec![button(false)]);
+    }
+
+    fn at(texts: &[(String, egui::Rect)], label: &str) -> egui::Pos2 {
+        texts
+            .iter()
+            .find(|(t, _)| t == label)
+            .map(|(_, r)| r.center())
+            .unwrap_or_else(|| panic!("{label} shown"))
+    }
+
+    /// #1796, #1795, #1658: the layout fields of several pages per sheet
+    /// show the page order and the two gaps; "+" names a preset and OK
+    /// keeps it in the preferences, chosen; changing a setting leaves it
+    /// unchosen, choosing it again puts its settings back; "-" asks
+    /// before deleting it.
+    #[test]
+    fn a_layout_is_kept_as_a_preset_and_chosen_again() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let mut st = PrintState {
+            layout_kind: 1,
+            gutter: 4.0,
+            gutter_y: 7.0,
+            page_order: 1,
+            ..Default::default()
+        };
+        run(&ctx, &app, &mut st, Vec::new());
+        let texts = run(&ctx, &app, &mut st, Vec::new());
+        for key in [
+            "print.page_order",
+            "print.order_down",
+            "print.gap_across",
+            "print.gap_down",
+            "print.layout_preset",
+            "print.layout_save_file",
+            "print.layout_open_file",
+        ] {
+            at(&texts, &tr(key));
+        }
+        let o = crate::export::print_layout(&app, &st, app.doc());
+        assert_eq!(o.gutter, 4.0);
+        assert_eq!(o.gutter_y, Some(7.0));
+        assert_eq!(o.order, crate::imposition::PageOrder::Down);
+        // "+" opens the name field; OK keeps the preset.
+        click(&ctx, &app, &mut st, at(&texts, "+"));
+        assert!(st.layout_preset_typed.is_some());
+        st.layout_preset_typed = Some("Cards".into());
+        let texts = run(&ctx, &app, &mut st, Vec::new());
+        click(&ctx, &app, &mut st, at(&texts, &tr("dialog.ok")));
+        assert_eq!(
+            st.layout_preset_request,
+            Some(LayoutPresetRequest::Save("Cards".into()))
+        );
+        take_saved_sheet(&mut app, &mut st);
+        assert_eq!(app.settings.printing.layout_presets.len(), 1);
+        assert_eq!(st.layout_preset, "Cards");
+        let texts = run(&ctx, &app, &mut st, Vec::new());
+        at(&texts, "Cards");
+        // Changed, the preset is no longer the chosen one; chosen again
+        // it puts its settings back.
+        st.gutter_y = 12.0;
+        run(&ctx, &app, &mut st, Vec::new());
+        assert!(st.layout_preset.is_empty());
+        app.settings.printing.layout_presets[0]
+            .clone()
+            .apply(&mut st);
+        assert_eq!((st.gutter, st.gutter_y, st.page_order), (4.0, 7.0, 1));
+        assert_eq!(st.layout_preset, "Cards");
+        // "-" asks first; Yes deletes.
+        let texts = run(&ctx, &app, &mut st, Vec::new());
+        click(&ctx, &app, &mut st, at(&texts, "\u{2212}"));
+        assert_eq!(st.layout_preset_delete.as_deref(), Some("Cards"));
+        assert!(st.layout_preset_request.is_none(), "not before the answer");
+        let texts = run(&ctx, &app, &mut st, Vec::new());
+        click(&ctx, &app, &mut st, at(&texts, &tr("dialog.yes")));
+        take_saved_sheet(&mut app, &mut st);
+        assert!(app.settings.printing.layout_presets.is_empty());
+        assert!(st.layout_preset.is_empty());
+    }
+
+    /// A layout file read in goes into the open Print Preview and is kept
+    /// as a preset.
+    #[test]
+    fn a_layout_file_loads_into_print_preview() {
+        let mut app = App::headless();
+        app.print_preview(None);
+        let st = PrintState {
+            layout_kind: 3,
+            cols: 4,
+            rows: 6,
+            gutter: 2.0,
+            gutter_y: 3.0,
+            ..Default::default()
+        };
+        let text = crate::prefs::LayoutPreset::from_state("Labels", &st).to_file();
+        let p = crate::prefs::LayoutPreset::from_file(&text).expect("a layout");
+        load_layout(&mut app, &p);
+        let pv = app.print_preview.as_ref().expect("the preview");
+        assert_eq!(
+            (pv.st.layout_kind, pv.st.cols, pv.st.rows, pv.st.gutter_y),
+            (3, 4, 6, 3.0)
+        );
+        assert_eq!(pv.st.layout_preset, "Labels");
+        assert_eq!(app.settings.printing.layout_presets.len(), 1);
     }
 }

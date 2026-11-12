@@ -103,6 +103,14 @@ toolbox does not slide with it and the drawing does not zoom
 `ui::bars::tests::the_floating_toolbox_resizes_by_its_edges_and_by_ctrl_wheel`,
 `settings::tests::the_wheel_steps_the_button_and_swatch_sizes_within_their_ranges`).
 
+A toolbox taller (or, along the top or the bottom, longer) than its room
+slides with its arrows and the wheel (`toolbars.md`, "Bars longer than
+the window"), and on a touch screen with a finger dragged along it: the
+column follows the finger once it has moved past a tap's distance, a tap
+still picks the tool, and the button the finger passes over opens no
+flyout; a finger dragged sideways off a button opens the flyout as before
+(#1997, `ui::toolbox::tests::a_finger_dragged_along_the_toolbox_column_slides_it`).
+
 Docked on a side, the toolbox fits the window's height: when its buttons
 do not fit, they get shorter (their icons smaller) down to 22 px, and
 only below that do the overflow arrows take over; with room they keep
@@ -152,6 +160,35 @@ Whatever the frame last asked for decides, so a system pointer asked for
 after a drawn one in the same frame (a text box's I-beam) is never
 replaced by the blank image (#1124,
 `cursors::tests::a_drawn_pointer_hides_the_system_one_with_a_blank_image_on_windows`).
+A tool shortcut with Alt (Alt+R set by the user) changes the pointer at
+once on Windows too: Alt with a letter starts no keyboard menu mode in
+the window, and the system ending the pointer's leave tracking while
+the pointer stands still over the window is not taken as the pointer
+leaving it, so the pointer is never left as the arrow or invisible
+until the mouse moves (#1922, `winit_alt_shortcuts::tests`, see
+`vendor/README.md`).
+On Windows a drawn pointer is not painted in the window at all: its
+drawing is made a bitmap (`cursors::bitmap`: what `cursors::paint`
+draws, rasterised in software in the screen's pixels and cut to what is
+drawn, the hot spot where the pointer points) and given to the system
+as the pointer, which the system then moves as it moves its own arrow.
+Painted in the window, a pointer shows where the mouse was when the
+frame was made, a refresh or more before it reaches the screen, so with
+every tool but the Pick tools (the system's arrow) the pointer trailed
+the hand while the arrow did not (#2136). The same bytes are handed
+over every frame, so the window makes one system pointer of them; a
+bitmap is drawn once for each pointer, screen scale and theme and kept
+(the last 48). The nearest system pointer goes along for a window that
+cannot take a bitmap, and a system pointer asked for later in the frame
+still wins. A nib wider than 48 points either side (the eraser or a
+brush zoomed far in) does not fit a pointer bitmap and is painted as
+before, with the blank image. The other systems paint the drawn
+pointers as before (the browser takes no bitmap from the window, and
+the size a bitmap shows at on a scaled screen differs between them);
+`TRACEDRAW_BITMAP_POINTERS=1` turns the bitmaps on there for a trial,
+`0` off on Windows.
+(`cursors::tests::a_drawn_pointer_is_handed_to_the_system_as_a_bitmap`,
+`cursors::tests::every_drawn_pointer_has_a_bitmap_in_the_screens_pixels`.)
 The cross hair's lines cross on the middle of the pixel under the hot
 spot; the icons, nibs and drawn pointers are painted beside it, above
 the drawing. A tool's icon sits 4 points below and right of the cross

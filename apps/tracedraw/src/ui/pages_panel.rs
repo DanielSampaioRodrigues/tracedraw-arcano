@@ -625,7 +625,8 @@ fn page_menu(app: &mut App, ui: &mut Ui, st: &mut State, picked: &[usize], facin
     }
     let mut f = facing;
     if ui.checkbox(&mut f, tr("menu.layout.facing_pages")).changed() {
-        app.set_facing_pages(f);
+        let start = app.doc().metadata.facing_start;
+        app.set_facing_pages(f, start);
         ui.close();
     }
     ui.menu_button(tr("pages.thumb_size"), |ui| {

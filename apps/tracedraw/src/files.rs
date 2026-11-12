@@ -145,6 +145,7 @@ pub fn name_with_extension(name: &str, mime: &str) -> String {
 pub fn safe_file_name(name: &str) -> String {
     let clean: String = name
         .chars()
+        .filter(|&c| !is_direction_mark(c))
         .map(|c| {
             if matches!(c, '/' | '\\') || c.is_control() {
                 '_'
@@ -156,6 +157,53 @@ pub fn safe_file_name(name: &str) -> String {
     let clean = clean.trim().trim_start_matches('.').trim();
     if clean.is_empty() {
         "file".into()
+    } else {
+        clean.to_string()
+    }
+}
+
+/// True for the invisible marks that steer the direction of text
+/// (left-to-right and right-to-left marks, embeddings, overrides and
+/// isolates). Right-to-left keyboards and text copied from right-to-left
+/// writing bring them along; in a file name they only hide the extension
+/// and make two names that look the same differ.
+pub fn is_direction_mark(c: char) -> bool {
+    // By code point: they are never drawn, so they are not symbols the
+    // interface's fonts must have (`every_interface_symbol_is_in_the_bundled_fonts`).
+    matches!(
+        c as u32,
+        0x061C | 0x200E | 0x200F | 0x202A..=0x202E | 0x2066..=0x2069
+    )
+}
+
+/// A file name typed or made from a drawing's name, ready to be written
+/// in any language: direction marks and control characters go, folder
+/// separators become `_`, and so do the characters Windows refuses in a
+/// name (`: * ? " < > |`) on Windows, where it also drops the dots and
+/// spaces at the end that it would drop itself. Letters of every script
+/// and their accents and vowel marks stay as they are. Empty when
+/// nothing is left.
+pub fn clean_file_name(name: &str) -> String {
+    clean_file_name_for(name, cfg!(windows))
+}
+
+/// [`clean_file_name`] for Windows (`windows`) or another system.
+pub fn clean_file_name_for(name: &str, windows: bool) -> String {
+    let clean: String = name
+        .chars()
+        .filter(|&c| !is_direction_mark(c) && !c.is_control())
+        .map(|c| {
+            let reserved = windows && matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|');
+            if matches!(c, '/' | '\\') || reserved {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let clean = clean.trim();
+    if windows {
+        clean.trim_end_matches(['.', ' ']).to_string()
     } else {
         clean.to_string()
     }
@@ -406,6 +454,30 @@ pub fn write_creating(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::i
     std::fs::write(path, bytes)
 }
 
+/// Write `bytes` to a device such as a serial port (`/dev/ttyUSB0`,
+/// `COM3`) without creating or truncating anything: the device must
+/// exist. A bare Windows port name (`COM10`) is opened through the
+/// device namespace (`\\.\COM10`), which every port number needs past
+/// 9. Not in a browser or on Android, which have no such devices.
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+pub fn write_device(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let path = path.trim();
+    let upper = path.to_ascii_uppercase();
+    let device = if cfg!(windows)
+        && upper.starts_with("COM")
+        && upper.len() > 3
+        && upper[3..].bytes().all(|b| b.is_ascii_digit())
+    {
+        format!("\\\\.\\{path}")
+    } else {
+        path.to_string()
+    };
+    let mut f = std::fs::OpenOptions::new().write(true).open(device)?;
+    f.write_all(bytes)?;
+    f.flush()
+}
+
 /// Delete a file (in a browser, only in the auto-backup folder and the
 /// folders kept in memory).
 pub fn remove(path: impl AsRef<Path>) -> std::io::Result<()> {
@@ -548,6 +620,8 @@ pub fn folder_tip(place: FolderUse, platform: Platform) -> Option<&'static str> 
         FolderAction::SaveZip if web => Some("folder.zip_web"),
         FolderAction::SaveZip => Some("folder.zip_android"),
         FolderAction::OpenFiles if web => Some("folder.files_web"),
+        // The pictures of Print Merge: the system's folder picker (#1926).
+        FolderAction::OpenFiles if place == FolderUse::MergePictures => Some("folder.tree_android"),
         FolderAction::OpenFiles => Some("folder.files_android"),
         FolderAction::Unavailable(key) => Some(key),
     }
@@ -806,6 +880,9 @@ pub enum Place {
     Pictures,
     /// A drive or the file system's root.
     Root,
+    /// A mounted drive, memory card, network share or other volume
+    /// (#1391): named after its folder.
+    Drive,
 }
 
 /// The user's home folder.
@@ -821,7 +898,8 @@ pub fn home_dir() -> Option<PathBuf> {
 /// The shortcuts that exist on this computer: home, desktop, documents,
 /// downloads and pictures (the names the system gives them, read from
 /// the user's folder settings on Linux), then the drives (Windows) or
-/// the root. Empty in a browser.
+/// the root, then the mounted drives, memory cards and network shares
+/// ([`mounted_drives`]). Empty in a browser.
 pub fn places() -> Vec<(Place, PathBuf)> {
     let mut out = Vec::new();
     let Some(home) = home_dir() else {
@@ -853,6 +931,267 @@ pub fn places() -> Vec<(Place, PathBuf)> {
         }
     } else {
         out.push((Place::Root, PathBuf::from("/")));
+    }
+    for drive in mounted_drives() {
+        if !out.iter().any(|(_, p)| *p == drive) {
+            out.push((Place::Drive, drive));
+        }
+    }
+    out
+}
+
+/// Where this computer puts mounted drives (#1391).
+#[derive(Debug, Clone, Default)]
+pub struct MountRoots {
+    /// The system's table of mounts (`/proc/self/mounts` on Linux).
+    pub mounts: Option<String>,
+    /// Folders whose subfolders are mounted drives: `/media/$USER`,
+    /// `/run/media/$USER`, `/media` and `/mnt` on Linux, `/Volumes` on
+    /// macOS.
+    pub parents: Vec<PathBuf>,
+    /// The folder of the desktop's network shares and phones
+    /// (`$XDG_RUNTIME_DIR/gvfs`).
+    pub gvfs: Option<PathBuf>,
+}
+
+impl MountRoots {
+    /// This computer's.
+    pub fn system() -> Self {
+        let mut roots = MountRoots::default();
+        if WEB || ANDROID || cfg!(windows) {
+            return roots;
+        }
+        if cfg!(target_os = "macos") {
+            roots.parents.push(PathBuf::from("/Volumes"));
+            return roots;
+        }
+        roots.mounts = std::fs::read_to_string("/proc/self/mounts").ok();
+        let user = std::env::var("USER")
+            .ok()
+            .filter(|u| !u.is_empty())
+            .or_else(|| {
+                home_dir().and_then(|h| h.file_name().map(|n| n.to_string_lossy().to_string()))
+            });
+        if let Some(user) = user {
+            roots.parents.push(Path::new("/media").join(&user));
+            roots.parents.push(Path::new("/run/media").join(&user));
+        }
+        roots.parents.push(PathBuf::from("/media"));
+        roots.parents.push(PathBuf::from("/mnt"));
+        roots.gvfs = std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|d| !d.is_empty())
+            .map(|d| PathBuf::from(d).join("gvfs"));
+        roots
+    }
+}
+
+/// The mounted drives, memory cards and network shares of this computer,
+/// for the Save Drawing dialog (#1391). Empty on Windows (its drive
+/// letters are listed as roots), on Android and in a browser.
+pub fn mounted_drives() -> Vec<PathBuf> {
+    drives_in(&MountRoots::system())
+}
+
+/// The drives `roots` holds: the folders mounted under one of its
+/// parents (from the mount table, and the parents' subfolders, so a
+/// drive shows when the table cannot be read), then the network shares
+/// under `gvfs`. Each once, in that order, sorted by name within each;
+/// the parents themselves, the boot volume (a link to `/` in
+/// `/Volumes`), hidden folders and folders that are not there are left
+/// out.
+pub fn drives_in(roots: &MountRoots) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    let mounted = roots
+        .mounts
+        .as_deref()
+        .map(parse_mount_points)
+        .unwrap_or_default();
+    // Folders that are only parents of drives (/media holding $USER).
+    let is_parent = |p: &Path| roots.parents.iter().any(|q| q == p);
+    for parent in &roots.parents {
+        let mut here: Vec<PathBuf> = mounted
+            .iter()
+            .filter(|m| m.parent() == Some(parent.as_path()))
+            .cloned()
+            .collect();
+        for e in list_entries(parent) {
+            if e.is_dir {
+                here.push(e.path);
+            }
+        }
+        here.sort_by_key(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+        for p in here {
+            let hidden = p
+                .file_name()
+                .is_none_or(|n| n.to_string_lossy().starts_with('.'));
+            let boot = std::fs::read_link(&p).is_ok_and(|t| t == Path::new("/"));
+            if hidden || boot || is_parent(&p) || !p.is_dir() || found.contains(&p) {
+                continue;
+            }
+            found.push(p);
+        }
+    }
+    if let Some(gvfs) = &roots.gvfs {
+        for e in list_entries(gvfs) {
+            if e.is_dir && !found.contains(&e.path) {
+                found.push(e.path);
+            }
+        }
+    }
+    found
+}
+
+/// The mount points of a mount table (`/proc/self/mounts`: device,
+/// mount point, type, ... per line; a space in a path is written `\040`).
+pub fn parse_mount_points(text: &str) -> Vec<PathBuf> {
+    text.lines()
+        .filter_map(|line| line.split_whitespace().nth(1))
+        .map(|p| PathBuf::from(unescape_mount(p)))
+        .collect()
+}
+
+/// `\040` (space), `\011` (tab), `\012` (new line) and `\134`
+/// (backslash) of a mount table.
+fn unescape_mount(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\'
+            && i + 3 < bytes.len()
+            && bytes[i + 1..i + 4]
+                .iter()
+                .all(|b| (b'0'..=b'7').contains(b))
+        {
+            let n = bytes[i + 1..i + 4]
+                .iter()
+                .fold(0u32, |n, b| n * 8 + u32::from(b - b'0'));
+            out.push(n as u8);
+            i += 4;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A drive's name in the Save Drawing dialog: its folder's name; for a
+/// network share of the desktop (`smb-share:server=nas,share=photos`)
+/// "photos (nas)", or the server alone.
+pub fn drive_name(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.display().to_string());
+    let Some((_, fields)) = name.split_once(':') else {
+        return name;
+    };
+    let field = |key: &str| {
+        fields
+            .split(',')
+            .find_map(|f| f.strip_prefix(key)?.strip_prefix('='))
+            .map(str::to_string)
+    };
+    match (field("share"), field("server").or_else(|| field("host"))) {
+        (Some(share), Some(server)) => format!("{share} ({server})"),
+        (None, Some(server)) => server,
+        _ => name,
+    }
+}
+
+/// The folders bookmarked in the desktop's file manager
+/// (`~/.config/gtk-3.0/bookmarks`, else `~/.gtk-bookmarks`), with their
+/// names, that exist. Empty on Windows, macOS, Android and in a browser.
+pub fn desktop_bookmarks() -> Vec<(String, PathBuf)> {
+    if WEB || ANDROID || cfg!(windows) || cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    let Some(home) = home_dir() else {
+        return Vec::new();
+    };
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    [
+        config.join("gtk-3.0/bookmarks"),
+        home.join(".gtk-bookmarks"),
+    ]
+    .iter()
+    .find_map(|f| std::fs::read_to_string(f).ok())
+    .map(|text| parse_bookmarks(&text))
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|(_, p)| p.is_dir())
+    .collect()
+}
+
+/// The `file://` lines of a bookmarks file (`file:///home/me/My%20Work
+/// Work`: the address, then an optional name), with the name given or
+/// the folder's own; other addresses (`sftp://`, `smb://`) are left out,
+/// as they are no folders here.
+pub fn parse_bookmarks(text: &str) -> Vec<(String, PathBuf)> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let (uri, label) = match line.split_once(' ') {
+                Some((u, l)) => (u, l.trim()),
+                None => (line, ""),
+            };
+            let path = PathBuf::from(percent_decode(uri.strip_prefix("file://")?));
+            if !path.is_absolute() {
+                return None;
+            }
+            let name = if label.is_empty() {
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.display().to_string())
+            } else {
+                label.to_string()
+            };
+            Some((name, path))
+        })
+        .collect()
+}
+
+/// `%20` and the other `%XX` escapes of an address, as bytes (UTF-8).
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The folders used lately, newest first, for the Save Drawing dialog
+/// (#1391): the last folder a dialog used, then the folders of the
+/// recent drawings; each once, at most `max`, only those that exist.
+pub fn recent_dirs(last_dir: Option<&Path>, recent_files: &[PathBuf], max: usize) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    let dirs = last_dir.map(Path::to_path_buf).into_iter().chain(
+        recent_files
+            .iter()
+            .filter_map(|f| f.parent().map(Path::to_path_buf)),
+    );
+    for d in dirs {
+        if out.len() >= max {
+            break;
+        }
+        if !d.as_os_str().is_empty() && !out.contains(&d) && is_dir(&d) {
+            out.push(d);
+        }
     }
     out
 }
@@ -888,7 +1227,77 @@ pub(crate) fn parse_user_dirs(text: &str, home: &Path) -> Vec<(String, PathBuf)>
 /// Decode an image file (any format the image crate was built with).
 pub fn open_image(path: impl AsRef<Path>) -> Result<image::DynamicImage, String> {
     let bytes = read(path).map_err(|e| e.to_string())?;
-    image::load_from_memory(&bytes).map_err(|e| e.to_string())
+    decode_picture(&bytes).map_err(|e| e.to_string())
+}
+
+/// The image library's own guard on the memory a picture may take to
+/// decode: 512 MiB.
+const LIBRARY_DECODE_LIMIT: u64 = 512 * 1024 * 1024;
+
+/// Most bytes decoding a picture file may take. The image library's own
+/// guard (512 MiB) turned print-size pictures away: a 1 m square at
+/// 300 dpi in CMYK needs 557 MB, so files of a metre and more did not
+/// import (#2000). Pictures may take what a PDF's pictures read at their
+/// own size take ([`FULL_PICTURE_PIXELS`] pixels, with room for 16-bit
+/// samples and a CMYK file's buffer beside the result); where pictures
+/// are always reduced (the browser, Android) and on 32-bit systems the
+/// library's guard stays.
+///
+/// [`FULL_PICTURE_PIXELS`]: tracedraw_io::pdf_import::FULL_PICTURE_PIXELS
+pub fn picture_decode_limit() -> u64 {
+    if crate::ui::pdf_import_dialog::always_reduce_pictures() || cfg!(target_pointer_width = "32") {
+        LIBRARY_DECODE_LIMIT
+    } else {
+        tracedraw_io::pdf_import::FULL_PICTURE_PIXELS.saturating_mul(8)
+    }
+}
+
+/// Decode a picture file (any format the image crate was built with)
+/// within [`picture_decode_limit`].
+pub fn decode_picture(bytes: &[u8]) -> image::ImageResult<image::DynamicImage> {
+    decode_picture_within(bytes, picture_decode_limit())
+}
+
+/// Decode a picture file taking at most `limit` bytes, turned the way
+/// its Exif orientation says (a photo taken with the camera on its side
+/// stands upright, #2167).
+pub fn decode_picture_within(bytes: &[u8], limit: u64) -> image::ImageResult<image::DynamicImage> {
+    use image::ImageDecoder;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(limit);
+    reader.limits(limits.clone());
+    let mut decoder = reader.into_decoder()?;
+    limits.reserve(decoder.total_bytes())?;
+    // A file whose orientation cannot be read stands as stored.
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder)?;
+    img.apply_orientation(orientation);
+    Ok(img)
+}
+
+/// Whether the Exif orientation of picture file `bytes` turns it a
+/// quarter turn, so that its width and height (and its resolution
+/// across and down) change places.
+pub fn picture_turns_sideways(bytes: &[u8]) -> bool {
+    use image::metadata::Orientation;
+    use image::ImageDecoder;
+    let Ok(reader) = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()
+    else {
+        return false;
+    };
+    let Ok(mut decoder) = reader.into_decoder() else {
+        return false;
+    };
+    matches!(
+        decoder.orientation(),
+        Ok(Orientation::Rotate90
+            | Orientation::Rotate270
+            | Orientation::Rotate90FlipH
+            | Orientation::Rotate270FlipH)
+    )
 }
 
 /// Keep bytes under a synthetic path so [`read`] finds them (browser).
@@ -929,6 +1338,24 @@ pub fn run_finished(app: &mut App) {
         job(app, path.clone());
         forget(&path);
     }
+}
+
+/// The paths whose extension is one of `exts` (lower case; any case in
+/// the name), all of them when `exts` is empty: a folder's files kept to
+/// the types a dialog asks for (#1926).
+#[cfg(any(target_os = "android", test))]
+pub fn with_extensions(paths: Vec<PathBuf>, exts: &[String]) -> Vec<PathBuf> {
+    if exts.is_empty() {
+        return paths;
+    }
+    paths
+        .into_iter()
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| exts.iter().any(|x| x.eq_ignore_ascii_case(e)))
+        })
+        .collect()
 }
 
 /// The Android document picker (Storage Access Framework): a request
@@ -987,6 +1414,16 @@ mod android_pickers {
 
     pub fn pick_into(key: String) {
         pick(false, Waiting::Into(key));
+    }
+
+    /// Show the system's folder picker and run `then` with the documents
+    /// in the folder chosen (#1926).
+    pub fn pick_tree(then: Box<dyn FnOnce(&mut App, Vec<PathBuf>)>) {
+        let request = documents::next_request();
+        wait(request, Waiting::Many(then));
+        if !documents::open_tree(request) {
+            forget(request);
+        }
     }
 
     /// Show the picker for a place to save `name` and run `then` with the
@@ -1118,6 +1555,7 @@ pub fn picker_filters_by_type(user_agent: &str, platform: &str, touch_points: u3
 pub struct Dialog {
     filters: Vec<(String, Vec<String>)>,
     file_name: Option<String>,
+    directory: Option<PathBuf>,
 }
 
 impl Dialog {
@@ -1135,6 +1573,13 @@ impl Dialog {
 
     pub fn set_file_name(mut self, name: impl Into<String>) -> Self {
         self.file_name = Some(name.into());
+        self
+    }
+
+    /// The folder the desktop dialog opens in (ignored in a browser and
+    /// on Android, whose pickers choose their own).
+    pub fn set_directory(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.directory = Some(dir.into());
         self
     }
 
@@ -1160,6 +1605,41 @@ impl Dialog {
 
     /// Pick one or more files and run `then` with their paths: at once
     /// natively, on a later frame in a browser and on Android.
+    /// Choose a folder where only files can be picked otherwise, and run
+    /// `then` with the files in it the filters take (#1926). On Android
+    /// the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`) asks for
+    /// the folder and its files come as picked documents, on a later
+    /// frame; in a browser, which has no folder picker, the files are
+    /// picked several at once ([`Self::pick_files`]).
+    pub fn pick_folder_files(
+        self,
+        app: &mut App,
+        then: impl FnOnce(&mut App, Vec<PathBuf>) + 'static,
+    ) {
+        #[cfg(target_os = "android")]
+        {
+            let _ = app;
+            let exts = self.extensions();
+            android_pickers::pick_tree(Box::new(move |app: &mut App, paths: Vec<PathBuf>| {
+                let paths = with_extensions(paths, &exts);
+                if !paths.is_empty() {
+                    then(app, paths);
+                }
+            }));
+        }
+        #[cfg(not(target_os = "android"))]
+        self.pick_files(app, then);
+    }
+
+    /// Every extension the filters name, lower case.
+    #[cfg(any(target_os = "android", test))]
+    fn extensions(&self) -> Vec<String> {
+        self.filters
+            .iter()
+            .flat_map(|(_, exts)| exts.iter().map(|e| e.to_ascii_lowercase()))
+            .collect()
+    }
+
     pub fn pick_files(self, app: &mut App, then: impl FnOnce(&mut App, Vec<PathBuf>) + 'static) {
         #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
@@ -1272,7 +1752,12 @@ impl Dialog {
             log::info!("saved without a picker to {}", dir.display());
             return Some(dir.join(name));
         }
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        // Unit tests answer the dialog themselves (see `test_save`).
+        #[cfg(all(test, not(any(target_arch = "wasm32", target_os = "android"))))]
+        {
+            return test_save::ask(self);
+        }
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android", test)))]
         {
             let mut d = rfd::FileDialog::new();
             for (name, exts) in &self.filters {
@@ -1282,10 +1767,31 @@ impl Dialog {
             if let Some(n) = &self.file_name {
                 d = d.set_file_name(n);
             }
+            if let Some(dir) = self.directory.as_ref().filter(|d| d.is_dir()) {
+                d = d.set_directory(dir);
+            }
             return d.save_file();
         }
         #[allow(unreachable_code)]
         None
+    }
+
+    /// The filters offered, in order: a name and its extensions.
+    #[cfg(test)]
+    pub fn filters(&self) -> &[(String, Vec<String>)] {
+        &self.filters
+    }
+
+    /// The file name offered.
+    #[cfg(test)]
+    pub fn file_name(&self) -> Option<&str> {
+        self.file_name.as_deref()
+    }
+
+    /// The folder the dialog opens in.
+    #[cfg(test)]
+    pub fn directory(&self) -> Option<&Path> {
+        self.directory.as_deref()
     }
 
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
@@ -1376,9 +1882,104 @@ fn download(_name: &str, _bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Unit tests never open the system's save dialog: each dialog asked
+/// for is kept for the test to look at, and it gets the next answer the
+/// test queued (`None` for Cancel); with nothing queued it is cancelled.
+#[cfg(test)]
+pub mod test_save {
+    use super::{Dialog, PathBuf, RefCell};
+    use std::collections::VecDeque;
+
+    thread_local! {
+        static ANSWERS: RefCell<VecDeque<Option<PathBuf>>> = const { RefCell::new(VecDeque::new()) };
+        static ASKED: RefCell<Vec<Dialog>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// The answer of the next save dialog: the path chosen, or `None`
+    /// for Cancel.
+    pub fn answer(path: Option<PathBuf>) {
+        ANSWERS.with(|a| a.borrow_mut().push_back(path));
+    }
+
+    /// The save dialogs asked for since the last call, in order.
+    pub fn asked() -> Vec<Dialog> {
+        ASKED.with(|a| std::mem::take(&mut *a.borrow_mut()))
+    }
+
+    #[cfg_attr(any(target_arch = "wasm32", target_os = "android"), allow(dead_code))]
+    pub(super) fn ask(dialog: Dialog) -> Option<PathBuf> {
+        ASKED.with(|a| a.borrow_mut().push(dialog));
+        ANSWERS.with(|a| a.borrow_mut().pop_front()).flatten()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Names in every script stay as typed; only direction marks, control
+    /// characters and what the system refuses change.
+    #[test]
+    fn file_names_in_every_script_are_kept() {
+        for windows in [false, true] {
+            for name in [
+                "שלום.tdraw",
+                "café.tdraw",
+                "cafe\u{301}.tdraw",
+                "文件.tdraw",
+                "שָׁלוֹם עולם.cdr",
+            ] {
+                assert_eq!(clean_file_name_for(name, windows), name);
+            }
+            assert_eq!(
+                clean_file_name_for("\u{200F}\u{202B}שלום\u{202C}.tdraw\u{200E}", windows),
+                "שלום.tdraw"
+            );
+            assert_eq!(
+                clean_file_name_for("\u{2067}مرحبا\u{2069}", windows),
+                "مرحبا"
+            );
+            assert_eq!(clean_file_name_for("a/b\\c\n", windows), "a_b_c");
+            assert_eq!(clean_file_name_for(" \u{200F} ", windows), "");
+        }
+        assert_eq!(clean_file_name_for("a: b?", false), "a: b?");
+        assert_eq!(clean_file_name_for("a: b?", true), "a_ b_");
+        assert_eq!(clean_file_name_for("שלום. .", true), "שלום");
+        assert_eq!(safe_file_name("\u{200F}שלום.ttf"), "שלום.ttf");
+        assert!(is_direction_mark('\u{061C}'));
+        assert!(!is_direction_mark('\u{200D}'), "the joiner shapes letters");
+    }
+
+    /// #2000: a print-size picture decodes past the image library's own
+    /// 512 MiB guard, which turned away files of about a metre and more
+    /// at print resolution; decoding is held to the limit given.
+    #[test]
+    fn print_size_pictures_decode_past_the_libraries_guard() {
+        // 2.5 x 1 m at 300 dpi, 8-bit CMYK: the file's samples beside the
+        // RGB result.
+        let need = 29_528u64 * 11_811 * (4 + 3);
+        assert!(
+            need > LIBRARY_DECODE_LIMIT,
+            "the library's guard refuses it"
+        );
+        if cfg!(target_pointer_width = "64")
+            && !crate::ui::pdf_import_dialog::always_reduce_pictures()
+        {
+            assert!(picture_decode_limit() >= need);
+        }
+        assert!(picture_decode_limit() >= LIBRARY_DECODE_LIMIT);
+        let img = image::RgbImage::from_pixel(60, 40, image::Rgb([10, 20, 30]));
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png)
+            .expect("png");
+        let png = png.into_inner();
+        assert!(decode_picture_within(&png, 60 * 40 * 3 - 1).is_err());
+        let back = decode_picture(&png).expect("decodes");
+        assert_eq!((back.width(), back.height()), (60, 40));
+        // Not a picture: an error, no panic.
+        assert!(decode_picture(b"not a picture").is_err());
+        assert!(decode_picture(&png[..png.len() / 2]).is_err());
+    }
 
     /// iPhones and iPads (also iPadOS, which calls itself a Mac with a
     /// touch screen) and Android browsers get a picker without extension
@@ -1565,6 +2166,47 @@ mod tests {
         );
         assert_eq!(Platform::current(), Platform::Desktop);
         assert!(matches!(FontFolder.action(), PickFolder(_)));
+        // Print Merge's pictures: the folder picker on Android (#1926).
+        assert_eq!(
+            folder_tip(MergePictures, Platform::Android),
+            Some("folder.tree_android")
+        );
+        assert_eq!(
+            folder_tip(MergePictures, Platform::Web),
+            Some("folder.files_web")
+        );
+    }
+
+    /// #1926: a folder's documents are kept to the types the dialog asks
+    /// for (any case), all of them with no filter; the dialog's
+    /// extensions are its filters', lower case. The Print Merge docker
+    /// asks for a folder where only files could be picked, and on Android
+    /// the folder picker answers like the open picker.
+    #[test]
+    fn a_folders_files_keep_to_the_dialogs_types() {
+        let paths: Vec<PathBuf> = ["a.png", "b.JPG", "notes.txt", "c.tiff", "noext"]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        let d = Dialog::new()
+            .add_filter("Pictures", &["png", "JPG", "tiff"])
+            .add_filter("More", &["webp"]);
+        let exts = d.extensions();
+        assert_eq!(exts, ["png", "jpg", "tiff", "webp"]);
+        assert_eq!(
+            with_extensions(paths.clone(), &exts),
+            [
+                PathBuf::from("a.png"),
+                PathBuf::from("b.JPG"),
+                PathBuf::from("c.tiff")
+            ]
+        );
+        assert_eq!(with_extensions(paths.clone(), &[]), paths);
+        let docker = include_str!("ui/print_merge_docker.rs");
+        assert!(docker.contains(".pick_folder_files(app, |app, paths| {"));
+        let files = include_str!("files.rs");
+        assert!(files.contains("android_pickers::pick_tree("));
+        assert!(files.contains("if !documents::open_tree(request) {"));
     }
 
     /// The app's sources outside this file, as (path, text).
@@ -1700,5 +2342,106 @@ mod tests {
         assert_eq!(read(&p).unwrap(), vec![1, 2, 3]);
         assert!(read(dir.join("missing")).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The Save Drawing dialog lists the mounted drives (#1391): those
+    /// under /media/$USER, /run/media/$USER and /mnt (from the mount table,
+    /// a space written `\040`, and from the folders there), then the
+    /// desktop's network shares, each once, without hidden folders or the
+    /// parents themselves.
+    #[test]
+    fn mounted_drives_memory_cards_and_shares_are_listed() {
+        let root = std::env::temp_dir().join(format!("tracedraw-drives-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let media = root.join("media");
+        let user_media = media.join("ana");
+        let run_media = root.join("run/media/ana");
+        let mnt = root.join("mnt");
+        let gvfs = root.join("gvfs");
+        for d in [
+            user_media.join("USB STICK"),
+            user_media.join(".hidden"),
+            run_media.join("CARD"),
+            mnt.join("backup"),
+            gvfs.join("smb-share:server=nas,share=photos"),
+        ] {
+            std::fs::create_dir_all(&d).expect("folder");
+        }
+        let table = format!(
+            "/dev/sda1 / ext4 rw 0 0\n/dev/sdb1 {}/USB\\040STICK vfat rw 0 0\nproc /proc proc rw 0 0\n",
+            user_media.display()
+        );
+        assert_eq!(
+            parse_mount_points(&table)[1],
+            user_media.join("USB STICK"),
+            "a space in a mount point"
+        );
+        let roots = MountRoots {
+            mounts: Some(table),
+            parents: vec![
+                user_media.clone(),
+                run_media.clone(),
+                media.clone(),
+                mnt.clone(),
+            ],
+            gvfs: Some(gvfs.clone()),
+        };
+        assert_eq!(
+            drives_in(&roots),
+            vec![
+                user_media.join("USB STICK"),
+                run_media.join("CARD"),
+                mnt.join("backup"),
+                gvfs.join("smb-share:server=nas,share=photos"),
+            ]
+        );
+        assert_eq!(drive_name(&user_media.join("USB STICK")), "USB STICK");
+        assert_eq!(
+            drive_name(&gvfs.join("smb-share:server=nas,share=photos")),
+            "photos (nas)"
+        );
+        assert_eq!(drive_name(&gvfs.join("mtp:host=Phone_123")), "Phone_123");
+        // Nothing mounted, nothing there: no drives.
+        assert!(drives_in(&MountRoots::default()).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The desktop's bookmarks: `file://` addresses with `%20` escapes
+    /// and an optional name; other addresses are no folders here (#1391).
+    #[test]
+    fn desktop_bookmarks_are_read() {
+        assert_eq!(
+            parse_bookmarks(
+                "file:///home/ana/My%20Work Work\nfile:///srv/print\nsftp://host/x Remote\n\n"
+            ),
+            vec![
+                ("Work".to_string(), PathBuf::from("/home/ana/My Work")),
+                ("print".to_string(), PathBuf::from("/srv/print")),
+            ]
+        );
+    }
+
+    /// Recent folders: the last folder used, then the folders of the
+    /// recent drawings, each once, only those that exist, at most `max`.
+    #[test]
+    fn recent_folders_come_from_the_last_folder_and_recent_drawings() {
+        let root = std::env::temp_dir().join(format!("tracedraw-recent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (a, b, c) = (root.join("a"), root.join("b"), root.join("c"));
+        for d in [&a, &b, &c] {
+            std::fs::create_dir_all(d).expect("folder");
+        }
+        let recent = vec![
+            b.join("one.tdraw"),
+            a.join("two.cdr"),
+            root.join("gone/three.tdraw"),
+            c.join("four.tdraw"),
+        ];
+        assert_eq!(
+            recent_dirs(Some(&a), &recent, 6),
+            vec![a.clone(), b.clone(), c.clone()]
+        );
+        assert_eq!(recent_dirs(None, &recent, 2), vec![b, a]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

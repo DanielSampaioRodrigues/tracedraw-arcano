@@ -131,15 +131,19 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     crate::comments::draw_comments(app, painter);
     crate::perspective_draw::draw_grid(app, painter, rect);
     draw_frame_links(app, painter);
+    draw_content_links(app, painter);
+    crate::tab_ruler::draw(app, painter);
     if app.pending_text_link.is_some() {
         let pointer = painter.ctx().pointer_hover_pos();
         draw_pending_text_link(app, painter, pointer);
     }
     draw_drop_frame(app, painter);
+    draw_drop_colour(app, painter);
     draw_symmetry_lines(app, painter, rect);
     draw_anchors(app, painter);
     draw_fountain_handles(app, painter);
     draw_shadow_handles(app, painter);
+    draw_contour_handles(app, painter);
     draw_blend_controls(app, painter);
 
     // Fit Text to Path waiting for its path: the text on the one near.
@@ -167,6 +171,10 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         }
     }
 
+    // The box a drag sizes File > Import's file to (#1936).
+    if let Some(r) = app.import_placement_box() {
+        haloed_rect(painter, view.rect_to_screen(r), Tokens::SELECTION);
+    }
     // Rubber bands and in-progress tools.
     match &app.drag {
         Drag::Box {
@@ -307,6 +315,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 view.to_screen(*node),
                 view.to_screen(*h),
                 look.preview_color,
+                app.settings.nodes.size.handle_head(),
             );
         }
         for (p, mark) in &look.nodes {
@@ -360,8 +369,9 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             if let Some(o) = out {
                 let so = view.to_screen(*o);
                 let mirrored = sp - (so - sp);
-                draw_control_handle(painter, sp, so, Tokens::SELECTION);
-                draw_control_handle(painter, sp, mirrored, Tokens::SELECTION);
+                let head = app.settings.nodes.size.handle_head();
+                draw_control_handle(painter, sp, so, Tokens::SELECTION, head);
+                draw_control_handle(painter, sp, mirrored, Tokens::SELECTION, head);
             }
             // A white edge round the hollow square, so it shows on a
             // black fill too (#672).
@@ -451,6 +461,21 @@ pub(crate) fn ime_at_caret(app: &App, painter: &Painter, top: Pos2, bottom: Pos2
     );
 }
 
+/// The printable part of the page `shown` (page space, y up): inside
+/// the printer's hard margins (see [`App::printable_margins`]).
+pub fn printable_rect(
+    app: &App,
+    shown: tracedraw_core::geometry::Rect,
+) -> tracedraw_core::geometry::Rect {
+    let (m, _) = app.printable_margins(shown.width(), shown.height());
+    tracedraw_core::geometry::Rect::new(
+        shown.x0 + m.left,
+        shown.y0 + m.bottom,
+        (shown.x1 - m.right).max(shown.x0 + m.left),
+        (shown.y1 - m.top).max(shown.y0 + m.bottom),
+    )
+}
+
 /// The window's background, the page with its shadow and border, bleed
 /// and printable area, the grids, and the objects rendered (`preview`
 /// moves the selection while it is dragged).
@@ -494,6 +519,20 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
             .collect();
         (ids, t)
     });
+    // A render on its thread shares the copy of the drawing the pages
+    // beside take in the Multipage View, and they share its copy: the
+    // drawing is copied once a change, not once a render (a zoom renders
+    // at once, every few frames).
+    #[cfg(not(target_arch = "wasm32"))]
+    let shares = app.shows_other_pages() && revision == app.engine.revision();
+    #[cfg(not(target_arch = "wasm32"))]
+    if shares {
+        if let Some((r, d)) = app.page_snapshot.borrow().as_ref() {
+            if *r == revision {
+                app.raster.borrow_mut().snapshot = Some(d.clone());
+            }
+        }
+    }
     let main = app.raster.borrow_mut().texture(
         painter.ctx(),
         doc,
@@ -510,9 +549,49 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         (app.view_mode == crate::app::ViewMode::Pixels).then(|| app.document_dpi()),
     );
     let main_rendered = app.raster.borrow().render_count() != renders_before;
-    if app.multipage {
-        crate::multipage::draw_other_pages(app, painter, rect, started, main_rendered);
+    // The whole page drawn small, with what is drawn beside it (#2354),
+    // for where the picture does not reach while the view moves (#2048).
+    // Not while something is previewed or only part of the drawing
+    // shows: the backdrop is the drawing as it stands.
+    #[cfg(not(target_arch = "wasm32"))]
+    let backdrop = if preview.is_none()
+        && app.render_focus().is_none()
+        && app.view_mode != crate::app::ViewMode::Pixels
+    {
+        app.raster.borrow_mut().backdrop(
+            painter.ctx(),
+            doc,
+            app.page,
+            app.backdrop_area(revision),
+            view,
+            rect,
+            revision,
+            app.wireframe,
+            app.simulate_overprints,
+            app.rasterize_complex_effects,
+            app.proof_colors,
+        )
+    } else {
+        None
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut raster = app.raster.borrow_mut();
+        raster.snapshot = None;
+        if shares {
+            if let Some((r, d)) = raster.kept_copy().filter(|(r, _)| *r == revision) {
+                let mut snap = app.page_snapshot.borrow_mut();
+                if snap.as_ref().is_none_or(|(s, _)| *s != r) {
+                    *snap = Some((r, d));
+                }
+            }
+        }
     }
+    // The pages beside the current one (the Multipage View, a spread of
+    // facing pages): their shadows and paper now, their objects over
+    // the current page's paper below, so what they hold across the
+    // spine shows on it (#1972).
+    let others = app.shows_other_pages();
 
     // Page: a flat grey shadow offset right and down, the white page, a
     // one-pixel grey border (pixel-aligned so it stays crisp). While
@@ -526,12 +605,15 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         ERect::from_min_max(r.min.round(), r.max.round())
     };
     // With facing pages the Multipage View has drawn every shadow first.
-    if app.show_page_border && !(app.multipage && app.doc().metadata.facing_pages) {
+    if app.show_page_shadow && !(app.multipage && app.doc().metadata.facing_pages) {
         painter.rect_filled(
             paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
             0.0,
             Tokens::page_shadow(),
         );
+    }
+    if others {
+        crate::multipage::draw_other_papers(app, painter, rect);
     }
     painter.rect_filled(paper, 0.0, Tokens::PAGE);
     if app.show_page_border {
@@ -569,7 +651,16 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     if app.show_bleed {
         let b = app.doc().metadata.bleed.max(0.0);
         if b > 0.0 {
-            let r = view.rect_to_screen(shown.inflate(b, b));
+            // Around the whole spread with facing pages, not at the
+            // spine (#1660).
+            let around = if app.doc().facing().is_some() {
+                app.shown_spread_rect(app.page)
+                    .map(|r| r.union(shown))
+                    .unwrap_or(shown)
+            } else {
+                shown
+            };
+            let r = view.rect_to_screen(around.inflate(b, b));
             painter.rect_stroke(
                 r,
                 0.0,
@@ -579,8 +670,9 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         }
     }
     if app.show_printable_area {
-        // Printable area: the page minus the printer's typical 5 mm hardware margin.
-        let r = view.rect_to_screen(shown.inflate(-5.0, -5.0));
+        // Printable area: the page minus the printer's hard margins, as
+        // the system reports them, else a typical 5 mm (#1924).
+        let r = view.rect_to_screen(printable_rect(app, shown));
         let dash = 4.0;
         for (a, b) in [
             (r.left_top(), r.right_top()),
@@ -607,33 +699,25 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
     if app.show_baseline_grid {
         draw_baseline_grid(app, painter, rect, paper);
     }
-
-    // While the last picture is moved or scaled into place, the whole
-    // page drawn small under it, so no part goes missing (a zoom out, a
-    // pan) before the new picture comes.
-    if !app.multipage && preview.is_none() && app.render_focus().is_none() && main.is_some() {
-        let stale = app.raster.borrow().stale();
-        let overview = app.raster.borrow_mut().overview(
-            painter.ctx(),
-            doc,
-            app.page,
-            revision,
-            app.wireframe,
-            app.simulate_overprints,
-            app.rasterize_complex_effects,
-            app.proof_colors,
-            stale,
-        );
-        if let (true, Some((tex, r))) = (stale, overview) {
-            painter.with_clip_rect(rect).image(
-                tex,
-                view.rect_to_screen(r),
-                ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
-        }
+    if others {
+        crate::multipage::draw_other_pages(app, painter, rect, started, main_rendered);
     }
+
     if let Some((tex, at)) = main {
+        // Where the picture does not reach (it is shown scaled or shifted
+        // into place while the view moves): the whole page drawn small,
+        // instead of blank paper until the new picture comes (#2048).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some((back, back_at)) = backdrop {
+            for part in backdrop_parts(rect, at, back_at) {
+                painter.with_clip_rect(part).image(
+                    back,
+                    back_at,
+                    ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            }
+        }
         painter.image(
             tex,
             at,
@@ -673,9 +757,9 @@ pub(crate) fn outside_page_mask_color(app: &App) -> Color32 {
 /// rectangles a frame and the outlines flattened once per change.
 fn mask_outside_pages(app: &App, painter: &Painter, rect: ERect, paper: ERect) {
     let mut pages = vec![paper];
-    if app.multipage {
+    if app.shows_other_pages() {
         pages.extend(
-            app.multipage_layout()
+            app.shown_pages()
                 .iter()
                 .filter(|(id, _)| *id != app.page)
                 .map(|(_, r)| {
@@ -708,6 +792,21 @@ fn mask_outside_pages(app: &App, painter: &Painter, rect: ERect, paper: ERect) {
             }
         }
     }
+}
+
+/// The parts of the canvas `rect` where the backdrop (on screen at
+/// `back_at`) shows: those the page's picture (at `at`) does not cover.
+/// None while the picture covers the canvas, as it does at rest. The
+/// two are never drawn over one another: see-through objects would show
+/// twice as dense there.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub(crate) fn backdrop_parts(rect: ERect, at: ERect, back_at: ERect) -> Vec<ERect> {
+    let area = rect.intersect(back_at);
+    if !(area.width() > 0.0 && area.height() > 0.0) {
+        return Vec::new();
+    }
+    // (A picture a hair short of the canvas's edge covers it.)
+    outside(area, &[at.expand(0.5)])
 }
 
 /// The parts of `area` no rectangle of `holes` covers, as rectangles:
@@ -1013,6 +1112,50 @@ fn draw_drop_frame(app: &App, painter: &Painter) {
     }
 }
 
+/// The object a move let go with Alt (Alt+Shift) would copy the fill
+/// (outline) onto: its outline in the selection colour, and under the
+/// pointer what the drop does (discussion #2066).
+fn draw_drop_colour(app: &App, painter: &Painter) {
+    use crate::drop_menu::DropAction;
+    if !matches!(app.drag, crate::app::Drag::Move { .. }) {
+        return;
+    }
+    let (Some(action), Some(target)) = (app.drop_colour, app.drop_colour_target) else {
+        return;
+    };
+    // Alt alone over a clip frame puts the selection into it instead.
+    if action == DropAction::CopyFill && app.drop_frame.is_some() {
+        return;
+    }
+    let Some(s) = app.doc().find_shape(target) else {
+        return;
+    };
+    let accent = Tokens::ACCENT;
+    for (pts, _) in flatten(&s.page_path(), &app.view) {
+        if pts.len() >= 2 {
+            painter.add(egui::Shape::line(pts, EStroke::new(1.5, accent)));
+        }
+    }
+    let Some(p) = app.pointer_page else {
+        return;
+    };
+    let at = app.view.to_screen(p) + egui::vec2(18.0, 24.0);
+    let g = painter.layout_no_wrap(
+        crate::i18n::tr(action.key()),
+        egui::FontId::proportional(12.0),
+        Tokens::text(),
+    );
+    let bg = ERect::from_min_size(at, g.size() + egui::vec2(12.0, 8.0));
+    painter.rect(
+        bg,
+        2.0,
+        Tokens::panel(),
+        EStroke::new(1.0, Tokens::border()),
+        egui::StrokeKind::Inside,
+    );
+    painter.galley(bg.min + egui::vec2(6.0, 4.0), g, Tokens::text());
+}
+
 fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
     let blue = Color32::from_rgb(40, 110, 220);
@@ -1169,15 +1312,14 @@ fn draw_fountain_handles(app: &App, painter: &Painter) {
 /// handle (the shadow colour) and the dashed line between them with the
 /// opacity slider on it.
 fn draw_shadow_handles(app: &App, painter: &Painter) {
-    use crate::shadow_tool::{shadow_handles, ShadowHandle};
-    if app.tool != Tool::DropShadow {
+    use crate::shadow_tool::ShadowHandle;
+    let Some((_, sh, _)) = app.selected_shadow() else {
         return;
-    }
-    let Some((_, sh, b)) = app.selected_shadow() else {
+    };
+    let Some(hs) = app.shown_shadow_handles() else {
         return;
     };
     let view = &app.view;
-    let hs = shadow_handles(&sh, b);
     let pos = |h: ShadowHandle| {
         hs.iter()
             .find(|(k, _)| *k == h)
@@ -1219,6 +1361,49 @@ fn draw_shadow_handles(app: &App, painter: &Painter) {
             egui::StrokeKind::Outside,
         );
     }
+}
+
+/// Contour tool: the selected contour's line from the object's edge, the
+/// offset handle (a square) at its end and the steps handle (a bar across
+/// it) at the first step; plain segments and small shapes (#1265).
+fn draw_contour_handles(app: &App, painter: &Painter) {
+    let Some(h) = app.contour_handles() else {
+        return;
+    };
+    let view = &app.view;
+    let (a, z) = (view.to_screen(h.anchor), view.to_screen(h.end));
+    haloed_polyline(painter, &[a, z], false, Tokens::SELECTION);
+    let held =
+        |k: crate::contour_tool::ContourHandle| app.contour_handle_drag.map(|(d, _)| d) == Some(k);
+    if let Some(q) = h.steps {
+        let q = view.to_screen(q);
+        let fill = if held(crate::contour_tool::ContourHandle::Steps) {
+            Tokens::SELECTION
+        } else {
+            Color32::WHITE
+        };
+        let rect = ERect::from_center_size(q, egui::vec2(5.0, 13.0));
+        painter.rect_filled(rect, 1.0, fill);
+        painter.rect_stroke(
+            rect,
+            1.0,
+            EStroke::new(1.0, Tokens::SELECTION),
+            egui::StrokeKind::Outside,
+        );
+    }
+    let fill = if held(crate::contour_tool::ContourHandle::Offset) {
+        Tokens::SELECTION
+    } else {
+        Color32::WHITE
+    };
+    let rect = ERect::from_center_size(z, egui::vec2(9.0, 9.0));
+    painter.rect_filled(rect, 0.0, fill);
+    painter.rect_stroke(
+        rect,
+        0.0,
+        EStroke::new(1.0, Tokens::SELECTION),
+        egui::StrokeKind::Outside,
+    );
 }
 
 /// Blend tool: the selected blend's start and end squares, the line
@@ -1366,6 +1551,57 @@ fn draw_frame_links(app: &App, painter: &Painter) {
                 EStroke::NONE,
             ));
         }
+    }
+}
+
+/// Linked text content (#1568): with a linked text selected or being
+/// edited, each text of the page linked with it is outlined with dashes
+/// and carries a small chain mark, as the selected ones do.
+fn draw_content_links(app: &App, painter: &Painter) {
+    if !app.selection_has_content_link() {
+        return;
+    }
+    // Only a linked text is selected from here on: the drawing is
+    // searched for its link, never for every selected object.
+    let doc = app.doc();
+    let layers = app.page_layers();
+    let on_page = |id| {
+        doc.top_level_of(id)
+            .is_some_and(|top| layers.iter().any(|l| l.shapes.iter().any(|s| s.id == top)))
+    };
+    let view = &app.view;
+    let stroke = EStroke::new(1.0, Tokens::SELECTION);
+    let chain_at = |r: ERect| {
+        // Two links of a chain at the box's top right corner.
+        let c = r.right_top() + egui::vec2(8.0, -8.0);
+        for dx in [-3.0, 3.0] {
+            painter.rect_stroke(
+                ERect::from_center_size(c + egui::vec2(dx, 0.0), egui::vec2(8.0, 5.0)),
+                2.5,
+                EStroke::new(1.5, Tokens::SELECTION),
+                epaint::StrokeKind::Middle,
+            );
+        }
+    };
+    for id in app.linked_selection_ids() {
+        if let Some(s) = doc.shape_on_page(id).filter(|_| on_page(id)) {
+            chain_at(view.rect_to_screen(s.bounds()));
+        }
+    }
+    for id in app.content_linked_others() {
+        let Some(s) = doc.shape_on_page(id).filter(|_| on_page(id)) else {
+            continue;
+        };
+        let r = view.rect_to_screen(s.bounds()).expand(3.0);
+        let pts = [
+            r.left_top(),
+            r.right_top(),
+            r.right_bottom(),
+            r.left_bottom(),
+            r.left_top(),
+        ];
+        painter.extend(egui::Shape::dashed_line(&pts, stroke, 4.0, 3.0));
+        chain_at(r);
     }
 }
 
@@ -1624,7 +1860,10 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
             .rotation_center()
             .map(|c| app.view.to_screen(c))
             .unwrap_or(r.center());
-        // The centre of rotation: a ring with a dot.
+        // The centre of rotation: a ring with a dot, black on a white
+        // edge so it shows on a dark drawing (#1664).
+        painter.circle_stroke(c, 8.0, EStroke::new(4.0, Color32::WHITE));
+        painter.circle_filled(c, 3.0, Color32::WHITE);
         painter.circle_stroke(c, 8.0, EStroke::new(2.0, Color32::BLACK));
         painter.circle_filled(c, 2.0, Color32::BLACK);
         for (h, p) in app.handle_positions(bounds) {
@@ -1671,10 +1910,31 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
 /// A rotate mode handle at `p`: a curved double arrow around each
 /// corner, a straight double arrow along each side (sideways at the top
 /// and bottom, up and down at the left and right). Black, 2 points thick,
-/// with solid heads.
+/// with solid heads, over a white edge so it shows on a dark drawing
+/// (#1664).
 fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
-    let ink = Color32::BLACK;
-    let stroke = EStroke::new(2.0, ink);
+    draw_rotate_arrows(
+        painter,
+        p,
+        h,
+        Color32::WHITE,
+        4.0,
+        EStroke::new(1.5, Color32::WHITE),
+    );
+    draw_rotate_arrows(painter, p, h, Color32::BLACK, 2.0, EStroke::NONE);
+}
+
+/// One pass of [`draw_rotate_handle`]: its arrows in `ink`, `width` thick,
+/// the heads with an `edge`.
+fn draw_rotate_arrows(
+    painter: &Painter,
+    p: Pos2,
+    h: Handle,
+    ink: Color32,
+    width: f32,
+    edge: EStroke,
+) {
+    let stroke = EStroke::new(width, ink);
     // A solid head with its tip at `tip`, pointing along `dir`.
     let head = |tip: Pos2, dir: egui::Vec2| {
         let d = dir.normalized();
@@ -1682,7 +1942,7 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle) {
         epaint::PathShape::convex_polygon(
             vec![tip, tip - d * 4.5 + n * 3.0, tip - d * 4.5 - n * 3.0],
             ink,
-            EStroke::NONE,
+            edge,
         )
     };
     if h.is_corner() {
@@ -2057,7 +2317,8 @@ fn draw_pixel_grid(app: &App, painter: &Painter, rect: ERect) {
 /// A node's control handle: a dashed line from the node `node` to the
 /// control point `ctrl`, which is a solid arrow head pointing away from
 /// the node.
-fn draw_control_handle(painter: &Painter, node: Pos2, ctrl: Pos2, color: Color32) {
+/// The head is `head` long (the node size's, #1643) and as wide.
+fn draw_control_handle(painter: &Painter, node: Pos2, ctrl: Pos2, color: Color32, head: f32) {
     let d = ctrl - node;
     let len = d.length();
     if len < 0.5 {
@@ -2065,7 +2326,8 @@ fn draw_control_handle(painter: &Painter, node: Pos2, ctrl: Pos2, color: Color32
     }
     let u = d / len;
     let n = egui::vec2(-u.y, u.x);
-    let head = 7.0_f32.min(len);
+    let half = head / 2.0;
+    let head = head.min(len);
     let base = ctrl - u * head;
     if len > head {
         // Dashes in the colour and white in turn, as wide as the Pen
@@ -2081,7 +2343,7 @@ fn draw_control_handle(painter: &Painter, node: Pos2, ctrl: Pos2, color: Color32
         );
     }
     painter.add(epaint::PathShape::convex_polygon(
-        vec![ctrl, base + n * 3.5, base - n * 3.5],
+        vec![ctrl, base + n * half, base - n * half],
         color,
         EStroke::new(1.0, Color32::WHITE),
     ));
@@ -2202,8 +2464,9 @@ fn draw_nodes(app: &App, painter: &Painter) {
                     );
                     if let (Some(a), Some(b)) = ends {
                         let sp = |q| view.to_screen(s.transform * q);
-                        draw_control_handle(painter, sp(a), sp(c1), main);
-                        draw_control_handle(painter, sp(b), sp(c2), main);
+                        let head = prefs.size.handle_head();
+                        draw_control_handle(painter, sp(a), sp(c1), main, head);
+                        draw_control_handle(painter, sp(b), sp(c2), main, head);
                     }
                 }
             }
@@ -2295,6 +2558,11 @@ fn draw_nodes(app: &App, painter: &Painter) {
                     prefs.unselected_filled.then_some(Color32::WHITE)
                 };
                 node_marker(painter, p, size, prefs.cusp, fill, main);
+                // A fixed point, which the curve passes through, has a
+                // second frame around it (#1758).
+                if s.spline_fixed.get(index).copied().unwrap_or(false) {
+                    node_marker(painter, p, size + 6.0, prefs.cusp, None, main);
+                }
             }
             continue;
         }
@@ -2371,7 +2639,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
             if selected {
                 for c in [n.ctrl_in, n.ctrl_out].into_iter().flatten() {
                     let cp = view.to_screen(s.transform * c);
-                    draw_control_handle(painter, p, cp, main);
+                    draw_control_handle(painter, p, cp, main, prefs.size.handle_head());
                 }
             }
             let shape = match nodes::node_type_of_with(&n, &s.node_types) {
@@ -2443,24 +2711,24 @@ fn draw_nodes(app: &App, painter: &Painter) {
             painter.circle_filled(c, 1.2, Tokens::HANDLE);
         }
     }
+    // The node marquees look like the Pick tool's: blue dashes on a
+    // white line, so they show on blue artwork too (#1849).
     if let Drag::NodeLasso { points } = &app.drag {
         let pts: Vec<Pos2> = points.iter().map(|p| view.to_screen(*p)).collect();
-        dashed_polyline(
-            painter,
-            &pts,
-            EStroke::new(1.0, Tokens::SELECTION),
-            4.0,
-            3.0,
-        );
+        if pts.len() > 1 {
+            dashed_selection_line(painter, &pts);
+        }
     }
     if let Drag::NodeMarquee { start, current } = &app.drag {
         let r = view.rect_to_screen(Rect::from_points(*start, *current));
-        painter.rect_stroke(
-            r,
-            0.0,
-            EStroke::new(1.0, Tokens::SELECTION),
-            epaint::StrokeKind::Outside,
-        );
+        let pts = [
+            r.left_top(),
+            r.right_top(),
+            r.right_bottom(),
+            r.left_bottom(),
+            r.left_top(),
+        ];
+        dashed_selection_line(painter, &pts);
     }
     crate::corner_widgets::draw(app, painter, main);
 }
@@ -2579,11 +2847,17 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
     if !app.show_guides {
         return;
     }
-    let Ok(page) = app.doc().page(app.page) else {
+    if app.doc().page(app.page).is_err() {
         return;
-    };
+    }
+    // The guidelines not being edited (the master page's, which every
+    // page shows, or the page's own, #1928), as they are.
+    for g in app.other_guides_on_page() {
+        let color = to_color32(app.guide_color(&g));
+        draw_guide_line(app, painter, rect, g.line, color, g.style.pattern());
+    }
     let moving = app.guide_drag_moves();
-    for (i, g) in page.guides.iter().enumerate() {
+    for (i, g) in app.page_guides().iter().enumerate() {
         let moved = moving.iter().find(|(k, _)| *k == i).map(|(_, g)| g);
         let g = match &app.drag {
             Drag::RotateGuide { index, guide, .. } if *index == i => guide,
@@ -3075,6 +3349,25 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
                 }
             }
         }
+        // The selected mesh node's handles: one on each grid line leaving
+        // it, dragged to bend the line (discussion #2073).
+        if let Some((_, i)) = app.selected_mesh_node().filter(|(id, _)| *id == s.id) {
+            let base = crate::mesh_tool::MESH_NODE_BASE + i;
+            if let Some(node) = crate::interaction2::effect_point(s, base) {
+                let from = app.view.to_screen(node);
+                for (k, q) in crate::interaction2::mesh_handle_points(s, i) {
+                    let to = app.view.to_screen(q);
+                    painter.line_segment([from, to], egui::Stroke::new(1.0, blue));
+                    let held = app.effect_node_drag == Some((s.id, k));
+                    painter.circle(
+                        to,
+                        3.5,
+                        if held { blue } else { egui::Color32::WHITE },
+                        egui::Stroke::new(1.0, blue),
+                    );
+                }
+            }
+        }
         for (i, p) in nodes {
             let sp = app.view.to_screen(p);
             let r = egui::Rect::from_center_size(sp, egui::vec2(7.0, 7.0));
@@ -3097,6 +3390,78 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #1906: View > Page > Page Border and Page Shadow are two options:
+    /// each draws its part of the page's edge alone, and both are kept
+    /// with the view's preferences.
+    #[test]
+    fn the_page_border_and_its_shadow_are_separate_options() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let drawn = |app: &mut App| -> (bool, bool) {
+            let mut seen = (false, false);
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(ERect::from_min_size(Pos2::ZERO, egui::vec2(1600.0, 1000.0))),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+                out.textures_delta.clear();
+                // The page on the screen: other widgets share the border's
+                // grey, so only rectangles on the page's own edge count.
+                let r = app.view.rect_to_screen(app.page_rect());
+                let paper = ERect::from_min_max(r.min.round(), r.max.round());
+                fn walk(s: &egui::Shape, paper: ERect, seen: &mut (bool, bool)) {
+                    match s {
+                        egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, paper, seen)),
+                        egui::Shape::Rect(r) => {
+                            let shadow = paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET);
+                            seen.0 |= r.fill == Tokens::page_shadow() && r.rect == shadow;
+                            seen.1 |= r.stroke.width > 0.0
+                                && r.stroke.color == Tokens::page_border()
+                                && r.rect == paper;
+                        }
+                        _ => {}
+                    }
+                }
+                seen = (false, false);
+                out.shapes
+                    .iter()
+                    .for_each(|c| walk(&c.shape, paper, &mut seen));
+            }
+            seen
+        };
+        assert_eq!(drawn(&mut app), (true, true), "both by default");
+        app.show_page_shadow = false;
+        assert_eq!(
+            drawn(&mut app),
+            (false, true),
+            "the border without the shadow"
+        );
+        app.show_page_shadow = true;
+        app.show_page_border = false;
+        assert_eq!(
+            drawn(&mut app),
+            (true, false),
+            "the shadow without the border"
+        );
+        app.show_page_shadow = false;
+        assert_eq!(drawn(&mut app), (false, false));
+        // Kept with the view's preferences, apart.
+        app.show_page_border = true;
+        let v = app.view_prefs();
+        assert!(v.page_border && !v.page_shadow);
+        let json = serde_json::to_string(&v).expect("json");
+        let back: crate::settings::ViewPrefs = serde_json::from_str(&json).expect("back");
+        let mut next = App::headless();
+        next.apply_view_prefs(&back);
+        assert!(next.show_page_border && !next.show_page_shadow);
+        // Older preferences, with no word on the shadow, keep it.
+        let old: crate::settings::ViewPrefs =
+            serde_json::from_str(r#"{"page_border": false}"#).expect("old");
+        assert!(!old.page_border && old.page_shadow);
+    }
 
     /// The parts of the window outside the pages: bands around one page,
     /// and around two side by side, with nothing left over or covered.

@@ -220,9 +220,28 @@ pub(crate) mod opened_files;
 // (vendor/README.md).
 #[cfg(macos_platform)]
 pub(crate) mod quit_request;
+// TraceDraw: the program's say on each pointer of Android's motion events,
+// with its tool, for palm rejection (vendor/README.md).
+#[cfg(android_platform)]
+pub(crate) mod pointer_filter;
+// TraceDraw: a mouse's buttons, wheel and hover on Android
+// (vendor/README.md).
+#[cfg(android_platform)]
+pub(crate) mod android_mouse;
 // TraceDraw: files dragged over a window on Wayland (vendor/README.md).
 #[cfg(wayland_platform)]
 pub(crate) mod file_drop;
+// TraceDraw: a graphics tablet's pen on Wayland (vendor/README.md).
+#[cfg(wayland_platform)]
+pub(crate) mod tablet_tool;
+// TraceDraw: a finger or a pen on the window's frame on Wayland
+// (vendor/README.md).
+#[cfg(wayland_platform)]
+pub(crate) mod frame_input;
+// TraceDraw: the pointer kept on a shortcut with Alt on Windows
+// (vendor/README.md).
+#[cfg(windows_platform)]
+pub(crate) mod alt_shortcuts;
 mod platform_impl;
 mod utils;
 pub mod window;

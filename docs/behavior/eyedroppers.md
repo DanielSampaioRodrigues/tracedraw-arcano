@@ -7,6 +7,14 @@ pointer is the pipette in Select mode and the paint bucket in Apply mode
 (the pipette again while Shift is held with the attributes eyedropper,
 whose Shift+click samples; `ui::cursors` tests, #403).
 
+In Apply mode Ctrl+click samples again with either tool and stays in
+Apply mode, with no undo step (#1302,
+`eyedropper::tests::ctrl_click_samples_again_in_apply_mode`); the
+pointer is the pipette while Ctrl is held. Ctrl is the one modifier
+both tools leave free: the colour eyedropper's Shift reads and writes
+the outline, so its Ctrl+Shift+click samples the outline colour first;
+the attributes eyedropper keeps Shift+click as a second way to sample.
+
 Colours and attributes are read from the innermost object under the
 pointer: a group's child, or a clip frame's content inside the frame (the
 frame itself where no content is under the pointer), their transforms
@@ -29,7 +37,8 @@ sampled colour or attributes never changes a locked object.
     stop; otherwise the outline colour;
   - Shift+click reads the outline colour first.
 - Apply mode, click on an object: a solid fill with the sampled colour
-  (`SetFill`); Shift+click sets the outline colour instead, creating a
+  (`SetFill`); Ctrl+click samples again (Ctrl+Shift+click: the outline
+  first); Shift+click sets the outline colour instead, creating a
   hairline outline when the object has none (`SetStroke`).
 - The object to paint is the usual hit test, else the topmost unfilled
   closed object whose interior contains the point, so an empty
@@ -58,8 +67,9 @@ beside the pointer shows the colour a click would take
 The colour is the one the click would take: for the tool what
 `sample_color_at` reads (Shift: the outline first); for a picker the
 fill, else the outline, else white over empty paper. Off every object
-the tool shows no box (a click there takes nothing). Apply mode, a held
-button and the other tools show none.
+the tool shows no box (a click there takes nothing). Apply mode (unless
+Ctrl is held, which samples again), a held button and the other tools
+show none.
 
 A picker's request lives only while its eyedropper button is being
 drawn (the button renews it every frame, `color_picker::picking` drops
@@ -88,15 +98,26 @@ ms on the test machine).
   default), the
   Transformations menu (Size, Rotation, Position; off by default) and
   Effects (off by default).
-- Select mode, click: reads fill, outline, the first text span's font
-  (family, size, bold, italic), bounds width and height, rotation of the
-  transform (angle of its x axis), bounds centre, opacity, drop shadow
-  and live effects.
-- Apply mode, click (Shift+click samples again instead): one batch
+- Select mode, click: reads fill, outline and the first text span's
+  character format (font family, size, bold, italic, underline,
+  strikethrough, letter spacing, OpenType features, variable font axes)
+  from the innermost object under the pointer (a group's child, a clip
+  frame's frame or content), and the bounds width and height, rotation
+  of the transform (angle of its x axis), bounds centre, opacity, drop
+  shadow and live effects from the object as a whole. A text whose
+  characters all carry the same colour (or outline) of their own gives
+  that as its fill (outline). Reading the fill and outline of the group
+  itself, which has none, made Apply take them away (#1550,
+  `pick_drag_tests::copying_properties_from_a_group_takes_the_object_clicked`).
+- Apply mode, click (Shift+click or Ctrl+click samples again instead): one batch
   "Copy Attributes" with the ticked groups.
-  - Fill and Outline: `SetFill`, `SetStroke`.
+  - Fill and Outline: `SetFill`, `SetStroke`. The characters of a text
+    target let the colours (outlines) they carry of their own go, so the
+    copied fill (outline) shows. A mesh fill, whose nodes lie in its
+    object's own space, is fitted to the target's box
+    (`copy_props::tests::a_mesh_fill_is_fitted_to_the_object_it_goes_to`).
   - Text: when both objects are text, every span of the target takes
-    the sampled font; the text itself is kept.
+    the sampled character format; the text itself is kept.
   - Transparency: the opacity and the transparency mask (fountain,
     pattern or texture, with its merge mode and what it applies to) in
     place of the target's own; its other live effects stay; a sample

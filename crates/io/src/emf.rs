@@ -710,8 +710,8 @@ impl<'a> Player<'a> {
         let mut span = TextSpan::new(text, f.face.clone(), size_pt);
         span.bold = f.bold;
         span.italic = f.italic;
-        span.underline = f.underline;
-        span.strikethrough = f.strikeout;
+        span.underline = f.underline.into();
+        span.strikethrough = f.strikeout.into();
         let mut s = self.new_shape(ShapeKind::Text {
             spans: vec![span],
             origin: Point::ZERO,
@@ -2290,7 +2290,7 @@ mod tests {
 /// text as EXTTEXTOUTW with a LOGFONT, bitmaps as 32-bit DIBs, and
 /// clip frames as clip paths. Live effects are expanded first.
 pub fn page_to_emf(doc: &tracedraw_core::Document, page_index: usize) -> Vec<u8> {
-    let doc = &*crate::resolve_open_fills(doc);
+    let doc = &*crate::for_export(doc, Some(page_index));
     let Some(page) = doc.pages.get(page_index) else {
         return Vec::new();
     };
@@ -2669,8 +2669,8 @@ impl EmfWriter<'_> {
         push_i32(&mut body, (rot_deg * 10.0).round() as i32);
         push_i32(&mut body, if first.bold { 700 } else { 400 });
         body.push(first.italic as u8);
-        body.push(first.underline as u8);
-        body.push(first.strikethrough as u8);
+        body.push(u8::from(first.underline.is_on()));
+        body.push(u8::from(first.strikethrough.is_on()));
         body.extend_from_slice(&[1, 0, 0, 0, 0]);
         let mut face: Vec<u16> = first.font_family.encode_utf16().take(31).collect();
         face.resize(32, 0);
@@ -3041,7 +3041,7 @@ mod export_tests {
 /// LOGFONT; bitmaps are 32-bit DIBs through STRETCHDIB. Live effects are
 /// expanded, clip frames are drawn unclipped (contents then frame).
 pub fn page_to_wmf(doc: &tracedraw_core::Document, page_index: usize) -> Vec<u8> {
-    let doc = &*crate::resolve_open_fills(doc);
+    let doc = &*crate::for_export(doc, Some(page_index));
     let Some(page) = doc.pages.get(page_index) else {
         return Vec::new();
     };
@@ -3332,8 +3332,8 @@ impl WmfWriter<'_> {
         lf.extend_from_slice(&((rot_deg * 10.0).round() as i16).to_le_bytes());
         lf.extend_from_slice(&(if first.bold { 700i16 } else { 400 }).to_le_bytes());
         lf.push(first.italic as u8);
-        lf.push(first.underline as u8);
-        lf.push(first.strikethrough as u8);
+        lf.push(u8::from(first.underline.is_on()));
+        lf.push(u8::from(first.strikethrough.is_on()));
         lf.extend_from_slice(&[1, 0, 0, 0, 0]);
         let mut face: Vec<u8> = first
             .font_family

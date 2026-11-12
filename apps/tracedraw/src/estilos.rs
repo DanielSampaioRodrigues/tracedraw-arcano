@@ -649,8 +649,8 @@ fn summary(styles: &[TextStyle], st: &TextStyle) -> Vec<String> {
     for (on, key) in [
         (chars.bold, "tstyle.sum_bold"),
         (chars.italic, "tstyle.sum_italic"),
-        (chars.underline, "tstyle.sum_underline"),
-        (chars.strikethrough, "tstyle.sum_strike"),
+        (chars.underline.map(|l| l.is_on()), "tstyle.sum_underline"),
+        (chars.strikethrough.map(|l| l.is_on()), "tstyle.sum_strike"),
     ] {
         if on == Some(true) {
             text.push(trf(key, &[]));
@@ -697,7 +697,7 @@ fn summary(styles: &[TextStyle], st: &TextStyle) -> Vec<String> {
         let Some(style) = style.filter(|s| !s.is_plain()) else {
             continue;
         };
-        if on != Some(true) {
+        if !on.is_some_and(|l| l.is_on()) {
             continue;
         }
         let mut kind = crate::ui::text_docker::line_kind_name(style.kind);

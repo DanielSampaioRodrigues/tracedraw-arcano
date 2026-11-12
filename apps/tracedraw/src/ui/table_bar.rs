@@ -33,7 +33,7 @@ fn length(ui: &mut Ui, app: &App, mm: f64, min_mm: f64) -> Option<f64> {
     let r = ui.add(
         crate::ui::field::NumField::new(&mut v)
             .range(units.from_mm(min_mm)..=units.from_mm(5000.0))
-            .max_decimals(app.settings.precision.min(10) as usize)
+            .length_decimals(app.settings.precision.min(10) as usize)
             .suffix(format!(" {}", units.short()))
             .width(64.0),
     );
@@ -336,10 +336,15 @@ fn cell_text(app: &mut App, ui: &mut Ui) {
         ("toolbar.bold", egui::RichText::new("B").strong()),
         ("toolbar.italic", egui::RichText::new("I").italics()),
         ("toolbar.underline", egui::RichText::new("U").underline()),
+        (
+            "toolbar.strikethrough",
+            egui::RichText::new("S").strikethrough(),
+        ),
     ] {
         let on = match key {
             "toolbar.bold" => app.text_bold,
             "toolbar.italic" => app.text_italic,
+            "toolbar.strikethrough" => app.text_strikethrough,
             _ => app.text_underline,
         };
         if ui
@@ -350,6 +355,7 @@ fn cell_text(app: &mut App, ui: &mut Ui) {
             match key {
                 "toolbar.bold" => app.text_bold = !on,
                 "toolbar.italic" => app.text_italic = !on,
+                "toolbar.strikethrough" => app.text_strikethrough = !on,
                 _ => app.text_underline = !on,
             }
             changed = true;

@@ -39,8 +39,49 @@ palette's swatch size and one row. A palette shows in one bar at most.
   where). The palette menu's Position > Top, Bottom, Left, Right,
   Floating does the same; a double click on a floating bar's title docks
   it at the bottom. Lock Toolbars keeps the bars where they are.
+- Beside another bar (live test of 0.41: bars docked only at the
+  window's edges): each side has five places for palette bars, from the
+  edge inwards (`settings::BarSlot`). At the left and the right: at the
+  very edge, after the default palette's column there (the usual place),
+  after the toolbox, after the docker columns (and the default palette
+  between them), and beside the drawing. Along the top and the bottom:
+  under the toolbars (over the status bar), after the default palette's
+  row there, after the toolbox, after the document palette row, and
+  beside the drawing (the usual place). Every bar drawn at a side (the
+  toolbox, the default palette, the document palette row, the docker
+  columns, the palette bars) and every place between them is noted as
+  the frame draws them (`App::side_marks`). A bar dragged over one of
+  them and let go on its half towards the edge goes just outside it, on
+  the other half just inside it, with a 4 px blue line on that edge
+  while held; over a palette bar it takes that bar's place in the order,
+  over itself it stays (`palette_bars::side_target`, `place_bar`). The
+  bars of one place lie side by side in their order in the preferences
+  (along the bottom from the bottom up). The place is kept in the
+  preferences and in workspace files (`PaletteBarPrefs::slot`, none
+  meaning the usual place); docking at another side by its edge or the
+  Position menu brings back that side's usual place, the same side keeps
+  it. Checks: `ui::palette_bars::rename_tests::a_bar_let_go_over_a_docked_bar_goes_beside_it`,
+  `ui::palette_bars::rename_tests::a_bar_dropped_beside_another_takes_its_place_in_the_order`,
+  `pick_drag_tests::a_palette_bar_docks_beside_the_toolbox_and_beside_another_bar`.
+- Among the toolbars: along the top a bar can also lie between the rows
+  of toolbars, as a row of its own across the whole window. Dropped
+  within 7 px of the line between two rows of toolbars (a blue line
+  shows it), it lies between them; near the top line of the first row,
+  over them all; near the bottom line of the last row, under them all;
+  dropped back on a bar among the toolbars, at that bar's place. The
+  palette menu's Position > Dock at Top, Among the Toolbars puts it
+  under every toolbar; Position > Top puts it back beside the drawing.
+  The place is the index of the row of toolbars it lies over
+  (`PaletteBarPrefs::toolbar_row`, kept in the preferences and workspace
+  files; past the last row means under them all). Over the middle of a
+  row of toolbars a drop docks as before. The default palette keeps its
+  own places (`palette_bars::toolbar_target`,
+  `pick_drag_tests::a_palette_bar_docks_between_the_toolbars_at_the_top`).
 - Each bar has its own Rows and Swatch Size; the default palette's are
   the ones in Options, which the document palette row under it follows.
+  Options > Customization > Color Palette also has the default palette's
+  Position; its Rows and Position act as the palette menu's (a floating
+  palette's window takes the rows at its length, #1983).
 - Close Palette in its menu (or the close button of its floating window)
   closes the bar.
 - Floating: a small window with the palette's name (cut with an ellipsis
@@ -182,16 +223,45 @@ management converts. A CMYK drawing keeps them CMYK (#483, #620,
 | Click a swatch | Uniform fill of the selection (with nothing selected: the default fill for new objects); every click counts: one whose pointer slipped a few pixels but was let go on the same swatch, and the first click after a hold that opened the shades (#1336, `pick_drag_tests::every_click_on_a_palette_colour_applies_it`) |
 | Right click | Outline colour (Options > Customization > Color Palette can make it open the palette menu instead); a right click that slipped a few pixels on the swatch counts too (#1336) |
 | Ctrl+click | A tenth of the colour mixes into the selection's uniform fill (CMYK with CMYK, else in RGB) |
+| A finger (touch screen): tap, hold, hold longer | A tap is a click (the fill). Held 0.5 s and let go: the outline colour, as the right click (when Options make the right click open the menu, a finger held 0.8 s opens it, egui's long press). Held 1 s: the shades pop-up, whose tap fills and whose long press colours the outline; the release then changes nothing. A finger that slides off the row (towards the drawing) drags the colour; one that slides along a row longer than its room scrolls the row with the finger, a swatch for every swatch's width, and fills nothing when it lifts (#1611, #1707, #1997, `ui::palette::tests::a_finger_held_on_a_swatch_sets_the_outline`, `ui::palette::tests::a_finger_dragged_along_the_palette_scrolls_it`) |
 | Click and hold (0.5 s) | A 5 x 5 pop-up of the colour's shades: lighter tints upwards, more black downwards, less colourful to the left, more to the right; click one (right click for the outline) |
 | Drag a swatch onto an object (left button) | Inside it (also inside a closed object with no fill): its uniform fill; within 4 points of its outline: the outline's colour (an object with no outline gets the default pen in that colour); No Color takes the fill or the outline away. The object need not be selected and the selection stays; one undo step; the colour joins the document palette as with a click |
 | Drag a swatch onto the document palette | The colour joins it |
 | Drag objects (Pick tool) onto the document palette | Their fill and outline colours join it (as Add from Selection); the objects stay where they were; the pointer shows a copy sign there |
+| Drag one picture (Pick tool) onto any palette strip, docked or floating, the document palette too | Extract Colors from Picture opens and the picture stays where it was (see below, #2137) |
 | While dragging a swatch | A chip of the colour follows the pointer: filled over a fill, a ring over an outline; the pointer shows whether letting go changes anything; Esc drops nothing |
 | Scroll arrows, wheel | One swatch at a time (every row moves by one); holding an arrow keeps scrolling |
 | Ctrl+wheel | Larger (up) or smaller (down) swatches, 2 px a notch, 8 to 48 px, kept in the preferences; nothing scrolls or zooms |
 | The show-all button | Every colour of the row in a grid above it (below it, clear of every row, when the palette is along the top; beside a column, clear of every column; #610, `ui::palette::tests::every_colour_opens_clear_of_all_the_rows`); click to apply, click elsewhere or Esc to close |
 | Tooltip | The colour's name in bold, then its values one per line (`C: 60`, `M: 0`, `Y: 40`, `K: 20`; `R: 255`, `G: 0`, `B: 0`) |
 | No drawing shown (Welcome Screen, or none open) | The swatches keep their colours and their tooltips; clicks and drags do nothing and the eyedropper is off (#1082) |
+
+## Colours from a picture (#2137)
+
+One picture (a bitmap) moved with the Pick tool and let go over a palette
+strip (the default palette, a palette bar docked or floating, the
+document palette's row or bar; the strip drawn last wins where they
+overlap) is not moved: the window **Extract Colors from Picture** opens
+for that palette. Anything else let go there (other objects, several
+objects, a picture with others) does what it did before.
+
+- **Number of colors**: the shared slider with its number box, 2 to 64,
+  8 at first. Under it the colours, 16 swatches to a row, and how many
+  there are (a picture with fewer colours gives fewer).
+- The colours are those of Add Colors from Bitmap
+  (`ops2::picture_colors_from_sample`: the median cut of the paletted
+  conversion, `bitmap_modes::palette_from_sample`, ordered dark to
+  light), so the menu and the drop give the same ones. The picture's
+  pixels (about 16k of them, `bitmap_modes::palette_sample`) are read
+  once, when it is dropped; the colours are worked out again only when
+  the number changes, never on a frame where it did not.
+- **OK** adds the colours the palette has not got yet, after its own
+  (the user's palettes save their file again; the document palette as
+  one undo step), and the status bar says how many. A built-in or
+  locked palette is not changed: the window says so, and OK makes a new
+  palette of the user's ("Palette n") with the colours, in a bar of its
+  own. **Cancel** or Esc adds nothing. The user's palettes are outside
+  the drawing's undo, so the window is the place to back out.
 
 ## Document palette
 
@@ -211,9 +281,14 @@ management converts. A CMYK drawing keeps them CMYK (#483, #620,
   under the pointer; with Ctrl it keeps sampling. Esc or a right click
   stops it.
 - Its menu: Automatically Update, Add from Selection, Add from Document
-  (every colour used in the drawing, after the ones already there),
+  (every colour used in the drawing, after the ones already there), Add
+  Colors from Bitmap (see below),
   Delete Color (the current swatch), Palette > Reset Palette (keeps only
-  the colours the drawing still uses).
+  the colours the drawing still uses; a question comes first, Reset or
+  Cancel, and it is one undo step, #2138).
+- A swatch's own menu (right click, or the right button held when a right
+  click sets the outline) starts with Delete Color for that swatch: one
+  undo step on the document palette (#2138).
 - It is saved with the drawing; opening a `.cdr` reads its
   `color/docPalette.xml`.
 
@@ -227,15 +302,46 @@ with no colour that can be read says so in the status bar, #882,
 `palette::tests::xml_palettes_open_with_names_and_values`; the palette
 opened gets a strip of its own next to the default palette, which stays
 first, and the same file opened again replaces the copy already open
-instead of adding another, #1343), Palette Editor..., Palette Manager, the Document
+instead of adding another, #1343), Edit Palette... (the Palette Editor on this palette, #2138), Palette Manager, the Document
 Palette switch, Swatch Size (five sizes), Rows (1 Row to 8 Rows, Fit),
 Position (Top, Bottom, Left, Right, Floating), Open as Palette Bar and
 Rename... (radio choices kept in the preferences, the same settings as
-in Options). A palette bar's menu has the Palette Editor, the Palette
+in Options). A palette bar's menu has Edit Palette..., the Palette
 Manager, Swatch Size, Rows, Position, Open as Palette Bar, Rename... and
 Close Palette; the document palette's bar has the document palette's
 items instead of the first two. A right click on a row outside the
-swatches, or on a floating bar's title, opens the same menu.
+swatches, or on a floating bar's title, opens the same menu; a double
+click there opens the Palette Editor on the palette (not on the
+document palette). A swatch's menu starts with Delete Color: that colour
+leaves the user's palette at once (its file is saved again, the status
+bar names the colour); on a built-in or locked palette the item is
+greyed and its tooltip says why (#2138).
+
+## Palette Editor (#2138)
+
+Window > Color Palettes > Palette Editor..., Edit Palette... in a
+palette's menu, a double click on a bar outside its swatches, or Edit in
+the Palette Manager. The editor works on a copy of the palette: OK gives
+the palette the copy and closes, Apply gives it and stays open, Cancel
+or Esc drops it. While the copy has changes the palette list is greyed
+(its tooltip asks to apply or cancel first). Palettes are outside the
+drawing's undo; the editor's Undo takes back its last change (a name
+typed, or a colour dragged in the picker, is one step; up to 100), and
+Cancel all of them.
+
+- Selection as in a list: a click selects one swatch, Ctrl+click adds or
+  removes one, Shift+click selects the run from the last swatch clicked
+  (Ctrl+Shift adds the run). Selected swatches have a blue frame.
+- Delete (the button, or the Delete key while no field has the focus)
+  takes every selected colour out; the colour after them is selected
+  next. Move up and Move down move the selected colours together a
+  place; a swatch dragged onto another takes its place (a blue line shows
+  where).
+- With one colour selected: its name, its value (the colour picker) and
+  Spot color; with several, how many are selected.
+- The palette's name, changed, is given as Rename gives it.
+- Built-in and locked palettes are shown with the hint that they cannot
+  be edited, and nothing changes them.
 
 ## Palette Manager
 
@@ -259,7 +365,17 @@ Palette.
   colors here to add them to this palette". A swatch dragged from any
   palette onto the bar of a palette of the user's (not locked) joins it,
   and the bar's menu has Add Colors from Selection (the fill and outline
-  colours of the selected objects). Palettes made in TraceDraw (New
+  colours of the selected objects) and Add Colors from Bitmap.
+
+Add Colors from Bitmap (#1840), in the document palette's menu and in
+the bar menu of a palette of the user's: a submenu of 8, 16, 32 or 64
+colours, greyed unless a picture is selected. It takes at most that many
+colours that stand for the selected picture (its pixels as shown, effects
+included), chosen by the median cut of the paletted bitmap conversion
+(`bitmap-modes.md`, Optimized palette; transparent pixels are left out),
+as RGB colours ordered dark to light, and adds those the palette has not
+got after its colours; in the document palette that is one undo step.
+Check: `ui::palette::tests::colours_come_from_the_selected_picture`. Palettes made in TraceDraw (New
   Palette, Duplicate), which have no file, are kept with their colours
   in the preferences (`user_palettes`).
 
@@ -313,6 +429,7 @@ update the document palette (on).
 - `ui::palette::tests::the_default_palette_has_greys_process_colours_and_tints`
 - `ui::palette::tests::shades_keep_the_colour_in_the_middle`
 - `ui::palette::tests::mixing_moves_a_tenth_of_the_way`
+- `ui::palette::tests::a_finger_held_on_a_swatch_sets_the_outline`
 - `ui::palette::tests::applying_a_colour_adds_it_to_the_document_palette_in_the_same_step`
 - `ui::palette::tests::rows_fit_whole_swatches`
 - `ui::palette::tests::the_default_palette_of_an_rgb_drawing_is_clean_rgb`
@@ -326,6 +443,10 @@ update the document palette (on).
   preferences; old preferences give one palette at the bottom; names and
   Reset Name; a palette file keeps its name)
 - `ui::palette_bars::rename_tests::the_rename_window_takes_the_typed_name`
+- `ui::palette_editor::tests` (Ctrl and Shift selection, several colours
+  deleted or moved at once, the Delete key, Undo, OK, Apply and Cancel,
+  built-in palettes unchanged, Delete Color on a swatch)
+- `ui::palette::tests::delete_color_and_edit_palette_in_the_palette_menus`
 - `ui::palette_manager::tests` (the slider's steps, the slider sizes the
   selected bar, the list's eye, duplicate, move, delete and filter, the
   colour model)
@@ -333,5 +454,9 @@ update the document palette (on).
 - `ui::dockers::tests::a_fill_dragged_in_the_picker_is_one_step_and_one_palette_colour`
 - `color_drop::tests` (fill inside, outline on the edge, No Color, an
   object without a fill, the document palette)
+- `ui::picture_colors::tests` (the same colours as Add Colors from
+  Bitmap, worked out only when the number changes, a picture dropped on
+  a palette bar, on the document palette as one undo step, on a
+  built-in palette, other objects not taken as pictures)
 - `tracedraw_core` `engine::tests::amending_joins_the_last_step_only_right_after_it`
 - `tracedraw_cdr` `container::tests::document_palette_xml_reads_names_and_tints`

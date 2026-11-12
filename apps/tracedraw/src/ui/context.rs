@@ -5,7 +5,9 @@ use crate::app::{App, DockerTab};
 use crate::i18n::tr;
 use crate::tools::Tool;
 use crate::ui::dialogs::Dialog;
-use crate::ui::menus::{body, check, item, item_label, menu_popup_style, radio, sep, sub};
+use crate::ui::menus::{
+    body, check, item, item_label, menu_popup_style, radio, sep, sub, CLIP_EDIT_KEY,
+};
 use egui::{Response, Ui};
 use tracedraw_core::{document::ShapeKind, Command, ShapeId};
 
@@ -59,7 +61,9 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
             let on_guide = app.selection.is_empty()
                 && matches!(app.tool, Tool::Pick | Tool::FreeformPick)
                 && app.guide_at(p).is_some();
-            if let Some(locked) = app.context_locked {
+            if let Some(hit) = app.tab_ruler_menu {
+                tab_ruler_menu(app, ui, hit, &mut close);
+            } else if let Some(locked) = app.context_locked {
                 locked_menu(app, ui, locked, &mut close);
             } else if app.editing_text() {
                 text_edit_menu(app, ui, &mut close);
@@ -78,9 +82,32 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
         egui::Popup::close_id(&ctx, id);
         app.context_menu = None;
         app.context_locked = None;
+        app.tab_ruler_menu = None;
         ctx.data_mut(|d| d.remove::<egui::Pos2>(pos_id));
     }
     let _ = response;
+}
+
+/// Right-click on the tab ruler (#1852): the four kinds of stop, the one
+/// under the pointer checked (a pick changes it, or with no stop there
+/// adds one of that kind), and Remove tab on a stop.
+fn tab_ruler_menu(app: &mut App, ui: &mut Ui, hit: crate::tab_ruler::RulerHit, close: &mut bool) {
+    let current = hit
+        .stop
+        .and_then(|i| app.tab_ruler().and_then(|r| r.stops.get(i).map(|s| s.kind)));
+    for kind in tracedraw_core::TabKind::ALL {
+        let key = crate::ui::dialogs::tab_kind_key(kind);
+        if radio(ui, key, "", current == Some(kind)) {
+            *close = true;
+            app.tab_ruler_pick(hit, Some(kind));
+        }
+    }
+    if hit.stop.is_some() {
+        sep(ui);
+        if ci(ui, close, "dialog.remove_tab", "", true) {
+            app.tab_ruler_pick(hit, None);
+        }
+    }
 }
 
 /// Right-click on a guideline: delete, lock or unlock, and the Guidelines
@@ -125,7 +152,7 @@ fn guide_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
 
 /// Right-click while a text is being edited: the editing commands act on
 /// its characters (#1377), and the Properties docker.
-fn text_edit_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
+pub(crate) fn text_edit_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     let picked = app.text_selection_active();
     if ci(
         ui,
@@ -152,6 +179,12 @@ fn text_edit_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     sep(ui);
     if ci(ui, close, "menu.edit.select_all", "Ctrl+A", true) {
         app.text_select_all();
+    }
+    // A paragraph frame being edited: filler text in place of its own.
+    if app.placeholder_text_offered()
+        && ci(ui, close, "menu.text.insert_placeholder_text", "", true)
+    {
+        app.insert_placeholder_text();
     }
     sep(ui);
     if ci(ui, close, "menu.object.properties", "Alt+Enter", true) {
@@ -194,11 +227,24 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         if ci(ui, close, "menu.text.convert", "", true) {
             app.toggle_text_kind();
         }
+        // Filler text for a paragraph frame, an empty one most of all.
+        if app.placeholder_text_offered()
+            && ci(ui, close, "menu.text.insert_placeholder_text", "", true)
+        {
+            app.insert_placeholder_text();
+        }
         if many
             && !app.joinable_text_lines().is_empty()
             && ci(ui, close, "menu.text.join_lines", "", true)
         {
             app.join_text_lines();
+        }
+        // Linked text content (#1568), offered when it can be used.
+        if app.can_link_text_content() && ci(ui, close, "menu.text.link_content", "", true) {
+            app.link_text_content();
+        }
+        if app.selection_has_content_link() && ci(ui, close, "menu.text.unlink_content", "", true) {
+            app.unlink_text_content();
         }
         sep(ui);
     }
@@ -339,6 +385,10 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     if ci(ui, close, "menu.object.combine", "Ctrl+L", many) {
         app.combine();
     }
+    // A drop shadow: the Drop Shadow tool on it.
+    if app.can_edit_shadow() && ci(ui, close, "context.edit_shadow", "", true) {
+        app.edit_shadow();
+    }
     sep(ui);
     if ci(ui, close, "menu.edit.cut", "Ctrl+X", true) {
         app.cut();
@@ -354,6 +404,9 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     }
     if ci(ui, close, "menu.object.add_to_shelf", "", true) && app.shelf_add_selection() {
         app.open_docker(DockerTab::Shelf);
+    }
+    if ci(ui, close, "menu.object.add_common_shape", "", true) {
+        app.add_selection_as_common_shape();
     }
     sep(ui);
     sub(ui, "menu.object.order", |ui| {
@@ -379,7 +432,7 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
             app.reverse_order();
         }
     });
-    if many && ci(ui, close, "menu.object.group_group", "Ctrl+G", true) {
+    if app.can_group() && ci(ui, close, "menu.object.group_group", "Ctrl+G", true) {
         app.group_selection();
     }
     if is_group {
@@ -413,6 +466,25 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         app.pending_clip_frame = true;
         app.status = tr("status.click_frame");
     }
+    // A clip frame: into its contents, or its contents out (#1273).
+    let clip = shapes
+        .iter()
+        .any(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }));
+    if clip && app.clip_frame_edit.is_none() {
+        if ci(
+            ui,
+            close,
+            "menu.object.clip_frame_edit",
+            CLIP_EDIT_KEY,
+            true,
+        ) {
+            app.edit_clip_frame();
+        }
+        if ci(ui, close, "menu.object.clip_frame_extract", "", true) {
+            app.extract_clip_contents();
+        }
+    }
+    finish_clip_edit_row(app, ui, close);
     sub(ui, "context.frame_type", |ui| {
         let empty_frames = !app.empty_clip_frames().is_empty();
         if ci(ui, close, "context.frame_none", "", empty_frames) {
@@ -438,6 +510,24 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     }
     if ci(ui, close, "context.create_symbol", "", true) {
         app.create_symbol_from_selection();
+    }
+    if ci(ui, close, "menu.object.add_dimensions", "", true) {
+        app.add_dimensions(false);
+    }
+    if shapes.len() > 1 && ci(ui, close, "menu.object.add_dimensions_each", "", true) {
+        app.add_dimensions(true);
+    }
+    // A symbol instance: its symbol's objects edited in place (#1980).
+    if let Some(id) = app.selected_symbol_instance() {
+        if ci(
+            ui,
+            close,
+            "menu.object.symbol_edit",
+            "",
+            app.clip_frame_edit.is_none(),
+        ) {
+            app.edit_symbol_instance(id);
+        }
     }
     sub(ui, "context.internet_links", |ui| {
         if ci(ui, close, "docker.hyperlink", "", true) {
@@ -526,14 +616,35 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     }
 }
 
-fn node_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
+pub(crate) fn node_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     use tracedraw_core::nodes::NodeType;
+    // A B-spline's chosen control points: fixed (the curve passes
+    // through them) or floating (#1758).
+    if let Some(all_fixed) = app.chosen_spline_points() {
+        if check(ui, "context.spline_fixed", "C", all_fixed) {
+            app.set_selected_spline_fixed(true);
+            *close = true;
+        }
+        if check(ui, "context.spline_floating", "S", !all_fixed) {
+            app.set_selected_spline_fixed(false);
+            *close = true;
+        }
+        sep(ui);
+    }
     let has_nodes = !app.node_selection.is_empty();
     if ci(ui, close, "context.node_add", "", has_nodes) {
         app.add_node_midpoints();
     }
-    if ci(ui, close, "context.node_delete", "Delete", has_nodes) {
-        app.delete_selected_nodes();
+    // The chosen nodes go, the curve stays; with no node chosen the
+    // selected object goes, as with the Delete key (#1982).
+    if ci(
+        ui,
+        close,
+        "context.node_delete",
+        "Delete",
+        has_nodes || !app.selection.is_empty(),
+    ) {
+        app.delete_nodes_or_selection();
     }
     sep(ui);
     if ci(
@@ -587,7 +698,27 @@ fn node_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     }
 }
 
+/// Finish Editing while a clip frame's contents are edited (#1273).
+fn finish_clip_edit_row(app: &mut App, ui: &mut Ui, close: &mut bool) {
+    if app.editing_clip_contents()
+        && ci(
+            ui,
+            close,
+            "menu.object.clip_frame_finish",
+            CLIP_EDIT_KEY,
+            true,
+        )
+    {
+        app.finish_clip_frame_edit();
+    }
+}
+
 fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut bool) {
+    // Inside a clip frame, a click on the empty page finishes too.
+    if app.editing_clip_contents() {
+        finish_clip_edit_row(app, ui, close);
+        sep(ui);
+    }
     if ci(
         ui,
         close,
@@ -599,6 +730,10 @@ fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut b
     }
     if ci(ui, close, "menu.edit.select_all_objects", "Ctrl+A", true) {
         app.select_all();
+    }
+    // A file into the drawing, placed with the import cursor (#1931).
+    if ci(ui, close, "menu.file.import", "Ctrl+I", true) {
+        app.import();
     }
     sep(ui);
     if ci(ui, close, "menu.layout.insert_page", "", true) {
@@ -638,4 +773,39 @@ fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut b
     if ci(ui, close, "menu.tools.options_app", "Ctrl+J", true) {
         app.dialog = Dialog::Options;
     }
+}
+
+/// The menu `menu` drawn for a fresh app from `fresh`, walked row by row
+/// (each row on an app of its own) until the row `key` is hit: that app,
+/// with the row run; `None` when the menu has no such row or it is
+/// greyed.
+#[cfg(test)]
+pub(crate) fn run_menu_row(
+    fresh: &dyn Fn() -> App,
+    menu: fn(&mut App, &mut Ui, &mut bool),
+    key: &str,
+) -> Option<App> {
+    let ctx = egui::Context::default();
+    let run = |app: &mut App, target: usize| {
+        crate::ui::menus::replay::start(target);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            let mut close = false;
+            menu(app, ui, &mut close);
+        });
+        out.textures_delta.clear();
+        crate::ui::menus::replay::finish()
+    };
+    let (_, rows) = run(&mut fresh(), usize::MAX);
+    (0..rows).find_map(|t| {
+        let mut app = fresh();
+        let (hit, _) = run(&mut app, t);
+        (hit.as_deref() == Some(key)).then_some(app)
+    })
 }

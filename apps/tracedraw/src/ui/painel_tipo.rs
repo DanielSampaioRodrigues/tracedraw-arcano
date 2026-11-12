@@ -225,13 +225,13 @@ pub fn character_panel(app: &mut App, ui: &mut Ui) {
             app.text_underline = !on;
             let u = !on;
             if sp.is_some() {
-                td::edit_spans(app, move |s| s.underline = u);
+                td::edit_spans(app, move |s| s.underline = tracedraw_core::LineStyle::from(u));
             }
         }
         ui.add_enabled_ui(sp.is_some(), |ui| {
-            let on = sp.as_ref().is_some_and(|s| s.strikethrough);
+            let on = sp.as_ref().is_some_and(|s| s.strikethrough.is_on());
             if toggle(ui, on, egui::RichText::new("S").strikethrough().size(13.0), "tipo.strikethrough") {
-                td::edit_spans(app, move |s| s.strikethrough = !on);
+                td::edit_spans(app, move |s| s.strikethrough = tracedraw_core::LineStyle::from(!on));
             }
             let on = has("liga");
             if toggle(ui, on, egui::RichText::new("fi").size(13.0), "tipo.ligatures") {

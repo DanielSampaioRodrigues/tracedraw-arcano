@@ -8,9 +8,12 @@
   it, a drag on a handle (within 6 pixels) resizes it (past the
   opposite side it turns round), a drag outside draws a new one. Points
   snap as drawing does.
-- Applied by a double-click inside it, Enter or the bar's Crop button;
-  cleared by Escape (which then does nothing else), a click outside it,
-  Clear Crop Area, or another tool. An area smaller than 0.1 mm is
+- Applied by a double-click inside it, Enter, the bar's Crop button or
+  the Crop button floating on the canvas; cleared by Escape (which then
+  does nothing else), a click outside it, Clear Crop Area, the Clear
+  button on the canvas, or another tool. The two canvas buttons sit 8
+  screen pixels under the area's bottom-left corner, kept inside the
+  canvas, and show only while there is an area (#1202). An area smaller than 0.1 mm is
   dropped.
 - The objects cropped are the selection, or with nothing selected every
   unlocked object on the page's unlocked, visible layers (`crop_tool.rs`):
@@ -22,12 +25,37 @@
     with its fill, outline and effects;
   - bitmaps, tables and symbols go into a clip frame of the area (no
     fill or outline), so their content stays whole and can be taken
-    out again (Extract Contents);
+    out again (Extract Contents). With the bar's Crop picture pixels
+    on (on by default since 0.41's live test, and once for preferences
+    saved before; kept in the settings), an upright picture (not
+    turned or slanted) instead loses its pixels outside the area and
+    stays a free picture (#1913): every pixel the area touches is kept,
+    so the picture's new edges lie on its pixel edges; its transparency,
+    its CMYK ink channels and its bitmap effects' original are cut
+    alike. A turned or slanted picture, or one with a gradient
+    transparency (it lies on the picture's box), still goes into a clip
+    frame (`crop_tool::tests::the_crop_tool_cuts_a_pictures_pixels`,
+    `a_turned_picture_still_goes_in_a_frame`);
+  - exports (SVG, PDF, EPS, EMF and WMF) leave out the pixels of a
+    picture in a clip frame that lie outside the frame's box, so what a
+    crop hid is not in the file; a picture with an outline, a shadow or
+    effects laid on its box keeps them all
+    (`tracedraw_io::picture_crop::tests`). Raster exports and previews
+    are drawn clipped;
   - groups are cropped member by member (a group left empty is
     deleted); a clip frame by its frame.
 - One undo step; the deleted objects leave the selection.
-- The bar (with an area): X and Y of the area's point at the object
-  origin, W and H (sized about that point), Crop, Clear Crop Area.
+- The bar: Crop picture pixels; with an area, X and Y of the area's
+  point at the object origin, W and H (sized about that point), Crop,
+  Clear Crop Area.
+- Bitmaps > Crop to Frame (with a clip frame holding one picture alone
+  selected, as the Crop tool and Crop Bitmap make): the picture's pixels
+  outside the frame's box are cut away. A frame that is a rectangle
+  along the picture's sides then lets the picture go: a free picture in
+  the clip frame's place, where it showed, with the transparency and
+  opacity the picture inside kept; any other frame stays, holding the
+  smaller picture. One undo step (#1913,
+  `crop_tool::tests::crop_to_frame_frees_the_picture`).
 - Not done: turning the crop area.
 
 ## Knife

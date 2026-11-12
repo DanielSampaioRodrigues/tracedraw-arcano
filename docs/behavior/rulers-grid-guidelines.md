@@ -25,6 +25,13 @@
 - Dragging out of a ruler adds a guideline (horizontal from the top ruler,
   vertical from the left one) where it is released inside the window.
 - Double-clicking a ruler or the corner opens Document Setup at Rulers.
+- Right-clicking a ruler or the corner opens the rulers' menu where it
+  was clicked (#1831): Ruler Setup..., Grid Setup... and Guidelines
+  Setup... open Document Setup at Rulers, Grid and Guidelines, and Rulers
+  (checked, Alt+Shift+R) hides the rulers, as View > Rulers does. A click
+  outside closes it
+  (`ui::rulers::tests::a_right_click_on_a_ruler_opens_its_menu`,
+  `ui::rulers::tests::the_ruler_menu_opens_the_setup_pages_and_hides_the_rulers`).
 
 ### Origin
 
@@ -119,9 +126,24 @@ stand for a distance in the world (`drawing_scale.rs`):
   page has go once on the master page's guides layer, as the other
   program's files keep theirs, and each page's others on its own guides
   layer (before version 14 on its entry for the master's guides layer);
-  opening the file puts the master page's guidelines on every page. The
-  colour, style and lock of a guideline are not written there (they
-  come back in the default colour, dashed and unlocked).
+  opening the file makes the master page's guidelines the drawing's
+  master guidelines (below). The colour, style and lock of a guideline
+  are not written there (they come back in the default colour, dashed
+  and unlocked).
+- Master guidelines (#1928): the drawing has guidelines of its own that
+  every page shows, beside each page's own. The Objects docker lists
+  them as "Guides (all pages)" under the Master Page and each page's own
+  as "Guides" under the page. A click on either row chooses the
+  guidelines edited (the row is highlighted): new guidelines, from the
+  rulers, the Guidelines panel or presets, go there; only those are
+  picked, moved, locked and deleted, the others are drawn as they are
+  and still snapped to. The padlock of a row locks or unlocks all of its
+  guidelines, its eye shows or hides all guidelines. Each change is one
+  undo step (`Command::SetMasterGuides`). In `.tdraw` files they are
+  `master_guides`; in `.cdr` files they go on the master page's guides
+  layer with the guidelines every page has (on each page's own layer
+  when the pages differ in size).
+  Test: `guides::tests::master_guidelines_are_set_once_for_every_page`.
 - Pick tool: a click selects a guideline (Shift adds or removes); a press
   and drag moves it, snapping to the grid, the page and objects; dropping
   it outside the drawing window deletes it. The move is one undo step.
@@ -155,7 +177,14 @@ stand for a distance in the world (`drawing_scale.rs`):
 - A click on the only selected guideline shows its rotation handles: a
   pivot where it was clicked and two curved arrows 70 px along it.
   Dragging an arrow turns the guideline about the pivot in whole degrees;
-  0 and 180 make it horizontal, 90 and 270 vertical.
+  0 and 180 make it horizontal, 90 and 270 vertical. The pivot (the
+  pointer shows the move arrows over it) can be dragged anywhere: it
+  snaps as a drawing tool's point does (to objects' nodes and other
+  snap points when snapping to objects is on, the page, the grid and
+  guidelines, the guideline itself included), the guideline staying
+  where it is; a guideline turned about a pivot off it keeps its
+  distance from the pivot. A click on the pivot keeps the handles
+  (#1850, `guides::tests::a_guides_rotation_centre_drags_and_snaps_to_a_node`).
 - Locked guidelines can be selected but not moved, rotated, nudged,
   deleted or edited: a click or double click on a locked guideline never
   shows its rotation handles, and locking one that shows them hides them;
@@ -187,7 +216,10 @@ stand for a distance in the world (`drawing_scale.rs`):
   moves it at once (`propbar::guide_bar`, `App::set_selected_guide_line`).
   With several selected it says how many. A locked guideline shows
   "locked" and does not move.
-- Edit > Select All > Guidelines selects every guideline of the page.
+- Edit > Select All > Guidelines selects every guideline of the page;
+  so does Ctrl+A while a guideline is selected (it selects the objects
+  otherwise, #1753,
+  `pick_drag_tests::ctrl_a_with_a_guideline_selected_selects_all_guidelines`).
 
 ### Guidelines panel
 

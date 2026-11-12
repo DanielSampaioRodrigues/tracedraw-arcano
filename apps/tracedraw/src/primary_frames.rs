@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn pages_made_with_a_primary_master_get_threaded_frames() {
         let mut app = App::headless();
-        app.set_facing_pages(true);
+        app.set_facing_pages(true, tracedraw_core::spreads::PageSide::Right);
         with_primary(&mut app, [20.0, 25.0, 22.0, 18.0]);
         assert_eq!(app.add_primary_frames_for_master(0), 1);
         let first = app.primary_frame_on(0).unwrap();

@@ -239,12 +239,13 @@ pub fn draw_on(painter: &Painter, r: Rect, tool: Tool, color: Color32, bg: Color
             pen.node(13.5, 7.0, true);
         }
         Tool::Pan => {
-            // A page shifted from its ghost, the drag arrow.
-            pen.ghost(&rrect(3.0, 3.0, 13.0, 13.0, 1.5), a(0.4));
-            pen.solid(&rrect(8.0, 8.0, 13.0, 13.0, 1.5));
-            pen.line("M6 6l5.5 5.5", acc);
-            pen.arrow_head(13.5, 13.5, 1.0, 1.0, 3.0, acc);
-            pen.node(6.0, 6.0, true);
+            // An open hand, the one that grabs the view (#1727): four
+            // fingers up, the thumb out to the left.
+            pen.body(
+                "M8 14.5V5.5a1.25 1.25 0 0 1 2.5 0V11V4a1.25 1.25 0 0 1 2.5 0v7V5\
+                 a1.25 1.25 0 0 1 2.5 0v6.5V7.5a1.25 1.25 0 0 1 2.5 0V15c0 3.5-2.5 6-6 6\
+                 h-1c-2.5 0-4-1.2-5.2-3l-2.2-4.4a1.3 1.3 0 0 1 2-1.6z",
+            );
         }
 
         // Curve group.
@@ -585,13 +586,27 @@ pub fn draw_on(painter: &Painter, r: Rect, tool: Tool, color: Color32, bg: Color
         }
 
         Tool::Transparency => {
-            // A circle filled with a fade from ink at the left to nothing
-            // at the right, the node to handle gradient bar across it.
-            pen.fade_circle(12.0, 12.0, 8.0, ink, Color32::TRANSPARENT);
-            pen.circle(12.0, 12.0, 8.0, Color32::TRANSPARENT, LINE, ink);
-            pen.thin("M6 18L18 6", acc);
-            pen.node(6.0, 18.0, true);
-            pen.handle(18.0, 6.0, 1.75);
+            // The see-through checkerboard: a square of four by four
+            // cells on whole units, its dark cells fading in steps from
+            // solid ink at the top left to faint at the bottom right, the
+            // live node on that corner. No smooth fade and no handle bar,
+            // so it is not taken for the fill tools (#1682).
+            for (row, col) in transparency_cells() {
+                let x = 4.0 + 4.0 * col as f32;
+                let y = 4.0 + 4.0 * row as f32;
+                pen.rect(
+                    x,
+                    y,
+                    4.0,
+                    4.0,
+                    0.0,
+                    a(transparency_alpha(row, col)),
+                    0.0,
+                    ink,
+                );
+            }
+            pen.rect(4.0, 4.0, 16.0, 16.0, 1.0, Color32::TRANSPARENT, LINE, ink);
+            pen.node(20.0, 20.0, true);
         }
 
         // Eyedropper group: the diagonal pipette with the drop drawn
@@ -670,6 +685,10 @@ pub enum Action {
     Cut,
     Copy,
     Paste,
+    /// Delete the selection: a waste bin.
+    Delete,
+    /// Show or hide the dockers: a window with a panel at the right.
+    Dockers,
     Undo,
     Redo,
     Import,
@@ -1096,6 +1115,48 @@ pub fn draw_action(painter: &Painter, r: Rect, a: Action, color: Color32) {
                 s,
             ));
         }
+        Action::Delete => {
+            // A waste bin: the lid with its handle, the tapered body and
+            // three slats.
+            painter.line_segment([p(r, 2.0, 4.0), p(r, 14.0, 4.0)], s);
+            painter.add(epaint::PathShape::line(
+                vec![
+                    p(r, 6.0, 4.0),
+                    p(r, 6.5, 2.0),
+                    p(r, 9.5, 2.0),
+                    p(r, 10.0, 4.0),
+                ],
+                thin,
+            ));
+            painter.add(epaint::PathShape::closed_line(
+                vec![
+                    p(r, 3.5, 4.0),
+                    p(r, 12.5, 4.0),
+                    p(r, 11.5, 14.5),
+                    p(r, 4.5, 14.5),
+                ],
+                s,
+            ));
+            for (x0, x1) in [(6.0, 6.4), (8.0, 8.0), (10.0, 9.6)] {
+                painter.line_segment([p(r, x0, 6.5), p(r, x1, 12.5)], thin);
+            }
+        }
+        Action::Dockers => {
+            painter.rect_stroke(
+                Rect::from_min_max(p(r, 1.5, 2.0), p(r, 14.5, 14.5)),
+                0.0,
+                s,
+                epaint::StrokeKind::Middle,
+            );
+            painter.rect_filled(
+                Rect::from_min_max(p(r, 9.5, 2.0), p(r, 14.5, 14.5)),
+                0.0,
+                color,
+            );
+            for y in [5.0, 8.0, 11.0] {
+                painter.line_segment([p(r, 3.5, y), p(r, 7.5, y)], thin);
+            }
+        }
         Action::Launch => {
             painter.rect_stroke(
                 Rect::from_min_max(p(r, 1.5, 2.0), p(r, 14.5, 14.5)),
@@ -1109,6 +1170,20 @@ pub fn draw_action(painter: &Painter, r: Rect, a: Action, color: Color32) {
             }
         }
     }
+}
+
+/// The dark cells of the Transparency icon's checkerboard (row, column),
+/// four by four, the top left one dark.
+fn transparency_cells() -> impl Iterator<Item = (usize, usize)> {
+    (0..4usize)
+        .flat_map(|r| (0..4usize).map(move |c| (r, c)))
+        .filter(|(r, c)| (r + c) % 2 == 0)
+}
+
+/// How much ink a dark cell of the Transparency icon takes: solid at
+/// the top left, fading by diagonal steps to 15 % at the bottom right.
+fn transparency_alpha(row: usize, col: usize) -> f32 {
+    1.0 - (row + col) as f32 / 6.0 * 0.85
 }
 
 #[cfg(test)]
@@ -1190,6 +1265,84 @@ mod tests {
             egui::Shape::Mesh(m) => out.extend(m.vertices.iter().map(|v| v.color)),
             egui::Shape::Vec(v) => v.iter().for_each(|s| colors(s, out)),
             _ => {}
+        }
+    }
+
+    /// The shapes `draw` adds for `tool` in a box `size` points wide at
+    /// `ppp` pixels per point.
+    fn shapes_at(tool: Tool, color: Color32, size: f32, ppp: f32) -> Vec<egui::Shape> {
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(ppp);
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(size + 20.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            let r = Rect::from_min_size(Pos2::new(4.0, 4.0), Vec2::splat(size));
+            draw(ui.painter(), r, tool, color);
+        });
+        out.textures_delta.clear();
+        out.shapes.into_iter().map(|s| s.shape).collect()
+    }
+
+    /// The Transparency tool's icon was a disc fading like a gradient
+    /// with a node-to-handle bar, and was taken for the fill tools
+    /// (#1682). At every icon size it is now a checkerboard of filled
+    /// cells fading in steps, with no gradient mesh, unlike the
+    /// Interactive Fill icon.
+    #[test]
+    fn the_transparency_icon_is_a_fading_checkerboard_unlike_the_fill_icon() {
+        crate::theme::set_theme(crate::theme::Theme::Light);
+        let ink = Tokens::icon();
+        let signature = |shapes: &[egui::Shape]| -> Vec<String> {
+            shapes
+                .iter()
+                .map(|s| format!("{:?}", s.visual_bounding_rect()))
+                .collect()
+        };
+        for ppp in [1.0, 2.0] {
+            for size in [15.0, 16.0, 20.0, 22.0, 24.0, 32.0, 40.0] {
+                let t = shapes_at(Tool::Transparency, ink, size, ppp);
+                let f = shapes_at(Tool::InteractiveFill, ink, size, ppp);
+                assert_ne!(signature(&t), signature(&f), "{size} px at {ppp}x");
+                assert!(
+                    !t.iter().any(|s| matches!(s, egui::Shape::Mesh(_))),
+                    "no gradient fan at {size} px"
+                );
+                // The dark cells: ink rectangles, each at least two
+                // physical pixels wide, in at least four steps of ink.
+                let cells: Vec<&epaint::RectShape> = t
+                    .iter()
+                    .filter_map(|s| match s {
+                        egui::Shape::Rect(r)
+                            if r.fill.a() > 0
+                                && r.fill != accent()
+                                && r.rect.width() > size * 3.5 / 24.0
+                                && r.rect.width() < size / 3.0 =>
+                        {
+                            Some(r)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert!(cells.len() >= 8, "{} cells at {size} px", cells.len());
+                for c in &cells {
+                    assert!(
+                        c.rect.width() * ppp >= 2.0 && c.rect.height() * ppp >= 2.0,
+                        "a cell under two pixels at {size} px: {:?}",
+                        c.rect
+                    );
+                }
+                let mut alphas: Vec<u8> = cells.iter().map(|c| c.fill.a()).collect();
+                alphas.sort_unstable();
+                alphas.dedup();
+                assert!(alphas.len() >= 4, "fading in steps: {alphas:?}");
+                // The cells sit inside the frame, top left the darkest.
+                let darkest = cells.iter().max_by_key(|c| c.fill.a()).expect("cells");
+                let faintest = cells.iter().min_by_key(|c| c.fill.a()).expect("cells");
+                assert!(darkest.rect.center().x < faintest.rect.center().x);
+                assert!(darkest.rect.center().y < faintest.rect.center().y);
+            }
         }
     }
 

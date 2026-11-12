@@ -3,7 +3,8 @@
 //! tagline and the version over the brand artwork (see `ui/brand.rs`),
 //! with what is loading and a progress bar. The splash stays up only as
 //! long as the start takes: nothing holds it back once the editor can be
-//! built (opening the file named on the command line), and the window
+//! built (opening the file named on the command line) and the splash has
+//! reached the screen (a few frames, [`splash_seen`]), and the window
 //! becomes the main window, maximized or at the size it was left. The
 //! system fonts are read on a worker thread meanwhile (since the start of
 //! the program, see `lib.rs`). The editor cannot be built without the list
@@ -42,6 +43,19 @@ const WAITING_FILL: f32 = 0.8;
 /// so that the bar never stands still while TraceDraw is working (#1388).
 const CREEP_TIME: Duration = Duration::from_secs(30);
 const CREEP_FILL: f32 = 0.97;
+/// The fewest splash frames drawn before the editor is built (#1911).
+/// The windowing layer draws the first frame with the window still
+/// hidden and shows the window after it, and on X11 a picture presented
+/// before the window manager has mapped the window never reaches the
+/// screen: with the fonts in at once (a second start) the editor was
+/// built on the second frame, and the window stayed blank (white) while
+/// it was, the splash never seen.
+pub const SHOWN_FRAMES: u32 = 3;
+/// The shortest time, in seconds of input time from the first splash
+/// frame, before the editor is built: long enough for the window
+/// manager to map the window and a splash frame to be drawn on it
+/// (#1911).
+pub const SHOWN_SECONDS: f64 = 0.1;
 
 /// What the shell does after a splash frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +85,9 @@ pub struct Splash {
     file_name: Option<String>,
     /// True once the last frame (the "opening" status, a full bar) shows.
     last_frame_drawn: bool,
+    /// Splash frames drawn, and the input time of the first one (#1911).
+    frames: u32,
+    first_time: Option<f64>,
     icon: Option<TextureHandle>,
     /// The publisher's mark (Arcano edition).
     logo: Option<TextureHandle>,
@@ -103,6 +120,8 @@ impl Splash {
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().into_owned()),
             last_frame_drawn: false,
+            frames: 0,
+            first_time: None,
             icon: brand::icon(ctx),
             logo: brand::publisher_logo(ctx),
             reset_requested: false,
@@ -116,6 +135,9 @@ impl Splash {
         if ctx.input(|i| i.key_down(egui::Key::F8)) {
             self.reset_requested = true;
         }
+        self.frames = self.frames.saturating_add(1);
+        let now = ctx.input(|i| i.time);
+        let shown_for = now - *self.first_time.get_or_insert(now);
         if self.frames_with_fonts.is_none() && self.fonts.is_finished() {
             ctx.set_fonts(self.fonts.finish());
             self.frames_with_fonts = Some(0);
@@ -139,7 +161,10 @@ impl Splash {
             self.logo.as_ref(),
         );
         if fonts_ready {
-            if self.last_frame_drawn {
+            // The editor is built in the next frame, with this one on the
+            // screen meanwhile; it is a splash frame only once the window
+            // has been shown for a few (#1911).
+            if self.last_frame_drawn && splash_seen(self.frames, shown_for) {
                 return Step::Start;
             }
             self.last_frame_drawn = true;
@@ -153,6 +178,13 @@ impl Splash {
     pub fn take_fonts(&mut self) -> FontLoad {
         std::mem::take(&mut self.fonts)
     }
+}
+
+/// Whether the splash has been on the screen long enough for the editor
+/// to be built behind it: `frames` splash frames drawn (this one
+/// included) over `shown_for` seconds since the first (#1911).
+pub fn splash_seen(frames: u32, shown_for: f64) -> bool {
+    frames >= SHOWN_FRAMES && shown_for >= SHOWN_SECONDS
 }
 
 /// The status line: the fonts while they load, then the file being
@@ -355,13 +387,43 @@ pub fn start_maximized(saved: [f32; 2], maximized: bool, monitor: Option<Vec2>) 
     wanted.x > m.x * 0.95 || wanted.y > m.y * 0.95
 }
 
-/// Where a window of `size` sits centred on a monitor of `monitor` (its
-/// top-left corner, never off the top or the left).
-pub fn centred_position(size: Vec2, monitor: Option<Vec2>) -> Option<Pos2> {
-    let m = monitor.filter(|m| m.x > 0.0 && m.y > 0.0)?;
-    let p = ((m - size) / 2.0).max(Vec2::ZERO);
-    Some(Pos2::new(p.x, p.y))
+/// Where a window of `size` sits centred on `monitor`, the monitor's
+/// rectangle on the desktop all monitors share (its top-left corner,
+/// never off the monitor's top or left). The monitor's own position
+/// counts: centred by the monitor's size from the desktop's corner, the
+/// window opened on the top-left monitor of a desktop whose primary
+/// monitor lies elsewhere (#1800).
+pub fn centred_position(size: Vec2, monitor: Option<Rect>) -> Option<Pos2> {
+    let m = monitor.filter(|m| m.width() > 0.0 && m.height() > 0.0)?;
+    let [x, y] = eframe_monitor_place::centred_on(
+        [m.min.x, m.min.y, m.width(), m.height()],
+        [size.x, size.y],
+    );
+    Some(Pos2::new(x, y))
 }
+
+/// The monitor the main window opens on, in system points: the primary
+/// monitor where it lies on the desktop, as the windowing layer gives it
+/// (`primary`, `[x, y, width, height]`; the splash screen is centred on
+/// it), else the monitor egui reports the window on (`current`, its size
+/// only), taken at the desktop's corner (Wayland, which places windows
+/// itself, tells no position).
+pub fn main_monitor(primary: Option<[f32; 4]>, current: Option<Vec2>) -> Option<Rect> {
+    let primary = primary
+        .filter(|[x, y, w, h]| x.is_finite() && y.is_finite() && *w > 0.0 && *h > 0.0)
+        .map(|[x, y, w, h]| Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h)));
+    primary.or_else(|| {
+        current
+            .filter(|m| m.x > 0.0 && m.y > 0.0)
+            .map(|m| Rect::from_min_size(Pos2::ZERO, m))
+    })
+}
+
+/// The arithmetic of the patched eframe's window centring with its
+/// tests: the app centres the main window with it, and the copy in
+/// vendor/ is outside the workspace (vendor/README.md, #1800).
+#[path = "../../../vendor/eframe/src/native/monitor_place.rs"]
+mod eframe_monitor_place;
 
 /// The monitor's size in system points (pixels over the system's
 /// scaling), whatever the interface size: the unit the window's kept
@@ -385,7 +447,15 @@ pub fn main_window_builder(settings: &Settings, plain: bool) -> egui::ViewportBu
         .with_min_inner_size(MIN_SIZE)
         .with_maximized(settings.window_maximized && !plain)
         .with_title("TraceDraw")
+        .with_app_id(APP_ID)
 }
+
+/// The window's application id: the Wayland `app_id` and the X11
+/// `WM_CLASS` class, which docks and task bars match to the installed
+/// `tracedraw.desktop` (its name and `StartupWMClass`) to show the icon.
+/// Left unset, eframe used the window's name, "TraceDraw", and docks such
+/// as Plank showed a blank icon (#1718).
+pub const APP_ID: &str = "tracedraw";
 
 /// Turn the splash window into the main window: decorations, resizable,
 /// the kept size centred on the monitor. Sizes are worked out in system
@@ -396,7 +466,8 @@ pub fn main_window_builder(settings: &Settings, plain: bool) -> egui::ViewportBu
 pub fn open_main_window(ctx: &egui::Context, settings: &Settings) -> WindowGrow {
     use egui::ViewportCommand as V;
     let zoom = ctx.zoom_factor().max(0.01);
-    let monitor = monitor_in_system_points(ctx);
+    let screen = main_monitor(eframe::primary_monitor(), monitor_in_system_points(ctx));
+    let monitor = screen.map(|r| r.size());
     let size = main_window_size(settings.window_size, monitor);
     ctx.send_viewport_cmd(V::Decorations(true));
     // The splash window is made not resizable, which on X11 records its
@@ -413,7 +484,7 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) -> WindowGrow 
         maximize: true,
     });
     ctx.send_viewport_cmd(V::InnerSize(size / zoom));
-    if let Some(p) = centred_position(size, monitor) {
+    if let Some(p) = centred_position(size, screen) {
         ctx.send_viewport_cmd(V::OuterPosition((p.to_vec2() / zoom).to_pos2()));
     }
     ctx.send_viewport_cmd(V::Focus);
@@ -429,6 +500,13 @@ pub const GROW_SECONDS: f64 = 1.0;
 /// asked for and count as grown (a window manager rounding it to its
 /// increments or to the screen).
 const GROW_SLACK: f32 = 16.0;
+/// Plain frames drawn at the window's own size before the editor's
+/// first frame (#1911): the editor's first frame takes half a second to
+/// a second, and the window shows what was presented last meanwhile.
+/// Drawn in the first frame the window reported its new size, it left
+/// the grown window with nothing presented at that size: torn blocks of
+/// leftover pixels on X11 for as long as that frame took.
+pub const GROWN_FRAMES: u32 = 2;
 
 /// The main window growing from the splash's size to its own (#1673).
 /// The splash window becomes the main window by asking for a new size,
@@ -450,6 +528,8 @@ pub struct WindowGrow {
     maximize: bool,
     /// The input time of the first frame.
     started: Option<f64>,
+    /// Plain frames drawn since the window has its size (#1911).
+    grown_frames: u32,
 }
 
 impl WindowGrow {
@@ -460,6 +540,7 @@ impl WindowGrow {
             asked,
             maximize,
             started: None,
+            grown_frames: 0,
         }
     }
 
@@ -483,8 +564,16 @@ impl WindowGrow {
             maximized,
             monitor: monitor.map(|m| m * zoom),
         };
+        // Grown (or waited for long enough): a few more plain frames at
+        // this size, so that one is on the screen while the editor draws
+        // its first (#1911).
         if now - started >= GROW_SECONDS || window_grown(self.asked, self.maximize, state) {
-            return true;
+            if self.grown_frames >= GROWN_FRAMES {
+                return true;
+            }
+            self.grown_frames += 1;
+        } else {
+            self.grown_frames = 0;
         }
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
@@ -685,6 +774,23 @@ mod eframe_window_start;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The window's application id is the one the Linux desktop file
+    /// names (its file name and `StartupWMClass`), so docks show its icon
+    /// (#1718).
+    #[test]
+    fn the_window_says_which_desktop_file_it_belongs_to() {
+        let desktop = include_str!("../../../packaging/linux/tracedraw.desktop");
+        assert!(
+            desktop
+                .lines()
+                .any(|l| l.trim() == format!("StartupWMClass={APP_ID}")),
+            "{desktop}"
+        );
+        assert_eq!(APP_ID, "tracedraw", "the file is tracedraw.desktop");
+        let main = main_window_builder(&Settings::default(), false);
+        assert_eq!(main.app_id.as_deref(), Some(APP_ID));
+    }
 
     #[test]
     fn the_main_window_drops_the_splash_maximum_before_it_turns_resizable() {
@@ -1182,8 +1288,42 @@ mod tests {
             grow_frame(&mut grow, 0.1, Vec2::new(900.0, 600.0), false),
             (false, true)
         );
-        // At its size (a window manager may round it): the editor.
-        assert!(grow_frame(&mut grow, 0.2, DEFAULT_SIZE - Vec2::splat(4.0), false).0);
+        // At its size (a window manager may round it): plain frames at
+        // that size first (#1911), then the editor.
+        let grown = DEFAULT_SIZE - Vec2::splat(4.0);
+        for n in 0..GROWN_FRAMES {
+            let t = 0.2 + f64::from(n) * 0.02;
+            assert_eq!(grow_frame(&mut grow, t, grown, false), (false, true));
+        }
+        assert!(grow_frame(&mut grow, 0.3, grown, false).0);
+    }
+
+    /// #1911: the editor's first frame takes half a second to a second,
+    /// and the window shows what was presented last meanwhile. Drawn in
+    /// the very frame the window first reported its new size, nothing had
+    /// been presented at that size, and the grown window showed torn
+    /// blocks of leftover pixels on X11 for as long as that frame took.
+    /// Plain frames at the new size come first; a window that changes
+    /// size again starts them over.
+    #[test]
+    fn the_grown_window_is_drawn_plain_before_the_editors_first_frame() {
+        let mut grow = WindowGrow::new(DEFAULT_SIZE, false);
+        assert!(!grow_frame(&mut grow, 0.0, SIZE, false).0);
+        // The first frame at the new size is plain, painted.
+        assert_eq!(
+            grow_frame(&mut grow, 0.05, DEFAULT_SIZE, false),
+            (false, true)
+        );
+        // Resized again by the window manager: plain frames start over.
+        assert!(!grow_frame(&mut grow, 0.1, Vec2::new(1200.0, 800.0), false).0);
+        let mut plain = 0;
+        let mut t = 0.15;
+        while !grow_frame(&mut grow, t, DEFAULT_SIZE, false).0 {
+            plain += 1;
+            t += 0.02;
+            assert!(plain <= GROWN_FRAMES, "the editor waits for nothing more");
+        }
+        assert_eq!(plain, GROWN_FRAMES);
     }
 
     #[test]
@@ -1193,7 +1333,13 @@ mod tests {
         assert!(!grow_frame(&mut grow, 0.0, SIZE, false).0);
         assert!(!grow_frame(&mut grow, 0.1, Vec2::new(1520.0, 950.0), false).0);
         assert!(!grow_frame(&mut grow, 0.2, Vec2::new(1520.0, 950.0), true).0);
-        assert!(grow_frame(&mut grow, 0.3, Vec2::new(1600.0, 975.0), true).0);
+        // Filling the screen: plain frames at that size, then the editor.
+        let full = Vec2::new(1600.0, 975.0);
+        for n in 0..GROWN_FRAMES {
+            let t = 0.3 + f64::from(n) * 0.02;
+            assert_eq!(grow_frame(&mut grow, t, full, true), (false, true));
+        }
+        assert!(grow_frame(&mut grow, 0.4, full, true).0);
     }
 
     #[test]
@@ -1201,7 +1347,12 @@ mod tests {
         let mut grow = WindowGrow::new(DEFAULT_SIZE, false);
         assert!(!grow_frame(&mut grow, 5.0, SIZE, false).0);
         assert!(!grow_frame(&mut grow, 5.0 + GROW_SECONDS * 0.9, SIZE, false).0);
-        assert!(grow_frame(&mut grow, 5.0 + GROW_SECONDS, SIZE, false).0);
+        // After a second, the plain frames that come before the editor.
+        for n in 0..GROWN_FRAMES {
+            let t = 5.0 + GROW_SECONDS + f64::from(n) * 0.02;
+            assert!(!grow_frame(&mut grow, t, SIZE, false).0);
+        }
+        assert!(grow_frame(&mut grow, 5.0 + GROW_SECONDS + 0.1, SIZE, false).0);
         // Nothing reported: nothing to wait for.
         assert!(window_grown(DEFAULT_SIZE, true, WindowState::default()));
     }
@@ -1256,12 +1407,62 @@ mod tests {
 
     #[test]
     fn the_main_window_is_centred() {
-        let p = centred_position(Vec2::new(1600.0, 900.0), Some(Vec2::new(1920.0, 1080.0)));
+        let at_origin = |w: f32, h: f32| Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(w, h)));
+        let p = centred_position(Vec2::new(1600.0, 900.0), at_origin(1920.0, 1080.0));
         assert_eq!(p, Some(Pos2::new(160.0, 90.0)));
         // Larger than the monitor: pinned to the top left.
-        let p = centred_position(Vec2::new(2000.0, 900.0), Some(Vec2::new(1920.0, 800.0)));
+        let p = centred_position(Vec2::new(2000.0, 900.0), at_origin(1920.0, 800.0));
         assert_eq!(p, Some(Pos2::new(0.0, 0.0)));
         assert_eq!(centred_position(Vec2::new(10.0, 10.0), None), None);
+    }
+
+    /// The desktop of #1800 (X11, four monitors): the primary monitor,
+    /// 5120 x 2880 pixels at 150 %, lies at (1544, 2160), below a 3840 x
+    /// 2160 monitor at (0, 0) and one at (3840, 0), with a fourth at
+    /// (6664, 2160). The main window is centred on the primary monitor,
+    /// where it lies, not on the top-left one.
+    #[test]
+    fn the_main_window_opens_on_the_primary_monitor_where_it_lies() {
+        // The windowing layer's rectangle in system points: pixels over
+        // the monitor's 1.5.
+        let primary = [1544.0 / 1.5, 2160.0 / 1.5, 5120.0 / 1.5, 2880.0 / 1.5];
+        // egui reports the size of the monitor the splash is on.
+        let screen = main_monitor(Some(primary), Some(Vec2::new(5120.0 / 1.5, 2880.0 / 1.5)))
+            .expect("a monitor");
+        assert_eq!(screen.min, Pos2::new(1544.0 / 1.5, 1440.0));
+        let size = main_window_size([1600.0, 1000.0], Some(screen.size()));
+        let p = centred_position(size, Some(screen)).expect("a position");
+        // In pixels: the window lies on the primary monitor, centred.
+        let (x0, y0) = (p.x * 1.5, p.y * 1.5);
+        let (x1, y1) = ((p.x + size.x) * 1.5, (p.y + size.y) * 1.5);
+        assert!(x0 >= 1544.0 && y0 >= 2160.0, "{p:?}");
+        assert!(
+            x1 <= 1544.0 + 5120.0 && y1 <= 2160.0 + 2880.0,
+            "{p:?} {size:?}"
+        );
+        let centre = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        assert!((centre.0 - (1544.0 + 2560.0)).abs() < 0.5, "{centre:?}");
+        assert!((centre.1 - (2160.0 + 1440.0)).abs() < 0.5, "{centre:?}");
+        // Not on the top-left monitor (0, 0, 3840, 2160), as before.
+        assert!(!(x0 < 3840.0 && y0 < 2160.0), "{p:?}");
+    }
+
+    /// Without the windowing layer's monitor (Wayland places windows
+    /// itself), the monitor egui reports is taken at the desktop's
+    /// corner; without either there is no monitor.
+    #[test]
+    fn without_a_primary_monitor_the_reported_one_is_used() {
+        let m = main_monitor(None, Some(Vec2::new(1920.0, 1080.0)));
+        assert_eq!(
+            m,
+            Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1920.0, 1080.0)))
+        );
+        assert_eq!(main_monitor(Some([0.0, 0.0, 0.0, 0.0]), None), None);
+        let m = main_monitor(
+            Some([-1920.0, 0.0, 1920.0, 1080.0]),
+            Some(Vec2::new(800.0, 600.0)),
+        );
+        assert_eq!(m.map(|r| r.min), Some(Pos2::new(-1920.0, 0.0)));
     }
 
     fn input() -> egui::RawInput {
@@ -1271,11 +1472,22 @@ mod tests {
         }
     }
 
-    /// Splash frames until the editor starts (at most `max`); the steps.
+    /// The time between two splash frames in the tests: a sixteenth of a
+    /// second, exact in binary.
+    const FRAME_TIME: f64 = 0.0625;
+
+    /// Splash frames until the editor starts (at most `max`), one every
+    /// [`FRAME_TIME`] from the context's time on; the steps.
     fn run_frames(ctx: &egui::Context, splash: &mut Splash, max: usize) -> Vec<Step> {
         let mut steps = Vec::new();
+        let mut time = ctx.input(|i| i.time);
         for _ in 0..max {
-            let mut out = ctx.run_ui(input(), |ui| steps.push(splash.update(ui)));
+            time += FRAME_TIME;
+            let frame = egui::RawInput {
+                time: Some(time),
+                ..input()
+            };
+            let mut out = ctx.run_ui(frame, |ui| steps.push(splash.update(ui)));
             out.textures_delta.clear();
             if steps.last() == Some(&Step::Start) {
                 break;
@@ -1290,11 +1502,51 @@ mod tests {
         let ctx = egui::Context::default();
         let mut splash = Splash::start(&ctx, Some(Path::new("/tmp/a.cdr")));
         splash.font_list_ready = || true;
-        // No minimum time: the editor starts as soon as the last status
-        // has been drawn once, with the fonts in or not.
-        let steps = run_frames(&ctx, &mut splash, 4);
-        assert_eq!(steps, vec![Step::Wait, Step::Start]);
+        // The editor starts as soon as the last status has been drawn
+        // once, with the fonts in or not, and the splash has been on the
+        // screen for a few frames (#1911).
+        let steps = run_frames(&ctx, &mut splash, 8);
+        assert_eq!(steps, vec![Step::Wait, Step::Wait, Step::Start]);
         assert!(!splash.reset_requested);
+    }
+
+    /// #1911: the windowing layer draws the first frame with the window
+    /// hidden, and on X11 frames presented before the window is mapped
+    /// never reach the screen. With the fonts in at once (a second start)
+    /// the editor was built on the second frame, and the window stayed
+    /// blank while it was. The editor now waits for [`SHOWN_FRAMES`]
+    /// frames over [`SHOWN_SECONDS`], whichever is later, and no longer.
+    #[test]
+    fn the_splash_is_on_the_screen_before_the_editor_is_built() {
+        assert!(!splash_seen(1, 1.0));
+        assert!(!splash_seen(SHOWN_FRAMES - 1, 1.0));
+        assert!(!splash_seen(SHOWN_FRAMES, SHOWN_SECONDS * 0.5));
+        assert!(splash_seen(SHOWN_FRAMES, SHOWN_SECONDS));
+        assert!(splash_seen(SHOWN_FRAMES + 10, 5.0));
+        // Fast frames: the editor waits for the time.
+        crate::i18n::set_language("en");
+        let ctx = egui::Context::default();
+        let mut splash = Splash::start(&ctx, None);
+        splash.font_list_ready = || true;
+        // A frame every 1/256 s (exact in binary).
+        let dt = 1.0 / 256.0;
+        let mut steps = Vec::new();
+        for n in 1..=100u32 {
+            let frame = egui::RawInput {
+                time: Some(f64::from(n) * dt),
+                ..input()
+            };
+            let mut out = ctx.run_ui(frame, |ui| steps.push(splash.update(ui)));
+            out.textures_delta.clear();
+            assert!(!out.shapes.is_empty(), "every frame draws the splash");
+            if steps.last() == Some(&Step::Start) {
+                break;
+            }
+        }
+        assert_eq!(steps.last(), Some(&Step::Start));
+        // The first frame at least SHOWN_SECONDS after the first one.
+        let expected = (SHOWN_SECONDS / dt).ceil() as usize + 1;
+        assert_eq!(steps.len(), expected);
     }
 
     #[test]
@@ -1304,10 +1556,11 @@ mod tests {
         let mut splash = Splash::start(&ctx, None);
         splash.font_list_ready = || true;
         assert!(!splash.wait_for_fonts);
-        // Whatever the font thread has done, the editor starts in two
-        // frames, and the load it leaves is the shell's to install.
-        let steps = run_frames(&ctx, &mut splash, 4);
-        assert_eq!(steps, vec![Step::Wait, Step::Start]);
+        // Whatever the font thread has done, the editor starts in three
+        // frames (the splash shown for a few, #1911), and the load it
+        // leaves is the shell's to install.
+        let steps = run_frames(&ctx, &mut splash, 8);
+        assert_eq!(steps, vec![Step::Wait, Step::Wait, Step::Start]);
         let mut load = splash.take_fonts();
         let defs = load.finish();
         assert!(!load.pending());

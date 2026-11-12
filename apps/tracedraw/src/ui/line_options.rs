@@ -16,7 +16,7 @@ use crate::ui::field::NumField;
 use crate::ui::tips::RichTip;
 use crate::ui::text_docker::{line_kind_name, Line};
 use egui::{Context, Ui};
-use tracedraw_core::document::{LineKind, LineStyle};
+use tracedraw_core::document::{LineKind, LineLook, LineStyle};
 use tracedraw_core::{Command, ShapeId, ShapeKind, TextSpan};
 
 /// The fields of the window the selection has in more than one value: they
@@ -42,16 +42,16 @@ pub struct Mixed {
 pub struct State {
     pub which: Line,
     pub on: bool,
-    pub style: LineStyle,
+    pub style: LineLook,
     pub before: Vec<(ShapeId, ShapeKind)>,
     pub mixed: Mixed,
 }
 
 /// The line of a span the window is about.
-fn look_of(s: &TextSpan, which: Line) -> (bool, LineStyle) {
+fn look_of(s: &TextSpan, which: Line) -> (bool, LineLook) {
     match which {
-        Line::Underline => (s.underline, s.underline_style.clone()),
-        Line::Strike => (s.strikethrough, s.strike_style.clone()),
+        Line::Underline => (s.underline.is_on(), s.underline_style.clone()),
+        Line::Strike => (s.strikethrough.is_on(), s.strike_style.clone()),
     }
 }
 
@@ -60,7 +60,7 @@ impl State {
     /// the texts to put back, and note the mixed fields.
     pub fn open(app: &mut App, which: Line) -> State {
         let mut before = Vec::new();
-        let mut looks: Vec<(bool, LineStyle)> = Vec::new();
+        let mut looks: Vec<(bool, LineLook)> = Vec::new();
         for (id, _) in app.text_style_targets() {
             let Some(shape) = app.doc().find_shape(id).cloned() else {
                 continue;
@@ -127,11 +127,11 @@ impl State {
         let (on, style, which) = (self.on, self.style.clone(), self.which);
         crate::ui::text_docker::edit_spans(app, move |sp| match which {
             Line::Underline => {
-                sp.underline = on;
+                sp.underline = turned(sp.underline, on);
                 sp.underline_style = style.clone();
             }
             Line::Strike => {
-                sp.strikethrough = on;
+                sp.strikethrough = turned(sp.strikethrough, on);
                 sp.strike_style = style.clone();
             }
         });
@@ -141,14 +141,24 @@ impl State {
 /// Turn the line on or off for the chosen characters.
 fn set_on(app: &mut App, which: Line, on: bool) {
     crate::ui::text_docker::edit_spans(app, move |sp| match which {
-        Line::Underline => sp.underline = on,
-        Line::Strike => sp.strikethrough = on,
+        Line::Underline => sp.underline = turned(sp.underline, on),
+        Line::Strike => sp.strikethrough = turned(sp.strikethrough, on),
     });
+}
+
+/// A line style turned on or off: one already on keeps its style (a
+/// double line stays double), one turned on is a single thin line.
+fn turned(style: LineStyle, on: bool) -> LineStyle {
+    if style.is_on() == on {
+        style
+    } else {
+        LineStyle::from(on)
+    }
 }
 
 /// Set one field of the line's look, leaving the others as each character
 /// has them (a mixed selection keeps what it was not told to change).
-fn set_line(app: &mut App, which: Line, f: impl Fn(&mut LineStyle) + Clone + 'static) {
+fn set_line(app: &mut App, which: Line, f: impl Fn(&mut LineLook) + Clone + 'static) {
     crate::ui::text_docker::edit_spans(app, move |sp| {
         let st = match which {
             Line::Underline => &mut sp.underline_style,
@@ -445,7 +455,7 @@ mod tests {
             s.overprint = true;
         });
         let sp = span_of(&app, id);
-        assert!(sp.underline);
+        assert!(sp.underline.is_on());
         assert_eq!(sp.underline_style.kind, LineKind::Wavy);
         assert_eq!(sp.underline_style.thickness_pt, Some(1.2));
         assert_eq!(sp.underline_style.tint, 40.0);
@@ -454,7 +464,7 @@ mod tests {
         // Cancel puts the text back as it was.
         st.restore(&mut app);
         let sp = span_of(&app, id);
-        assert!(!sp.underline && sp.underline_style.is_plain());
+        assert!(!sp.underline.is_on() && sp.underline_style.is_plain());
         // The gaps have their colour and tint; the strike line is its own.
         st.style.kind = LineKind::Dashed;
         st.style.gap_color = Some(Color::rgb8(0, 0, 255));
@@ -468,7 +478,7 @@ mod tests {
         st.style.kind = LineKind::Double;
         st.apply(&mut app);
         let sp = span_of(&app, id);
-        assert!(sp.strikethrough && sp.strike_style.kind == LineKind::Double);
+        assert!(sp.strikethrough.is_on() && sp.strike_style.kind == LineKind::Double);
     }
 
     /// A selection whose lines differ shows those fields as mixed and only
@@ -477,15 +487,15 @@ mod tests {
     fn a_mixed_selection_keeps_the_fields_left_alone() {
         let mut app = App::headless();
         let mut a = TextSpan::new("um", "Sans", 12.0);
-        a.underline = true;
-        a.underline_style = LineStyle {
+        a.underline = LineStyle::SingleThin;
+        a.underline_style = LineLook {
             kind: LineKind::Wavy,
             thickness_pt: Some(1.0),
             color: Some(Color::rgb8(200, 0, 0)),
             ..Default::default()
         };
         let mut b = TextSpan::new("dois", "Sans", 12.0);
-        b.underline = false;
+        b.underline = LineStyle::None;
         let id = app
             .new_shape(ShapeKind::Text {
                 spans: vec![a, b],
@@ -509,7 +519,7 @@ mod tests {
         };
         assert_eq!(spans[0].underline_style.thickness_pt, Some(2.5));
         assert_eq!(spans[1].underline_style.thickness_pt, Some(2.5));
-        assert!(spans[0].underline && !spans[1].underline);
+        assert!(spans[0].underline.is_on() && !spans[1].underline.is_on());
         assert_eq!(spans[1].underline_style.kind, LineKind::Single);
     }
 

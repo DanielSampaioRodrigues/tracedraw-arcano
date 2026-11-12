@@ -47,10 +47,11 @@ pub fn shadow_handles(sh: &Shadow, b: Rect) -> [(ShadowHandle, Point); 3] {
     ]
 }
 
-/// The bounds the shadow geometry is measured on: the object's path.
+/// The bounds the shadow geometry is measured on: the object's outline
+/// as it is drawn, an envelope or another warp taken in, which is what
+/// the shadow is drawn from (#2217).
 pub fn shadow_box(s: &Shape) -> Rect {
-    use tracedraw_core::geometry::Shape as _;
-    s.page_path().bounding_box()
+    s.shadow_box()
 }
 
 /// `p` (page space) lies on the drop shadow of `s`: inside its
@@ -63,7 +64,7 @@ pub fn shadow_covers(s: &Shape, p: Point) -> bool {
     let Some(sh) = s.shadow.filter(|sh| sh.opacity > 0.0) else {
         return false;
     };
-    let path = s.page_path();
+    let path = s.shadow_outline();
     let b = path.bounding_box();
     if !(Shadow { blur: 0.0, ..sh }).bounds(b).contains(p) {
         return false;
@@ -85,15 +86,120 @@ pub fn shadow_covers(s: &Shape, p: Point) -> bool {
     }
 }
 
+/// The outline of `s` as it is drawn goes round `p`: one of its parts
+/// alone holds it, so the hole of a ring and the inside of an unfilled
+/// shape count.
+fn outline_goes_round(s: &Shape, p: Point) -> bool {
+    use tracedraw_core::geometry::Shape as _;
+    let drawn = if s.effects.is_empty() {
+        s.page_path()
+    } else {
+        tracedraw_core::live::evaluate(s).main.page_path()
+    };
+    tracedraw_core::effects::subpaths(&drawn)
+        .iter()
+        .any(|(part, _)| part.contains(p))
+}
+
 impl App {
-    /// The first selected object's shadow, with its id and box.
-    pub fn selected_shadow(&self) -> Option<(ShapeId, Shadow, Rect)> {
-        let s = self.selected_shapes().into_iter().next()?;
-        let sh = s.shadow?;
-        Some((s.id, sh, shadow_box(&s)))
+    /// The object a drag with the Drop Shadow or the Block Shadow tool
+    /// starts on at `p`: the one picked there, else the topmost one whose
+    /// outline goes round `p`. A press in the hole of a ring, or in the
+    /// middle of a shape without a fill, started nothing, so such an
+    /// object took a shadow only from a press on its outline or its
+    /// narrow filled part (#2219).
+    pub fn shadow_drag_target(&self, p: Point) -> Option<ShapeId> {
+        if let Some(id) = self.hit_test(p) {
+            return Some(id);
+        }
+        if self.focus_shape_on_page().is_some() {
+            return None;
+        }
+        self.page_layers()
+            .into_iter()
+            .rev()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| l.shapes.iter().rev())
+            .filter(|s| !s.locked && s.visible && !self.outside_clip_edit(s.id))
+            .find(|s| self.visual_bounds(s).contains(p) && outline_goes_round(s, p))
+            .map(|s| s.id)
     }
 
-    /// The shadow handle under page point `p`, with the Drop Shadow tool.
+    /// The shadow the Drop Shadow tool edits: the first selected object
+    /// that has one, with its id and box. Its handles show and the
+    /// property bar shows its settings, also with objects of no shadow
+    /// picked before it.
+    pub fn selected_shadow(&self) -> Option<(ShapeId, Shadow, Rect)> {
+        self.selected_rc()
+            .iter()
+            .find_map(|s| Some((s.id, s.shadow?, shadow_box(s))))
+    }
+
+    /// The settings the Drop Shadow property bar shows: the selected
+    /// shadow's (see [`Self::selected_shadow`]), else those new shadows
+    /// get.
+    pub fn shadow_bar_shadow(&self) -> Shadow {
+        self.selected_shadow()
+            .map_or(self.shadow_default, |(_, sh, _)| sh)
+    }
+
+    /// Edit Shadow can act: a selected object has a drop shadow.
+    pub fn can_edit_shadow(&self) -> bool {
+        self.selected_shadow().is_some()
+    }
+
+    /// Edit Shadow (the object's right-click menu, the Properties
+    /// docker, a double click on a shadow): the Drop Shadow tool on the
+    /// first selected object with a shadow, that object alone selected,
+    /// with its handles on the canvas and its settings on the property
+    /// bar.
+    pub fn edit_shadow(&mut self) {
+        let Some((id, _, _)) = self.selected_shadow() else {
+            return;
+        };
+        self.set_tool(crate::tools::Tool::DropShadow);
+        self.select(vec![id]);
+    }
+
+    /// The handles of the selected shadow where they are drawn, end
+    /// first, with the Drop Shadow tool. While the start handle is
+    /// dragged it is drawn under the pointer, in every mode (the shadow
+    /// itself stands on the edge it is over, or lies flat in the middle),
+    /// with the opacity slider on the line from there; let go, it is back
+    /// where the shadow starts.
+    pub fn shown_shadow_handles(&self) -> Option<[(ShadowHandle, Point); 3]> {
+        if self.tool != crate::tools::Tool::DropShadow {
+            return None;
+        }
+        let (_, sh, b) = self.selected_shadow()?;
+        let mut hs = shadow_handles(&sh, b);
+        if let (
+            crate::app::Drag::ShadowHandle {
+                handle: ShadowHandle::Start,
+                grab,
+                ..
+            },
+            Some(at),
+        ) = (&self.drag, self.pointer_page)
+        {
+            let a = at + *grab;
+            let e = sh.end_point(b);
+            let o = a + (e - a) * sh.opacity.clamp(0.0, 1.0);
+            for (h, p) in &mut hs {
+                match h {
+                    ShadowHandle::Start => *p = a,
+                    ShadowHandle::Opacity => *p = o,
+                    ShadowHandle::End => {}
+                }
+            }
+        }
+        Some(hs)
+    }
+
+    /// The shadow handle under page point `p`, with the Drop Shadow tool:
+    /// the nearest one within reach of `p` (the end first where two lie
+    /// on one spot), so each handle is taken by a press on it however
+    /// close the others lie, flat or standing on an edge.
     pub fn shadow_handle_at(&self, p: Point) -> Option<ShadowHandle> {
         if self.tool != crate::tools::Tool::DropShadow {
             return None;
@@ -102,7 +208,9 @@ impl App {
         let tol = HANDLE_PX / f64::from(self.view.zoom.max(1e-6));
         shadow_handles(&sh, b)
             .into_iter()
-            .find(|(_, hp)| (*hp - p).hypot() <= tol)
+            .map(|(h, hp)| (h, (hp - p).hypot()))
+            .filter(|(_, d)| *d <= tol)
+            .min_by(|x, y| x.1.total_cmp(&y.1))
             .map(|(h, _)| h)
     }
 
@@ -140,7 +248,10 @@ impl App {
         } else {
             sh.offset = p - start;
         }
-        self.select(vec![shape]);
+        // The other selected objects take the same shadow (#2218).
+        if !self.selection.contains(&shape) {
+            self.select(vec![shape]);
+        }
         self.set_shadow(Some(sh), true);
     }
 
@@ -378,6 +489,60 @@ mod tests {
 
     fn shadow(app: &App, id: ShapeId) -> Option<Shadow> {
         app.doc().find_shape(id).and_then(|s| s.shadow)
+    }
+
+    /// #2217: the shadow of an object with an envelope is measured on the
+    /// outline the envelope draws, as the renderer casts it: a drag from
+    /// the middle of what shows gives a flat shadow, the handles sit on
+    /// the drawn object and the shadow is picked where it lies. Before,
+    /// all of it went by the outline without the envelope, so a press on
+    /// the bent object stood a perspective shadow on a far edge.
+    #[test]
+    fn the_shadow_of_an_enveloped_object_goes_by_what_is_drawn() {
+        use tracedraw_core::live::Effect;
+        let (mut app, id) = app_with_rect();
+        // The envelope stretches the 40 x 60 rectangle to three times its
+        // height: it shows from 20 to 200.
+        let drawn = Rect::new(20.0, 20.0, 60.0, 200.0);
+        app.push_effect(Effect::envelope_around(drawn, false), true);
+        let s = app.doc().shape_on_page(id).expect("shape");
+        let b = shadow_box(&s);
+        assert!(
+            (b.y0 - 20.0).abs() < 0.1 && (b.y1 - 200.0).abs() < 0.1 && (b.x1 - 60.0).abs() < 0.1,
+            "{b:?}"
+        );
+        // The middle of the drawn object lies above the plain outline.
+        let mid = Point::new(40.0, 110.0);
+        assert_eq!(app.hit_test(mid), Some(id));
+        app.drag_new_shadow(id, mid, mid, true);
+        app.drag_new_shadow(id, mid, Point::new(46.0, 104.0), false);
+        let sh = shadow(&app, id).expect("shadow");
+        assert!(sh.perspective.is_none(), "{:?}", sh.perspective);
+        assert!((sh.offset.x - 6.0).abs() < 1e-9 && (sh.offset.y + 6.0).abs() < 1e-9);
+        // The handles start at the middle of the drawn object.
+        let hs = app.shown_shadow_handles().expect("handles");
+        let start = hs
+            .iter()
+            .find(|(h, _)| *h == ShadowHandle::Start)
+            .map(|(_, p)| *p)
+            .expect("start");
+        assert!((start - Point::new(40.0, 110.0)).hypot() < 0.1, "{start:?}");
+        // The shadow is picked where it is drawn: beside the top of the
+        // bent object, far above the plain outline.
+        let s = app.doc().shape_on_page(id).expect("shape");
+        assert!(shadow_covers(&s, Point::new(63.0, 150.0)));
+        assert!(!shadow_covers(&s, Point::new(70.0, 150.0)));
+        // A drag from the bottom fifth of what shows stands the shadow on
+        // the drawn bottom edge and reaches the pointer.
+        app.undo();
+        let low = Point::new(40.0, 30.0);
+        app.drag_new_shadow(id, low, low, true);
+        app.drag_new_shadow(id, low, Point::new(120.0, 60.0), false);
+        let sh = shadow(&app, id).expect("shadow");
+        assert_eq!(sh.perspective.map(|p| p.edge), Some(ShadowEdge::Bottom));
+        let s = app.doc().shape_on_page(id).expect("shape");
+        let end = sh.end_point(shadow_box(&s));
+        assert!((end - Point::new(120.0, 60.0)).hypot() < 1e-6, "{end:?}");
     }
 
     #[test]

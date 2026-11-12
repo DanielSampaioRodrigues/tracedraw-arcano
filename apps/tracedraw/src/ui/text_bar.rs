@@ -168,7 +168,7 @@ pub(crate) fn characters(app: &mut App, ui: &mut Ui) {
     }
     // Underline and Strikethrough: the buttons switch them for the text;
     // the arrow opens their options, as the Control panel's flyout does.
-    let strike_on = span.as_ref().is_some_and(|s| s.strikethrough);
+    let strike_on = span.as_ref().is_some_and(|s| s.strikethrough.is_on());
     for (on, label, key, which) in [
         (
             app.text_underline,
@@ -195,7 +195,7 @@ pub(crate) fn characters(app: &mut App, ui: &mut Ui) {
                 }
                 td::Line::Strike => {
                     let v = !on;
-                    td::edit_spans(app, move |s| s.strikethrough = v);
+                    td::edit_spans(app, move |s| s.strikethrough = tracedraw_core::LineStyle::from(v));
                 }
             }
         }
