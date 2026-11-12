@@ -2324,7 +2324,7 @@ mod tests {
         app.ai_image.fake = Some(|req| {
             assert!(req
                 .url
-                .ends_with("/v1beta/models/gemini-3-pro-image-preview:generateContent"));
+                .ends_with("/v1beta/models/gemini-3-pro-image:generateContent"));
             let draft = png(32, 32, |x, _| {
                 if x < 16 {
                     [200, 30, 30, 255]
@@ -2399,7 +2399,7 @@ mod tests {
         assert!(
             e.starts_with(&trf(
                 "aiimg.error_no_quota",
-                &[("model", "gemini-3-pro-image-preview"), ("status", "429")]
+                &[("model", "gemini-3-pro-image"), ("status", "429")]
             )),
             "{e}"
         );

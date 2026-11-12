@@ -2064,7 +2064,7 @@ mod tests {
         app.ai_image.models.clear();
         let usual = app.ai_image_model_choices();
         assert_eq!(usual.first().map(String::as_str), Some("my-image-model"));
-        assert!(usual.contains(&"gpt-image-1".to_string()));
+        assert!(usual.contains(&"gpt-image-2.5-flare".to_string()));
         // A service with no pictures has no image models to offer.
         app.settings.ai.provider = Provider::Anthropic;
         assert!(app.ai_image_model_choices().is_empty());

@@ -60,12 +60,9 @@ fn model_note(model: &str) -> String {
 pub fn ai_generate(app: &mut App, ui: &mut Ui) {
     // Arcano edition: the page of actions, or one action's page under a
     // header that goes back to them; the information page at the right.
+    // The information button first, at the right, so the header takes
+    // only the room left and a narrow panel cuts its name short.
     ui.horizontal(|ui| {
-        if !app.ai_image.home && !app.ai_image.info {
-            crate::ui::ai_actions::header(app, ui);
-        } else {
-            ui.label(RichText::new(tr("aiact.title")).strong());
-        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .selectable_label(app.ai_image.info, RichText::new("\u{2139}").size(16.0))
@@ -74,6 +71,13 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
             {
                 app.ai_image.info = !app.ai_image.info;
             }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                if !app.ai_image.home && !app.ai_image.info {
+                    crate::ui::ai_actions::header(app, ui);
+                } else {
+                    ui.add(egui::Label::new(RichText::new(tr("aiact.title")).strong()).truncate());
+                }
+            });
         });
     });
     if app.ai_image.home && !app.ai_image.info {
@@ -271,7 +275,8 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
             let current = prefs.model();
             let list = app.ai_image_model_choices();
             crate::ui::combo::from_id_salt("aigen_model")
-                .width((ui.available_width() - 34.0).max(80.0))
+                .width((ui.available_width() - 34.0).max(40.0))
+                .truncate()
                 .selected_text(current.clone())
                 .show_ui(ui, |ui| {
                     // Each model with a line on what it is good at.
@@ -323,7 +328,8 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
                 ui.label(tr("aiimg.resolution"));
                 ui.add_enabled_ui(offered.len() > 1, |ui| {
                     crate::ui::combo::from_id_salt("aigen_resolution")
-                        .width((ui.available_width() - 8.0).max(80.0))
+                        .width((ui.available_width() - 8.0).max(40.0))
+                        .truncate()
                         .selected_text(tr(shown.key()))
                         .show_ui(ui, |ui| {
                             for r in offered {
@@ -399,7 +405,8 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
                 ui.label(tr("aigen.aspect"));
                 let current = app.ai_image.aspect;
                 crate::ui::combo::from_id_salt("aigen_aspect")
-                    .width(ui.available_width() - 8.0)
+                    .width((ui.available_width() - 8.0).max(40.0))
+                    .truncate()
                     .selected_text(tr(current.key()))
                     .show_ui(ui, |ui| {
                         if app.ai_image.source.is_some() {

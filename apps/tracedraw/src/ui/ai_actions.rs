@@ -162,7 +162,7 @@ fn group(app: &mut App, ui: &mut Ui, title: &str, actions: &[AiAction], enabled:
             .color(Tokens::text_dim()),
     );
     ui.add_space(2.0);
-    let w = ((ui.available_width() - 6.0) / 2.0).max(90.0);
+    let w = ((ui.available_width() - 6.0) / 2.0).max(60.0);
     for row in actions.chunks(2) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -248,7 +248,7 @@ pub fn header(app: &mut App, ui: &mut Ui) {
             Tokens::icon(),
             crate::ui::icons::accent(),
         );
-        ui.label(egui::RichText::new(tr(a.key())).strong());
+        ui.add(egui::Label::new(egui::RichText::new(tr(a.key())).strong()).truncate());
     });
 }
 

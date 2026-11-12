@@ -1322,7 +1322,10 @@ pub fn docked_rows(app: &mut App, ui: &mut Ui, dock: Dock) {
             crate::ui::palette_bars::toolbar_band(app, ui, k, row);
             next_band += 1;
         }
-        let height = bars.iter().map(|b| b.row_height_for(app)).fold(0.0, f32::max);
+        let height = bars
+            .iter()
+            .map(|b| b.row_height_for(app))
+            .fold(0.0, f32::max);
         let panel = if dock == Dock::Top {
             egui::Panel::top(egui::Id::new(("bar_row_top", index)))
         } else {
@@ -2356,7 +2359,13 @@ mod tests {
         let shapes = run(&mut app, vec![egui::Event::PointerMoved(at), press]);
         let blue = crate::theme::Tokens::accent();
         let band = shapes.iter().find_map(|s| match s {
-            egui::Shape::Rect(r) if r.stroke.color == blue => Some(r.rect),
+            // The band, not a pressed button outlined in the accent colour
+            // (the edition's theme).
+            egui::Shape::Rect(r)
+                if r.stroke.color == blue && r.rect.height().max(r.rect.width()) > 60.0 =>
+            {
+                Some(r.rect)
+            }
             _ => None,
         });
         let band = band.expect("the drop band");
@@ -2431,7 +2440,13 @@ mod tests {
         let blue = crate::theme::Tokens::accent();
         let band = |shapes: &[egui::Shape]| {
             shapes.iter().find_map(|s| match s {
-                egui::Shape::Rect(r) if r.stroke.color == blue => Some(r.rect),
+                // The band, not a pressed button outlined in the accent colour
+                // (the edition's theme).
+                egui::Shape::Rect(r)
+                    if r.stroke.color == blue && r.rect.height().max(r.rect.width()) > 60.0 =>
+                {
+                    Some(r.rect)
+                }
                 _ => None,
             })
         };

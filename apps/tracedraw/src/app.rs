@@ -4765,6 +4765,9 @@ impl App {
     pub fn open_ai_drawing(&mut self) {
         self.ai_image.mode = crate::ai_image::Mode::Draw;
         self.ai_image.info = false;
+        // Arcano edition: straight to the Draw page, not the page of
+        // actions.
+        self.ai_image.home = false;
         self.open_ai_generate();
     }
 
