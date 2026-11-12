@@ -109,7 +109,28 @@ impl App {
     /// A new style of `kind` with the look of the text at the caret,
     /// linked to that text. Returns its id.
     pub fn new_text_style(&mut self, kind: TextStyleKind) -> Option<u32> {
-        let (text, at) = self.text_here()?;
+        // With no text at hand, a paragraph style has the look new text
+        // gets (the font and size set for it) and a character style
+        // changes nothing until it is edited; neither is applied.
+        let here = self.text_here();
+        let linked = here.is_some();
+        let (text, at) = here.unwrap_or_else(|| {
+            (
+                ShapeKind::Text {
+                    spans: vec![tracedraw_core::TextSpan::new(
+                        "A",
+                        self.text_font.clone(),
+                        self.text_size_pt,
+                    )],
+                    origin: tracedraw_core::geometry::Point::new(0.0, 0.0),
+                    frame: None,
+                    align: tracedraw_core::TextAlign::Left,
+                    para: tracedraw_core::ParagraphStyle::default(),
+                    on_path: None,
+                },
+                0,
+            )
+        });
         let styles = self.doc().text_styles.clone();
         let n = styles.iter().filter(|s| s.kind == kind).count() + 1;
         let name = crate::i18n::trf(
@@ -121,14 +142,23 @@ impl App {
         );
         let mut st = match kind {
             TextStyleKind::Paragraph => ts::paragraph_style_from(&text, at, name)?,
-            TextStyleKind::Character => ts::char_style_from(&text, at, &styles, name)?,
+            TextStyleKind::Character if linked => {
+                ts::char_style_from(&text, at, &styles, name)?
+            }
+            TextStyleKind::Character => TextStyle {
+                name,
+                kind: TextStyleKind::Character,
+                ..Default::default()
+            },
         };
         let id = styles.iter().map(|s| s.id).max().unwrap_or(0) + 1;
         st.id = id;
         let mut all = styles;
         all.push(st);
         self.set_text_styles(all);
-        self.apply_named_style(kind, Some(id));
+        if linked {
+            self.apply_named_style(kind, Some(id));
+        }
         Some(id)
     }
 
@@ -379,7 +409,7 @@ pub fn docker(app: &mut App, ui: &mut egui::Ui) {
                 TextStyleKind::Character => "tstyle.character",
             }));
             if ui
-                .add_enabled(has_text, egui::Button::new(tr("tstyle.new")).small())
+                .add(egui::Button::new(tr("tstyle.new")).small())
                 .rich_tip(pair("tstyle.new", "tstyle.new_desc"))
                 .clicked()
             {
@@ -944,6 +974,27 @@ mod tests {
             text.contains(&crate::i18n::tr("docker.align_justify_short")),
             "{text}"
         );
+    }
+
+    /// With no text selected, New still makes a style: a paragraph style
+    /// with the font and size of new text, a character style that changes
+    /// nothing yet; nothing is linked, and the drawing is unchanged.
+    #[test]
+    fn a_new_style_is_made_with_no_text_selected() {
+        let mut app = App::headless();
+        app.text_font = "Serif".into();
+        app.text_size_pt = 10.5;
+        let p = app.new_text_style(TextStyleKind::Paragraph).expect("paragraph style");
+        let c = app.new_text_style(TextStyleKind::Character).expect("character style");
+        let styles = &app.doc().text_styles;
+        let para = styles.iter().find(|s| s.id == p).expect("p");
+        assert_eq!(para.kind, TextStyleKind::Paragraph);
+        assert_eq!(para.chars.size_pt, Some(10.5));
+        assert_eq!(para.chars.font_family.as_deref(), Some("Serif"));
+        let chars = styles.iter().find(|s| s.id == c).expect("c");
+        assert_eq!(chars.kind, TextStyleKind::Character);
+        assert!(chars.chars.is_empty());
+        assert!(app.doc().all_layers().all(|l| l.shapes.is_empty()));
     }
 
     #[test]

@@ -108,6 +108,10 @@ their own, and the style that follows it.
   properties of its first character.
 - New (character): what the character at the caret has that the
   paragraph's plain look lacks (everything, when nothing differs).
+- New with no text selected: the paragraph style has the font and size
+  new text gets and a plain paragraph's format; the character style sets
+  nothing yet. Neither is applied; each opens to be set up
+  (`estilos::tests::a_new_style_is_made_with_no_text_selected`).
 - Redefine: the same from the text at the caret, keeping the name and the
   parent; with a parent, only what differs from it stays the style's own.
 - Add Book Styles (an empty list only): Body text (justified, 5 mm first
