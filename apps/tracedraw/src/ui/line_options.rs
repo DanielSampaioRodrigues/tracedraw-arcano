@@ -120,7 +120,9 @@ impl State {
         })
     }
 
-    /// Give the selected text the whole look being set.
+    /// Give the selected text the whole look being set (the tests set the
+    /// whole look at once; the window sets one field at a time).
+    #[cfg(test)]
     pub fn apply(&self, app: &mut App) {
         let (on, style, which) = (self.on, self.style.clone(), self.which);
         crate::ui::text_docker::edit_spans(app, move |sp| match which {
