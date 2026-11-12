@@ -310,10 +310,11 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             .response
             .rich_tip(crate::ui::tips::pair("ai.model", "ai.model_list_tip"));
         });
-        if let Some(price) = crate::ai::text_price_caption(prefs, &prefs.model()) {
-            dim(ui, price);
-        }
     });
+    // What a drawing costs with that model, on a row of its own under it.
+    if let Some(price) = crate::ai::text_price_caption(prefs, &prefs.model()) {
+        rows.row(ui, "", |ui, _| dim(ui, price));
+    }
     rows.row(ui, &tr("ai.key"), |ui, w| {
         let key = ui
             .add(
@@ -367,12 +368,10 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
         if let Some(image) = prefs.image_prefs() {
             rows.row(ui, &tr("aiimg.resolution"), |ui, w| {
                 resolution_field(prefs, &image, ui, w);
-                if let Some(price) =
-                    crate::ai_image::price_caption(&image.model(), image.resolution())
-                {
-                    dim(ui, price);
-                }
             });
+            if let Some(price) = crate::ai_image::price_caption(&image.model(), image.resolution()) {
+                rows.row(ui, "", |ui, _| dim(ui, price));
+            }
         }
     } else {
         dim(ui, tr("aiui.drawings_only"));

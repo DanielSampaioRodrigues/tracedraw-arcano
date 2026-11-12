@@ -5211,6 +5211,7 @@ struct Breaker<'a> {
 }
 
 impl<'a> Breaker<'a> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         glyphs: &[Glyph],
         hyphenate: bool,
