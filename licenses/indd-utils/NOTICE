@@ -1,1 +1,11 @@
-{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}
+indd-utils (https://github.com/storytold/indd-utils), crate `indd`
+Pinned commit: 136f973a9d5f1b3ef34e46e27f4a08af196efde7
+
+Copyright (c) 2026 aiongg and the indd-utils contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your
+option (LICENSE-MIT, LICENSE-APACHE in this folder, copied verbatim).
+
+The project has no NOTICE file of its own at that commit; this note takes
+its place. Its third_party/ folder holds the XMP Toolkit SDK (BSD 3-Clause)
+as a reference only: no code of it is in the crate, and none of it is built
+into TraceDraw. The crate is used unchanged, as a pinned git dependency.
