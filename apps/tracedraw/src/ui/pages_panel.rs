@@ -180,17 +180,22 @@ pub fn pages_panel(app: &mut App, ui: &mut Ui) {
 /// Page > Threaded Text Frames: its window, for every page, with the
 /// house margins.
 pub fn open_thread_window(app: &App, ctx: &egui::Context) {
+    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    st.window = Some(thread_window(app));
+    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+}
+
+/// Threaded Text Frames as it opens: every page, the house margins.
+fn thread_window(app: &App) -> Window {
     let h = crate::prelo_casa::house_prefs(app);
     let n = app.doc().pages.len().max(1);
-    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
-    st.window = Some(Window::Thread {
+    Window::Thread {
         from: 1,
         to: n,
         margins: [h.top, h.bottom, h.inner, h.outer],
         columns: 1,
         gutter: 5.0,
-    });
-    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    }
 }
 
 /// The panel's small windows (Insert Pages, Master Options...), drawn
@@ -694,6 +699,16 @@ fn footer(app: &mut App, ui: &mut Ui, st: &mut State, facing: bool) {
                 app.delete_pages_by_id(&ids);
                 st.picked.clear();
             }
+            // Threaded text frames at hand, as in the Page menu.
+            let thread = icon_button(ui, true, paint_threaded_frames).rich_tip(
+                crate::ui::tips::pair("menu.layout.thread_frames", "menu.layout.thread_frames_desc"),
+            );
+            #[cfg(test)]
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("pages_thread_button"), thread.rect));
+            if thread.clicked() {
+                // The panel keeps its state: the window goes in it.
+                st.window = Some(thread_window(app));
+            }
             let add = icon_button(ui, true, paint_new_page)
                 .rich_tip(crate::ui::tips::pair("pages.new_page", "pages.new_page_desc"));
             if add.clicked() {
@@ -725,6 +740,22 @@ fn paint_new_page(p: &egui::Painter, r: Rect, c: Color32) {
     let at = pos2(r.right() - 3.0, r.bottom() - 3.5);
     p.line_segment([at - vec2(3.5, 0.0), at + vec2(3.5, 0.0)], Stroke::new(1.6, c));
     p.line_segment([at - vec2(0.0, 3.5), at + vec2(0.0, 3.5)], Stroke::new(1.6, c));
+}
+
+/// Two text frames, the first's out port linked to the second's in
+/// port.
+fn paint_threaded_frames(p: &egui::Painter, r: Rect, c: Color32) {
+    let s = Stroke::new(1.2, c);
+    let w = r.width() * 0.42;
+    let a = Rect::from_min_size(r.min, vec2(w, r.height() * 0.7));
+    let b = Rect::from_min_size(pos2(r.right() - w, r.top() + r.height() * 0.3), vec2(w, r.height() * 0.7));
+    p.rect_stroke(a, 0.0, s, egui::StrokeKind::Inside);
+    p.rect_stroke(b, 0.0, s, egui::StrokeKind::Inside);
+    for k in [0.3, 0.5] {
+        let y = a.top() + a.height() * k;
+        p.line_segment([pos2(a.left() + 1.5, y), pos2(a.right() - 1.5, y)], Stroke::new(0.8, c));
+    }
+    p.line_segment([pos2(a.right(), a.bottom() - 1.5), pos2(b.left(), b.top() + 1.5)], Stroke::new(1.2, c));
 }
 
 /// Three dots: the panel's menu.
@@ -1081,5 +1112,42 @@ mod tests {
         frame(&mut app, vec![]);
         assert_eq!(app.doc().master_of(pages[1]), b);
         assert_eq!(app.doc().master_of(pages[0]), 0);
+    }
+
+    /// The button with two linked frames at the foot of the panel opens
+    /// Threaded Text Frames, as the Page menu does.
+    #[test]
+    fn the_foot_of_the_panel_opens_threaded_text_frames() {
+        let ctx = crate::theme::ui_context();
+        App::setup_context(&ctx);
+        let mut app = App::headless();
+        app.add_page();
+        let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(300.0, 700.0));
+        let frame = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| pages_panel(app, ui));
+            out.textures_delta.clear();
+        };
+        frame(&mut app, vec![]);
+        frame(&mut app, vec![]);
+        let at = ctx
+            .data(|d| d.get_temp::<Rect>(egui::Id::new("pages_thread_button")))
+            .expect("the button")
+            .center();
+        let press = |down| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: down,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&mut app, vec![egui::Event::PointerMoved(at)]);
+        frame(&mut app, vec![press(true)]);
+        frame(&mut app, vec![press(false)]);
+        let st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+        assert!(matches!(st.window, Some(Window::Thread { from: 1, to: 2, .. })));
     }
 }

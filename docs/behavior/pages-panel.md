@@ -88,7 +88,8 @@ colour in their outer top corner, and its row in the panel a swatch of it.
 
 ## Threaded text frames
 
-Page > Threaded Text Frames... (also in the panel's menus): on the pages
+Page > Threaded Text Frames... (also in the panel's menus and on the
+button with two linked frames at the foot of the panel): on the pages
 from one to another, a paragraph text frame inside the margins (top,
 bottom, inside, outside; the house standard's to start with; inside and
 outside swap on left-hand pages with facing pages, the first page a
